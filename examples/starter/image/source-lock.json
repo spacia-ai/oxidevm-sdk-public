@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 2,
+  "sources": [
+    {
+      "name": "nginx",
+      "version": "1.30.6",
+      "url": "https://nginx.org/download/nginx-1.30.6.tar.gz",
+      "file": "nginx-1.30.6.tar.gz",
+      "sha256": "3cf46f5ed7504d460125866b7bea99fb357f31d887e2e63b35503310e9b8b6c8",
+      "sha512": "1b04fcb5a7ee3df573b1a0d792cf1f1cfc02d30d03592f2f04b2b2842d9f42364957f4420e53af380b9fffd5eb4a3a5c11f6d71643168db25baeea748cf94fa2",
+      "aportsRevision": "afc9f8046186db82c3c1b41cc1b4f1125e150f39",
+      "scope": "guest",
+      "origin": "nginx",
+      "repository": "main",
+      "format": "archive",
+      "additional": []
+    },
+    {
+      "name": "musl",
+      "version": "1.2.6",
+      "url": "https://musl.libc.org/releases/musl-1.2.6.tar.gz",
+      "file": "musl-1.2.6.tar.gz",
+      "sha256": "d585fd3b613c66151fc3249e8ed44f77020cb5e6c1e635a616d3f9f82460512a",
+      "sha512": "1adad96eddb3a2eb0cacb3e363b0046568925fcdd75cf8b0503f2139df1f693d64730779ca0ce8131b7624ab2d37f4247bb1d3393c523de6e30d2b1d7732555c",
+      "aportsRevision": "f5640d3a10f664c9119720c60515265d3d6f6d01",
+      "scope": "guest",
+      "origin": "musl",
+      "repository": "main",
+      "format": "archive",
+      "additional": []
+    },
+    {
+      "name": "pcre2",
+      "version": "10.49",
+      "url": "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.49/pcre2-10.49.tar.bz2",
+      "file": "pcre2-10.49.tar.bz2",
+      "sha256": "53c156e1ba416a20da8e65395daa132da0d80e76910424caca3fcdae7831d384",
+      "sha512": "eb8351788a479cb24bcc263243d6a00d28cc7285f26901d7f6001826aba7f7171a5bb3e7c944725432df6f303c10a794fd3a398429483bf4c1104df3de159687",
+      "aportsRevision": "3d497cbb3217749c4fb85f90f3b6f7908b0c1f95",
+      "scope": "guest",
+      "origin": "pcre2",
+      "repository": "main",
+      "format": "archive",
+      "additional": []
+    },
+    {
+      "name": "openssl",
+      "version": "3.5.7",
+      "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.7/openssl-3.5.7.tar.gz",
+      "file": "openssl-3.5.7.tar.gz",
+      "sha256": "a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8",
+      "sha512": "de5351d2d532e1a3908a738f7d8aae448d32bc60bdb24808c556a24bc37a3f53daedf12b5d432eeb8c235e16939d842f908332ede8a447ca103ad1c493c820d7",
+      "aportsRevision": "4a4352d83ab03720965454a8c7b30b1b6a996c84",
+      "scope": "guest",
+      "origin": "openssl",
+      "repository": "main",
+      "format": "archive",
+      "additional": []
+    },
+    {
+      "name": "zlib",
+      "version": "1.3.2",
+      "url": "https://zlib.net/fossils/zlib-1.3.2.tar.gz",
+      "file": "zlib-1.3.2.tar.gz",
+      "sha256": "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16",
+      "sha512": "70963771ea5d763614278a69b474f09b7d237ef8f53b675a10fe31d9923aeef601504b35d7ebd1b1e7f347e9ebb048e6b3b47fffdf137e7bdc7e8d5eb4ec4692",
+      "aportsRevision": "f248b33b5943c7dc69bf691031d7612ab2e8ed93",
+      "scope": "guest",
+      "origin": "zlib",
+      "repository": "main",
+      "format": "archive",
+      "additional": []
+    },
+    {
+      "name": "mksh",
+      "version": "59c",
+      "url": "https://distfiles.alpinelinux.org/distfiles/v3.24/mksh-R59c.tgz",
+      "file": "mksh-R59c.tgz",
+      "sha256": "77ae1665a337f1c48c61d6b961db3e52119b38e58884d1c89684af31f87bc506",
+      "sha512": "f56b6956f9e1dd88ddce2294301a5eb698050d9d4f49286fdcd8f9df8554eabbcc71d37e2bf3eb7234e3968a17231cc6de8aa7efbf17768834a90b14e8cdf340",
+      "aportsRevision": "84a227baf001b6e0208e3352b294e4d7a40e93de",
+      "scope": "guest",
+      "origin": "mksh",
+      "repository": "main",
+      "format": "archive",
+      "additional": []
+    },
+    {
+      "name": "ca-certificates",
+      "version": "20260611",
+      "url": "https://distfiles.alpinelinux.org/distfiles/v3.24/ca-certificates-20260611.tar.bz2",
+      "file": "ca-certificates-20260611.tar.bz2",
+      "sha256": "32ca73f2e81e2b88dc614f12e1ee04a82b1ec5a8e29d9f359ddf8905a0afcbb0",
+      "sha512": "f473a1111eb508ef5d1096489479dba07db6b0d76ef2b900b3473933d57419429061d83e9c1e881ab61c4b0f17c64859ec74d670da6fc1d83d9b0fa73e1b7d8d",
+      "aportsRevision": "e41cbd2ae991adfe8df298ba8e8e777e90bd0e03",
+      "scope": "guest",
+      "origin": "ca-certificates",
+      "repository": "main",
+      "format": "archive",
+      "additional": []
+    },
+    {
+      "name": "gcc-runtime",
+      "origin": "gcc",
+      "version": "15.2.0",
+      "url": "https://gcc.gnu.org/pub/gcc/releases/gcc-15.2.0/gcc-15.2.0.tar.xz",
+      "file": "gcc-15.2.0.tar.xz",
+      "sha256": "438fd996826b0c82485a29da03a72d71d6e3541a83ec702df4271f6fe025d24e",
+      "sha512": "89047a2e07bd9da265b507b516ed3635adb17491c7f4f67cf090f0bd5b3fc7f2ee6e4cc4008beef7ca884b6b71dffe2bb652b21f01a702e17b468cca2d10b2de",
+      "aportsRevision": "423a8ad043d07f2c7546c8ec3e2b0384cda360ae",
+      "scope": "guest",
+      "repository": "main",
+      "format": "archive",
+      "additional": []
+    },
+    {
+      "name": "musl-crt",
+      "origin": "musl",
+      "version": "1.2.6",
+      "url": "https://musl.libc.org/releases/musl-1.2.6.tar.gz",
+      "file": "musl-1.2.6.tar.gz",
+      "sha256": "d585fd3b613c66151fc3249e8ed44f77020cb5e6c1e635a616d3f9f82460512a",
+      "sha512": "1adad96eddb3a2eb0cacb3e363b0046568925fcdd75cf8b0503f2139df1f693d64730779ca0ce8131b7624ab2d37f4247bb1d3393c523de6e30d2b1d7732555c",
+      "aportsRevision": "8f79d39391b46d6dbf1800fb68b8212a21d5ee2e",
+      "scope": "guest",
+      "repository": "main",
+      "format": "archive",
+      "additional": []
+    }
+  ],
+  "aports": [
+    {
+      "revision": "afc9f8046186db82c3c1b41cc1b4f1125e150f39",
+      "url": "https://codeload.github.com/alpinelinux/aports/tar.gz/afc9f8046186db82c3c1b41cc1b4f1125e150f39",
+      "file": "aports-afc9f8046186db82c3c1b41cc1b4f1125e150f39.tar.gz",
+      "sha256": "53c6d10ac40d3ede0aeae499fbce2cdbcc3618c9d9c6bd65673b1c9e9e7f02e1"
+    },
+    {
+      "revision": "f5640d3a10f664c9119720c60515265d3d6f6d01",
+      "url": "https://codeload.github.com/alpinelinux/aports/tar.gz/f5640d3a10f664c9119720c60515265d3d6f6d01",
+      "file": "aports-f5640d3a10f664c9119720c60515265d3d6f6d01.tar.gz",
+      "sha256": "ffd5ee6e7cfe6e6aaaf1e354d6f05ba1526e488b66dbbfcf1f8f0bc72bf648b0"
+    },
+    {
+      "revision": "3d497cbb3217749c4fb85f90f3b6f7908b0c1f95",
+      "url": "https://codeload.github.com/alpinelinux/aports/tar.gz/3d497cbb3217749c4fb85f90f3b6f7908b0c1f95",
+      "file": "aports-3d497cbb3217749c4fb85f90f3b6f7908b0c1f95.tar.gz",
+      "sha256": "48b3ab5d282415cf2af1a82b93f406ba1867fbf5fc1c5561eb045b4d04233438"
+    },
+    {
+      "revision": "4a4352d83ab03720965454a8c7b30b1b6a996c84",
+      "url": "https://codeload.github.com/alpinelinux/aports/tar.gz/4a4352d83ab03720965454a8c7b30b1b6a996c84",
+      "file": "aports-4a4352d83ab03720965454a8c7b30b1b6a996c84.tar.gz",
+      "sha256": "fdd36ae7686481cd05ac2da68d1b713e5ce18078a96d23fae6a73d08f5402fc4"
+    },
+    {
+      "revision": "f248b33b5943c7dc69bf691031d7612ab2e8ed93",
+      "url": "https://codeload.github.com/alpinelinux/aports/tar.gz/f248b33b5943c7dc69bf691031d7612ab2e8ed93",
+      "file": "aports-f248b33b5943c7dc69bf691031d7612ab2e8ed93.tar.gz",
+      "sha256": "2063394ef958ee579bf9293e34b325827c8a7a15912bc7286528ba5254c6ce17"
+    },
+    {
+      "revision": "84a227baf001b6e0208e3352b294e4d7a40e93de",
+      "url": "https://codeload.github.com/alpinelinux/aports/tar.gz/84a227baf001b6e0208e3352b294e4d7a40e93de",
+      "file": "aports-84a227baf001b6e0208e3352b294e4d7a40e93de.tar.gz",
+      "sha256": "f937540825fc9a5b7b1f30f7e7ba301de5711e6c0ff65bae8ce7531b16febbe0"
+    },
+    {
+      "revision": "e41cbd2ae991adfe8df298ba8e8e777e90bd0e03",
+      "url": "https://codeload.github.com/alpinelinux/aports/tar.gz/e41cbd2ae991adfe8df298ba8e8e777e90bd0e03",
+      "file": "aports-e41cbd2ae991adfe8df298ba8e8e777e90bd0e03.tar.gz",
+      "sha256": "623722c83ddcf5d2881a19a3acff903ee8b7f6d9d33c661b5e6afee99b631ee2"
+    },
+    {
+      "revision": "423a8ad043d07f2c7546c8ec3e2b0384cda360ae",
+      "url": "https://codeload.github.com/alpinelinux/aports/tar.gz/423a8ad043d07f2c7546c8ec3e2b0384cda360ae",
+      "file": "aports-423a8ad043d07f2c7546c8ec3e2b0384cda360ae.tar.gz",
+      "sha256": "e2f1c69afc7f9117488e7d8d2da2daf19ba251c1b9a71c29049b5297eb0eb10e"
+    },
+    {
+      "revision": "8f79d39391b46d6dbf1800fb68b8212a21d5ee2e",
+      "url": "https://codeload.github.com/alpinelinux/aports/tar.gz/8f79d39391b46d6dbf1800fb68b8212a21d5ee2e",
+      "file": "aports-8f79d39391b46d6dbf1800fb68b8212a21d5ee2e.tar.gz",
+      "sha256": "ea30c7a4e842d60d44f71796bbd5ab84a2f9cc5c47f4da1558043fca9a9b79d4"
+    }
+  ]
+}

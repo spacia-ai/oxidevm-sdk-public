@@ -1,0 +1,13 @@
+export { typescriptInterceptor } from "./typescript-interceptor.js";
+export { defineImage } from "./image.js";
+export {defineShippedSnapshot} from "./shipped-snapshot.js";
+export type {ShippedSnapshotLocation, ShippedSnapshotRef} from "./shipped-snapshot.js";
+export type * from "./snapshot-authoring.js";
+export { defaultImage } from "./default-image.js";
+export { createVM } from "./vm.js";
+export type { ImageLocation, ImageRef, ImageInfo, TrustedImageKey } from "./image.js";
+export type { RuntimeMode, ImagePreparation, CPUProfile, SHA256, ProcessId } from "./values.js";
+export { VMError } from "./runtime/errors.js";
+export type { VMErrorCode } from "./runtime/errors.js";
+export type * from "./contracts.js";
+export {requestWorkspaceHandoff} from "./workspace-handoff.js";

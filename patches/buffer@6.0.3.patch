@@ -1,0 +1,89 @@
+diff --git a/index.d.ts b/index.d.ts
+index 07096a2f725aaccf84776b5e8158ac95038484cf..a46f660ba79dfc72d03c6f782690bbff418fa37f 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -3,7 +3,7 @@ export class Buffer extends Uint8Array {
+     write(string: string, offset?: number, length?: number, encoding?: string): number;
+     toString(encoding?: string, start?: number, end?: number): string;
+     toJSON(): { type: 'Buffer', data: any[] };
+-    equals(otherBuffer: Buffer): boolean;
++    equals(otherBuffer: Buffer | Uint8Array): boolean;
+     compare(otherBuffer: Uint8Array, targetStart?: number, targetEnd?: number, sourceStart?: number, sourceEnd?: number): number;
+     copy(targetBuffer: Buffer, targetStart?: number, sourceStart?: number, sourceEnd?: number): number;
+     slice(start?: number, end?: number): Buffer;
+@@ -56,9 +56,9 @@ export class Buffer extends Uint8Array {
+     writeDoubleLE(value: number, offset: number, noAssert?: boolean): number;
+     writeDoubleBE(value: number, offset: number, noAssert?: boolean): number;
+     fill(value: any, offset?: number, end?: number): this;
+-    indexOf(value: string | number | Buffer, byteOffset?: number, encoding?: string): number;
+-    lastIndexOf(value: string | number | Buffer, byteOffset?: number, encoding?: string): number;
+-    includes(value: string | number | Buffer, byteOffset?: number, encoding?: string): boolean;
++    indexOf(value: string | number | Buffer | Uint8Array, byteOffset?: number, encoding?: string): number;
++    lastIndexOf(value: string | number | Buffer | Uint8Array, byteOffset?: number, encoding?: string): number;
++    includes(value: string | number | Buffer | Uint8Array, byteOffset?: number, encoding?: string): boolean;
+ 
+     /**
+      * Allocates a new buffer containing the given {str}.
+diff --git a/index.js b/index.js
+index 7a0e9c2a123bc9d26c20bb3de4a3c4e49b24ee40..970beb520b22a6b225c1f15915a99291aae68c3c 100644
+--- a/index.js
++++ b/index.js
+@@ -609,6 +609,7 @@ Buffer.prototype.toString = function toString () {
+ Buffer.prototype.toLocaleString = Buffer.prototype.toString
+ 
+ Buffer.prototype.equals = function equals (b) {
++  if (isInstance(b, Uint8Array)) b = Buffer.from(b.buffer, b.byteOffset, b.byteLength)
+   if (!Buffer.isBuffer(b)) throw new TypeError('Argument must be a Buffer')
+   if (this === b) return true
+   return Buffer.compare(this, b) === 0
+@@ -700,13 +701,16 @@ Buffer.prototype.compare = function compare (target, start, end, thisStart, this
+ // - encoding - an optional encoding, relevant is val is a string
+ // - dir - true for indexOf, false for lastIndexOf
+ function bidirectionalIndexOf (buffer, val, byteOffset, encoding, dir) {
+-  // Empty buffer means no match
+-  if (buffer.length === 0) return -1
++  // OxideVM: preserve Node 24 byte-view and empty-needle search semantics.
++  if (typeof val === 'string') val = Buffer.from(val, typeof byteOffset === 'string' ? byteOffset : encoding)
++  else if (isInstance(val, Uint8Array)) val = Buffer.from(val.buffer, val.byteOffset, val.byteLength)
++  if (!Buffer.isBuffer(val) && typeof val !== 'number') throw new TypeError('val must be string, number or Buffer')
++  const empty = Buffer.isBuffer(val) && val.length === 0
+ 
+   // Normalize byteOffset
+   if (typeof byteOffset === 'string') {
+     encoding = byteOffset
+-    byteOffset = 0
++    byteOffset = NaN
+   } else if (byteOffset > 0x7fffffff) {
+     byteOffset = 0x7fffffff
+   } else if (byteOffset < -0x80000000) {
+@@ -715,8 +719,11 @@ function bidirectionalIndexOf (buffer, val, byteOffset, encoding, dir) {
+   byteOffset = +byteOffset // Coerce to Number.
+   if (numberIsNaN(byteOffset)) {
+     // byteOffset: it it's undefined, null, NaN, "foo", etc, search whole buffer
+-    byteOffset = dir ? 0 : (buffer.length - 1)
++    byteOffset = dir ? 0 : (buffer.length - (empty ? 0 : 1))
+   }
++  byteOffset = Math.trunc(byteOffset)
++  if (empty) return Math.min(Math.max(byteOffset < 0 ? buffer.length + byteOffset : byteOffset, 0), buffer.length)
++  if (buffer.length === 0) return -1
+ 
+   // Normalize byteOffset: negative offsets start from the end of the buffer
+   if (byteOffset < 0) byteOffset = buffer.length + byteOffset
+@@ -728,17 +735,8 @@ function bidirectionalIndexOf (buffer, val, byteOffset, encoding, dir) {
+     else return -1
+   }
+ 
+-  // Normalize val
+-  if (typeof val === 'string') {
+-    val = Buffer.from(val, encoding)
+-  }
+-
+   // Finally, search either indexOf (if dir is true) or lastIndexOf
+   if (Buffer.isBuffer(val)) {
+-    // Special case: looking for empty string/buffer always fails
+-    if (val.length === 0) {
+-      return -1
+-    }
+     return arrayIndexOf(buffer, val, byteOffset, encoding, dir)
+   } else if (typeof val === 'number') {
+     val = val & 0xFF // Search for a byte value [0-255]

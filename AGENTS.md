@@ -10,9 +10,8 @@ OxideVM SDK and CLI. Keep it private until the owner explicitly authorizes
 public visibility. Repository visibility and npm publication are separate
 decisions. Neither follows automatically from a source export.
 
-The initial commit contains only repository instructions, a README, license
-notices, and ignore rules. Add the working source tree through a reviewed
-export. Do not create empty directories or placeholder files to imitate it.
+The export contains the SDK, CLI, and one nginx starter. Do not add extra
+examples, empty directories, task reports, or redundant generated artifacts.
 
 ## Development and export ownership
 
@@ -28,7 +27,8 @@ export. Do not create empty directories or placeholder files to imitate it.
 - Import reviewed external contributions into the authoritative source, run
   the applicable checks, and export the result with contributor credit.
 - Keep the initial public history clean. Append normal export commits after
-  it. Never push private history, branches, tags, or release assets here.
+  it. Never import source-repository history, operator branches or alpha assets.
+  Reviewed export branches, version tags and SDK/CLI release archives belong here.
 - Keep export rules, release credentials, and private source-to-export receipts
   in the private repository. Record the source revision, export-rule revision,
   public commit, engine identity, archive hashes, and verification there.
@@ -81,11 +81,11 @@ Keep the existing SDK module ownership and paths. The approved structure is:
       LICENSE
       NOTICE
   examples/
-    hello-files/
-    terminal/
-    next-workbench/
-    python-image/
-    shared/
+    starter/                        # The only starter and CLI template source
+      src/
+      dev/                          # Static local preview hosting
+      image/                        # Reproducible recipe; no guest binaries
+      public/fonts/                 # Exact licensed brand fonts and notices
   docs/
     usage.md
     api.md
@@ -99,8 +99,7 @@ Keep the existing SDK module ownership and paths. The approved structure is:
   scripts/                          # Reviewed build/check/generator closure
   tests/
     fixtures/
-    browser/                        # Selected public example scenarios
-    integration/                    # Public exports and packed consumers
+    release/                        # Starter browser acceptance
   types/
   config/                           # Selected build and license policies
   patches/
@@ -128,6 +127,12 @@ code or engine binaries. Keep the SDK and engine licenses distinct.
 
 Every tracked file must serve the public SDK, CLI, examples, documentation,
 tests, build, repository governance, or license requirements.
+
+`examples/starter` is the only example and the source of the CLI template.
+Builds stage it into `packages/cli/dist/starter.json`. Do not maintain another
+copy. The versioned repository policy admits only the three exact WOFF2 brand
+fonts with SHA-256 and their license texts. It still rejects engine and guest
+binaries. New versions reuse this same policy and the private export commands.
 
 Keep the following material in the private source repository:
 
@@ -175,8 +180,8 @@ operator-specific defaults without weakening validation.
   cancellation, bounds, durability, security, and accessibility.
 - Use pnpm for the workspace. Preserve the source repository's pinned
   toolchains and dependency versions when exporting them.
-- Keep Next.js examples marked experimental until their named acceptance
-  evidence exists. Do not imply runtime GA or universal compatibility.
+- Describe supported behavior accurately. Keep internal acceptance status in
+  private release records. Do not imply universal compatibility.
 - Change public image defaults, catalogs, examples, and their tests together.
   Full-system use requires a developer-supplied image under the approved
   distribution policy. Preserve the separate engine and guest-artifact gates.
@@ -205,6 +210,75 @@ on distinct prerelease versions. Do not change public registry configuration,
 publish packages, or change repository visibility without the owner's
 authorization.
 
-For this documentation-only bootstrap, check the exact tracked file set,
-license copies, symlink target, clean diff, fresh history, and private remote.
-Do not claim that SDK builds or tests ran before SDK source exists here.
+For each release, require a reviewed export and passing CI, compiler, lint,
+license, layout, secret, source/archive, browser, pinned-engine, System
+preservation, and image rebuild checks. Default starter and website images use
+Toybox with OpenSSL hashing, dash for scripts and mksh for interactive terminals.
+Use the pinned dash build with an independent signal table. Never link the
+upstream GPL signal generator or its output. Retain runtime notices, source
+hashes, build configuration and linker evidence. They contain no BusyBox, Bun or pnpm. The Playground uses
+Node.js and npm. Keep repository maintenance on pnpm and host-side bunx support.
+New default images need fresh source inventories, image pins and browser
+qualification. Preserve general copyleft and relinking checks for custom images.
+An image with nested LGPL components also needs verified source and relink
+materials. Reuse the image builder's distribution validator for every external
+distribution, including private customer previews. Incomplete local builds
+cannot qualify for distribution.
+
+Keep initial preparation private. Public candidate metadata may set packages
+public without publishing them. Public GitHub, npm, image, and runtime
+publication require the owner's final approval. The private alpha stream and
+its registry safeguards remain separate. Public publishing uses a protected
+GitHub-hosted job, provenance, and restricted credentials. No CI waiver applies.
+
+Record origin, revision, license, use, and shipped form before adding a
+component. Inspect delivered bytes, static libraries, compiler assets, copied
+code, generated code, fonts, and templates. Keep tool-only exceptions outside
+shipped artifacts. Unknown licenses block release. Record an allowed OR branch
+and retain every AND obligation. New licenses or distribution arrangements
+need a written review. Never widen policy only to pass a check.
+
+The SDK and engine dependencies follow the permissive policy. Separately
+distributed guest programs retain their own reviewed licenses and recipient
+rights. Generate notices, inventories, source mappings, and checksums from
+authoritative inputs. Policy copies retain their canonical revision and hash.
+Human owner and required legal reviews bind exact artifacts, policy, and test
+evidence. Changed inputs invalidate approval. An agent cannot be the legal
+reviewer. Keep published notices and corresponding sources permanently.
+
+Use the immutable export commit for archives. Publish sources and notices
+before dependent binaries. Verify hosted runtime/image URLs before npm.
+Publish SDK before CLI, verify both quickstarts, then promote tags and the
+GitHub release. Resume only when existing hashes match. Never overwrite
+published bytes or force-push an export. Preserve the relative CLAUDE.md link.
+
+Source and license downloads belong in GitHub Releases. Use an independent
+`image-<id>-v<version>` source release and a `sdk-materials-v<version>` license
+release. Upload complete source kits explicitly. Automatic GitHub source ZIPs
+are insufficient. Keep browser-loaded assets and their required compliance
+sidecars on R2. Keep corresponding sources inside the image bundle too.
+Publish and verify source URLs before dependent binaries. Require immutable
+releases, exact hashes, and the existing human approvals. Retain sources and
+notices permanently. Preparation does not publish or change repository visibility.
+
+The starter uses run.oxidevm.dev through the hosted iframe in development and
+production. Normal scaffolding installs no local engine files or image bundle.
+Self-hosting is an explicit commercial option. Keep engine and image references
+pinned. A missing hosted runtime fails explicitly without a local fallback.
+
+Every externally distributed image needs its own verified notices, sources,
+build inputs, and required relink materials. This includes application demos
+and retained images. Starter evidence does not cover another image. Inventory
+nested packages and fonts from delivered bytes. Preserve recipient rights and
+publish exact source/license bundles before dependent binaries. A development
+signature or status flag grants no release approval.
+
+A matching policy hash does not admit unknown licenses. External image checks
+must validate each concluded license, its selected `OR` branch, and every
+`AND` obligation. Exceptions and specific first-party grants apply only within
+their recorded scope. Retain notices embedded in README files and source
+headers. A missing standalone license file never permits invented attribution.
+Specific proprietary grants retain their exact canonical notice and explicit
+permission record. Keep proprietary engine and integration source confidential.
+Corresponding-source publication covers the components that require it and the
+sample code's own grant. Preserve original dual-license files in source kits.

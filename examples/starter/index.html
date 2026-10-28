@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0842c8"><title>OxideVM · Your starter app</title></head>
+<body>
+  <a class="skip-link" href="#demo">Skip to demo</a>
+  <header class="masthead">
+    <div class="container">
+      <nav aria-label="Primary">
+        <a class="brand" href="https://oxidevm.dev" target="_blank" rel="noreferrer" aria-label="OxideVM website">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>
+          <span>OxideVM</span><span class="architecture">64-bit</span>
+        </a>
+        <div class="nav-links"><a href="https://github.com/spacia-ai/oxidevm-sdk-public/blob/main/docs/usage.md" target="_blank" rel="noreferrer">Docs <span aria-hidden="true">↗</span></a><a href="https://github.com/spacia-ai/oxidevm-sdk-public" target="_blank" rel="noreferrer">Source <span aria-hidden="true">↗</span></a></div>
+      </nav>
+      <div class="title-row"><h1>Your starter app.</h1><span class="demo-label">INTERACTIVE DEMO</span></div>
+      <p class="intro">Change the code. Make this app your own.</p>
+    </div>
+  </header>
+  <main class="container" id="demo" tabindex="-1">
+    <section class="process-window" aria-label="Linux server demo">
+      <div class="process-bar"><div><strong>nginx</strong><span class="process-platform">Linux x86-64</span></div><div class="process-actions"><span id="state" role="status">Opening Linux…</span><button id="toggle" type="button">Cancel</button></div></div>
+      <div class="request-bar"><code>GET /index.html</code><output id="response" aria-label="Last server response">Waiting</output></div>
+      <div class="page-area">
+        <p id="progress" role="status">Preparing the browser runtime…</p>
+        <div id="failure" role="alert" hidden><h2>Linux could not start.</h2><p id="error-message"></p><p>Check the starter README, then try Start again.</p></div>
+        <iframe id="preview" title="Page served by the Linux nginx process" hidden></iframe>
+        <div class="page-actions"><button id="edit" class="text-button" type="button" disabled aria-controls="editor" aria-expanded="false">Edit this page</button></div>
+        <form id="editor" hidden><label for="html">/workspace/site/index.html</label><textarea id="html" spellcheck="false" autocapitalize="off"></textarea><div class="editor-actions"><button type="submit">Save &amp; reload</button><button id="close-editor" type="button" class="text-button">Close editor</button><span id="save-status" role="status"></span></div></form>
+      </div>
+      <div class="binary-bar"><code>/usr/sbin/nginx</code><span id="binary">Checking executable…</span></div>
+      <details class="terminal-panel" open><summary>Terminal <span>Linux shell</span></summary><div id="terminal" aria-label="Interactive Linux terminal"></div><div class="terminal-tools"><button id="interrupt" type="button" disabled>Send Ctrl+C</button><button id="focus-terminal" type="button" disabled>Focus terminal</button></div></details>
+    </section>
+    <footer><div><p class="start-here">Start here <span aria-hidden="true">→</span> edit <code>src/main.ts</code></p><p id="persistence">Checking browser storage…</p></div><button id="reset" class="text-button" type="button" disabled>Reset demo</button></footer>
+    <dialog id="reset-dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reset the demo page?</h2><p>This replaces your saved index.html. Other workspace files stay in place.</p><form method="dialog"><button value="cancel" autofocus>Keep my changes</button><button value="reset">Reset page</button></form></dialog>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body></html>

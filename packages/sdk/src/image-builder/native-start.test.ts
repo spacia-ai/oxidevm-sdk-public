@@ -1,0 +1,44 @@
+import {sign} from "node:crypto";
+import {mkdtemp,mkdir,readFile,rm,writeFile} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {expect,it} from "vitest";
+import {buildImage} from "./build.js";
+import {generateImageKey,loadSigningKey} from "./keys.js";
+import {hash} from "./files.js";
+import {inspectImageFiles} from "./bundle.js";
+import {imagePublicKeyBytes} from "../image.js";
+import {record} from "../runtime/decode.js";
+import {canonicalUserspaceRootfsBytes,decodeUserspaceRootfsManifest} from "../runtime/userspace-rootfs.js";
+import {decodeSnapshotManifest} from "../runtime/workers/snapshot-manifest.js";
+import {writeBackup} from "../runtime/workers/snapshot-archive/writer.js";
+import {publishShipped} from "../runtime/workers/snapshot-archive/shipped-publish.js";
+it("verifies native shipped starts and their original signed source closure in image bundles",async()=>{
+  const root=await mkdtemp(join(tmpdir(),"oxidevm-native-start-"));
+  try {
+    await mkdir(join(root,"root"));await writeFile(join(root,"root/app"),"fixture");
+    const author=await generateImageKey(join(root,"author.pem"));
+    const built=await buildImage({mode:"userspace",id:"custom",version:"1",source:{kind:"directory",path:"root"},smokeTest:{command:"/app",expectedExitCode:0}},{recipeDir:root,signingKeyFile:author.privateKeyPath});
+    const source=new Uint8Array(await readFile(built.manifestPath)),graph=new Uint8Array([1]),objects=new Map([[hash(source),source],[hash(graph),graph]]);
+    const original=record(JSON.parse(new TextDecoder().decode(source)) as unknown,"source manifest");
+    const saved=decodeSnapshotManifest({schema:4,mode:"userspace",id:"123e4567-e89b-42d3-a456-426614174000",createdAt:"2026-10-13T10:00:00.000Z",kind:"named",capturedAtUnixMs:Date.parse("2026-10-13T10:00:00.000Z"),parent:null,compatibility:{format:"OXUC",version:1,abiVersion:38,memoryBytes:256*1024**2},graph:{bytes:1,chunks:[{index:0,bytes:1,sha256:hash(graph)}]},payloads:{bytes:0,chunks:[]},rootfs:{origin:"managed",image:{id:"custom",version:"1"},rootTreeSha256:original["rootTreeSha256"],manifest:{sha256:hash(source),bytes:source.length}}});
+    const backup:Uint8Array<ArrayBuffer>[]=[];
+    await writeBackup(saved,ref=>{const bytes=objects.get(ref.sha256);if(bytes===undefined) throw new Error("missing source object");return Promise.resolve(bytes);},bytes=>{backup.push(bytes);return Promise.resolve();});
+    const key=await loadSigningKey(author.privateKeyPath),now=Date.parse("2026-10-13T12:00:00.000Z");
+    const published=await publishShipped(new ReadableStream({start(controller){for(const bytes of backup)controller.enqueue(bytes);controller.close();}}),{name:"ready",label:"Ready",image:{mode:"userspace",id:"custom",version:"1",identity:String(original["rootTreeSha256"])},signer:{keyId:author.trust.keyId,publicKey:imagePublicKeyBytes(author.trust),sign:bytes=>Promise.resolve(sign(null,bytes,key.key).toString("base64url"))},nowUnixMs:now,maxDownloadBytes:1024**2});
+    const folder=join(built.bundleDir,"snapshots","ready");await mkdir(join(folder,"chunks"),{recursive:true});await writeFile(join(folder,"manifest.json"),published.manifest);
+    for(const chunk of published.chunks) await writeFile(join(folder,chunk.name),chunk.bytes);
+    const input={...original,snapshots:[{name:"ready",manifest:{url:"./snapshots/ready/manifest.json",sha256:hash(published.manifest),bytes:published.manifest.length},bytes:published.manifest.length+published.chunkBytes}]};
+    const lock=record(JSON.parse(await readFile(built.lockPath,"utf8")) as unknown,"lock");
+    const manifestURL=new URL(String(lock["manifestUrl"]),"https://image.invalid");
+    const decoded=decodeUserspaceRootfsManifest(input,manifestURL);
+    const updated=new TextEncoder().encode(JSON.stringify({...input,provenance:{...record(original["provenance"],"provenance"),signature:sign(null,canonicalUserspaceRootfsBytes(decoded),key.key).toString("base64url")}}));
+    await writeFile(built.manifestPath,updated);await writeFile(built.lockPath,JSON.stringify({...lock,manifestSHA256:hash(updated)}));
+    const inspected=await inspectImageFiles(built.bundleDir,{trust:author.trust});
+    expect(inspected.files.map(file=>file.relative)).toContain(`snapshots/ready/chunks/${hash(source)}.gz`);
+    expect(inspected.read.manifest.snapshots?.[0]?.name).toBe("ready");
+    const first=published.chunks[0];if(first===undefined) throw new Error("missing native chunk");
+    await writeFile(join(folder,first.name),new Uint8Array([0]));
+    await expect(inspectImageFiles(built.bundleDir,{trust:author.trust})).rejects.toThrow(/compressed artifact/u);
+  } finally {await rm(root,{recursive:true,force:true});}
+});

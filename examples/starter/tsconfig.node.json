@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "lib": ["ES2024"], "types": ["node"] },
+  "include": ["vite.config.ts", "dev/**/*.ts", "oxidevm.config.ts", "image/*.ts"]
+}

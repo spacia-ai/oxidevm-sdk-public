@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2024",
+      "WebWorker"
+    ],
+    "types": [
+      "worker"
+    ],
+    "typeRoots": [
+      "../../types"
+    ]
+  },
+  "include": [
+    "asset-source/preview/src/service-worker.ts",
+    "asset-source/preview/src/worker/**/*.ts"
+  ],
+  "exclude": [
+    "**/*.test.ts"
+  ]
+}

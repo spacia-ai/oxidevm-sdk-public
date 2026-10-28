@@ -1,0 +1,852 @@
+{
+  "schemaVersion": 1,
+  "container": "sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72",
+  "node": {
+    "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+    "runtime": "v24.18.1",
+    "rows": [
+      {
+        "label": "query",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "undefined",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "zero",
+        "before": 18,
+        "returned": 18,
+        "after": 0
+      },
+      {
+        "label": "one",
+        "before": 18,
+        "returned": 18,
+        "after": 1
+      },
+      {
+        "label": "777",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "1000",
+        "before": 18,
+        "returned": 18,
+        "after": 0
+      },
+      {
+        "label": "7777",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "negative",
+        "before": 18,
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"mask\" is out of range. It must be >= 0 && <= 4294967295. Received -1"
+        },
+        "after": 18
+      },
+      {
+        "label": "signed-max",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "signed-high",
+        "before": 18,
+        "returned": 18,
+        "after": 0
+      },
+      {
+        "label": "uint-max",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "uint-overflow",
+        "before": 18,
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"mask\" is out of range. It must be >= 0 && <= 4294967295. Received 4294967296"
+        },
+        "after": 18
+      },
+      {
+        "label": "nan",
+        "before": 18,
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"mask\" is out of range. It must be an integer. Received NaN"
+        },
+        "after": 18
+      },
+      {
+        "label": "infinity",
+        "before": 18,
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"mask\" is out of range. It must be an integer. Received Infinity"
+        },
+        "after": 18
+      },
+      {
+        "label": "fraction",
+        "before": 18,
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"mask\" is out of range. It must be an integer. Received 1.5"
+        },
+        "after": 18
+      },
+      {
+        "label": "octal",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "octal-prefix",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '0o022'"
+        },
+        "after": 18
+      },
+      {
+        "label": "octal-max",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "octal-invalid",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '778'"
+        },
+        "after": 18
+      },
+      {
+        "label": "suffix",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '12junk'"
+        },
+        "after": 18
+      },
+      {
+        "label": "empty",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received ''"
+        },
+        "after": 18
+      },
+      {
+        "label": "space",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received ' 022'"
+        },
+        "after": 18
+      },
+      {
+        "label": "plus",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '+22'"
+        },
+        "after": 18
+      },
+      {
+        "label": "minus",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '-22'"
+        },
+        "after": 18
+      },
+      {
+        "label": "hex",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '0x22'"
+        },
+        "after": 18
+      },
+      {
+        "label": "octal-leading-zero",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "octal-uint-max",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "octal-overflow",
+        "before": 18,
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"mask\" is out of range. It must be >= 0 && <= 4294967295. Received 4294967296"
+        },
+        "after": 18
+      },
+      {
+        "label": "trailing-space",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '22 '"
+        },
+        "after": 18
+      },
+      {
+        "label": "tab",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '\\t022'"
+        },
+        "after": 18
+      },
+      {
+        "label": "newline-plus",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '\\n+22'"
+        },
+        "after": 18
+      },
+      {
+        "label": "negative-zero",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '-0'"
+        },
+        "after": 18
+      },
+      {
+        "label": "negative-zeros",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '-000'"
+        },
+        "after": 18
+      },
+      {
+        "label": "embedded-space",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '+\\t22'"
+        },
+        "after": 18
+      },
+      {
+        "label": "unicode-space",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received ' 22'"
+        },
+        "after": 18
+      },
+      {
+        "label": "invalid-leading-zero",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '0008'"
+        },
+        "after": 18
+      },
+      {
+        "label": "binary",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '0b10'"
+        },
+        "after": 18
+      },
+      {
+        "label": "final-newline",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '22\\n'"
+        },
+        "after": 18
+      },
+      {
+        "label": "final-crlf",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '22\\r\\n'"
+        },
+        "after": 18
+      },
+      {
+        "label": "null",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received undefined"
+        },
+        "after": 18
+      },
+      {
+        "label": "boolean",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received type boolean (true)"
+        },
+        "after": 18
+      },
+      {
+        "label": "object",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received an instance of Object"
+        },
+        "after": 18
+      },
+      {
+        "label": "array",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received an instance of Array"
+        },
+        "after": 18
+      },
+      {
+        "label": "bigint",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received type bigint (0n)"
+        },
+        "after": 18
+      },
+      {
+        "label": "symbol",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received type symbol (Symbol(mask))"
+        },
+        "after": 18
+      }
+    ],
+    "modes": {
+      "file": 416,
+      "directory": 488
+    },
+    "child": 23,
+    "worker": [
+      {
+        "label": "query",
+        "before": 23,
+        "returned": 23,
+        "after": 23
+      },
+      {
+        "label": "undefined",
+        "before": 23,
+        "returned": 23,
+        "after": 23
+      },
+      {
+        "label": "set",
+        "before": 23,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_WORKER_UNSUPPORTED_OPERATION",
+          "message": "Setting process.umask() is not supported in workers"
+        },
+        "after": 23
+      },
+      {
+        "label": "invalid",
+        "before": 23,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_WORKER_UNSUPPORTED_OPERATION",
+          "message": "Setting process.umask() is not supported in workers"
+        },
+        "after": 23
+      }
+    ],
+    "afterWorker": 23
+  },
+  "bun": {
+    "binarySHA256": "500e6edbf321ddf490adcc55a6a01639993a07924616ab67492e1256c15557e2",
+    "runtime": "v24.3.0",
+    "rows": [
+      {
+        "label": "query",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "undefined",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "zero",
+        "before": 18,
+        "returned": 18,
+        "after": 0
+      },
+      {
+        "label": "one",
+        "before": 18,
+        "returned": 18,
+        "after": 1
+      },
+      {
+        "label": "777",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "1000",
+        "before": 18,
+        "returned": 18,
+        "after": 0
+      },
+      {
+        "label": "7777",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "negative",
+        "before": 18,
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"mask\" is out of range. It must be >= 0 and <= 4294967295. Received -1"
+        },
+        "after": 18
+      },
+      {
+        "label": "signed-max",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "signed-high",
+        "before": 18,
+        "returned": 18,
+        "after": 0
+      },
+      {
+        "label": "uint-max",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "uint-overflow",
+        "before": 18,
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"mask\" is out of range. It must be >= 0 and <= 4294967295. Received 4294967296"
+        },
+        "after": 18
+      },
+      {
+        "label": "nan",
+        "before": 18,
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"mask\" is out of range. It must be an integer. Received NaN"
+        },
+        "after": 18
+      },
+      {
+        "label": "infinity",
+        "before": 18,
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"mask\" is out of range. It must be an integer. Received Infinity"
+        },
+        "after": 18
+      },
+      {
+        "label": "fraction",
+        "before": 18,
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"mask\" is out of range. It must be an integer. Received 1.5"
+        },
+        "after": 18
+      },
+      {
+        "label": "octal",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "octal-prefix",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '0o022'"
+        },
+        "after": 18
+      },
+      {
+        "label": "octal-max",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "octal-invalid",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '778'"
+        },
+        "after": 18
+      },
+      {
+        "label": "suffix",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '12junk'"
+        },
+        "after": 18
+      },
+      {
+        "label": "empty",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received ''"
+        },
+        "after": 18
+      },
+      {
+        "label": "space",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "plus",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "minus",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '-22'"
+        },
+        "after": 18
+      },
+      {
+        "label": "hex",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '0x22'"
+        },
+        "after": 18
+      },
+      {
+        "label": "octal-leading-zero",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "octal-uint-max",
+        "before": 18,
+        "returned": 18,
+        "after": 511
+      },
+      {
+        "label": "octal-overflow",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '40000000000'"
+        },
+        "after": 18
+      },
+      {
+        "label": "trailing-space",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "tab",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "newline-plus",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "negative-zero",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '-0'"
+        },
+        "after": 18
+      },
+      {
+        "label": "negative-zeros",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '-000'"
+        },
+        "after": 18
+      },
+      {
+        "label": "embedded-space",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '+\t22'"
+        },
+        "after": 18
+      },
+      {
+        "label": "unicode-space",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received ' 22'"
+        },
+        "after": 18
+      },
+      {
+        "label": "invalid-leading-zero",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '0008'"
+        },
+        "after": 18
+      },
+      {
+        "label": "binary",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_VALUE",
+          "message": "The argument 'mask' must be a 32-bit unsigned integer or an octal string. Received '0b10'"
+        },
+        "after": 18
+      },
+      {
+        "label": "final-newline",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "final-crlf",
+        "before": 18,
+        "returned": 18,
+        "after": 18
+      },
+      {
+        "label": "null",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received null"
+        },
+        "after": 18
+      },
+      {
+        "label": "boolean",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received type boolean (true)"
+        },
+        "after": 18
+      },
+      {
+        "label": "object",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received an instance of Object"
+        },
+        "after": 18
+      },
+      {
+        "label": "array",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received an instance of Array"
+        },
+        "after": 18
+      },
+      {
+        "label": "bigint",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received type bigint (0n)"
+        },
+        "after": 18
+      },
+      {
+        "label": "symbol",
+        "before": 18,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received type symbol (Symbol(mask))"
+        },
+        "after": 18
+      }
+    ],
+    "modes": {
+      "file": 416,
+      "directory": 488
+    },
+    "child": 23,
+    "worker": [
+      {
+        "label": "query",
+        "before": 23,
+        "returned": 23,
+        "after": 23
+      },
+      {
+        "label": "undefined",
+        "before": 23,
+        "returned": 23,
+        "after": 23
+      },
+      {
+        "label": "set",
+        "before": 23,
+        "returned": 23,
+        "after": 7
+      },
+      {
+        "label": "invalid",
+        "before": 7,
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"mask\" argument must be of type number. Received null"
+        },
+        "after": 7
+      }
+    ],
+    "afterWorker": 7
+  }
+}

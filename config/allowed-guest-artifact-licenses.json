@@ -1,0 +1,544 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Licenses approved for components of publicly distributed guest images, the duties each one creates, and the review record (ADR 0020). Approval here never permits a component in the engine, the SDK, the platform SBOM, or Git history.",
+  "review": {
+    "document": "docs/governance/guest-license-review.md",
+    "preparedBy": "Claude Opus 5.5 (AI agent, Claude Code)",
+    "preparedOn": "2026-10-09",
+    "ownerSignOff": { "status": "pending", "name": null, "date": null },
+    "legalReview": {
+      "status": "pending",
+      "reviewer": null,
+      "date": null,
+      "requiredBefore": "the first public guest image (ADR 0020)"
+    }
+  },
+  "obligations": {
+    "license-text": "Ship the full license text in the image's licenses/ folder.",
+    "notices": "Keep every copyright, license and warranty notice, collected in licenses/NOTICES.txt.",
+    "corresponding-source": "Publish the complete corresponding source next to the image in sources/: every module, interface definition, build script, build configuration and patch.",
+    "source-retention": "Keep the published source available for as long as the image is offered; ADR 0020 keeps it permanently.",
+    "modification-notices": "Mark every file Spacia modifies with a prominent notice of the change.",
+    "no-further-restrictions": "Impose no further restriction or charge on the rights the license grants; the terms of service carry the ADR 0020 carve-out.",
+    "relinkable-work": "A work that statically links the library permits modification and reverse engineering for debugging such modifications, and is published in a form users can relink.",
+    "no-endorsement": "Never use the authors' or contributors' names to endorse or promote.",
+    "mark-altered-versions": "Mark altered versions plainly as altered.",
+    "advertising-acknowledgment": "Advertising materials that mention the software's features carry the acknowledgment the license prescribes."
+  },
+  "licenses": [
+    {
+      "id": "SunPro",
+      "class": "permissive",
+      "obligations": ["license-text", "notices"],
+      "basis": "Sun fdlibm notice permits use, copying, modification and distribution when the notice is preserved. The delivered Node V8 math functions and exact source header provide the guest evidence. Prepared review: docs/governance/guest-license-review-2026-10-27.md; human legal and owner approval remain pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/SunPro.txt",
+        "sha256": "f5ab1c2763182c84a0b991a82d57b4176df0d109ca5d485d8446585696b26894"
+      }
+    },
+    {
+      "id": "LGPL-2.0-only",
+      "class": "weak-copyleft",
+      "obligations": [
+        "license-text",
+        "notices",
+        "corresponding-source",
+        "source-retention",
+        "modification-notices",
+        "no-further-restrictions",
+        "relinkable-work"
+      ],
+      "basis": "GNU Library General Public License version 2 sections 1, 2, 4 and 6(a). WebKit Source/WTF/wtf/text/Base64.cpp names version 2 without an upgrade clause. Preserve the complete library and application source/relink route. Prepared review: docs/governance/guest-license-review-2026-10-27.md; human legal and owner approval remain pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/LGPL-2.0-only.txt",
+        "sha256": "86dc99d7e5060915ab1dfc1378b7dd351c62088bfa74067e8aa1868c6fdba7d8"
+      }
+    },
+    {
+      "id": "0BSD",
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices"
+      ],
+      "basis": "BSD Zero Clause permission; retain attribution as distribution policy. Prepared technical review: docs/governance/guest-license-review-2026-10-27.md; human release review remains pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/0BSD.txt",
+        "sha256": "e3f18c71e10d673590eb9856c1d79dd3b4b0d65404efb5e8584dbede7edd608b"
+      }
+    },
+    {
+      "id": "BSL-1.0",
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices"
+      ],
+      "basis": "Boost Software License 1.0 notice conditions, with its object-code exception; this is not BUSL-1.1. Prepared technical review: docs/governance/guest-license-review-2026-10-27.md; human release review remains pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/BSL-1.0.txt",
+        "sha256": "84c6ef3ea9e3254a54d0acf5d3e0c61ae011b8fef7dd6940591cf060e6380a8f"
+      }
+    },
+    {
+      "id": "BlueOak-1.0.0",
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices"
+      ],
+      "basis": "Blue Oak Model License 1.0.0 Notices condition; provide full text. Prepared technical review: docs/governance/guest-license-review-2026-10-27.md; human release review remains pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/BlueOak-1.0.0.txt",
+        "sha256": "8a1af140fdfbf5afd3df27f7e662f989c5b963a300020dfafce42033cae9e004"
+      }
+    },
+    {
+      "id": "CC-BY-3.0",
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices",
+        "mark-altered-versions",
+        "no-further-restrictions",
+        "no-endorsement"
+      ],
+      "basis": "CC-BY 3.0 sections 4(a)-(c): attribution, license link, adaptation identification and recipient rights. Prepared technical review: docs/governance/guest-license-review-2026-10-27.md; human release review remains pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/CC-BY-3.0.txt",
+        "sha256": "e6bc9e9c474700b708f568bac9e5a8a9bcb2b1dad53442f5ba449fcb848b8e76"
+      }
+    },
+    {
+      "id": "Unicode-DFS-2016",
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices",
+        "no-endorsement"
+      ],
+      "basis": "Unicode 2016 data/software license notice and name-use conditions. Prepared technical review: docs/governance/guest-license-review-2026-10-27.md; human release review remains pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/Unicode-DFS-2016.txt",
+        "sha256": "1a33fc12a3abb0b3eb14db70e36ef1d0af51c93b1cc1f80f022c3bd406e9b874"
+      }
+    },
+    {
+      "id": "Unlicense",
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices"
+      ],
+      "basis": "Actual upstream dedication and fallback permission, retained for provenance. Prepared technical review: docs/governance/guest-license-review-2026-10-27.md; human release review remains pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/Unlicense.txt",
+        "sha256": "0bdebfeda07d45dada625ae1317c6f833186e798b171d0db640bcf32e92a8240"
+      }
+    },
+    {
+      "id": "WTFPL",
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices"
+      ],
+      "basis": "Actual WTFPL v2 text; no additional patent permission inferred. Prepared technical review: docs/governance/guest-license-review-2026-10-27.md; human release review remains pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/WTFPL.txt",
+        "sha256": "13d8825a59e5e546d41e8711405d0f335a9934362a47c04a3b4280fa7932dc4a"
+      }
+    },
+    {
+      "id": "PSF-2.0",
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices",
+        "mark-altered-versions"
+      ],
+      "basis": "Python Software Foundation license conditions; retain all actual historical and third-party notices. Prepared technical review: docs/governance/guest-license-review-2026-10-27.md; human release review remains pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/PSF-2.0.txt",
+        "sha256": "ab745c5061d1dea43a3885e5b4b6befc7e983954954775c5736debeefcdfd89b"
+      }
+    },
+    {
+      "id": "X11",
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices",
+        "no-endorsement"
+      ],
+      "basis": "X11 permission and restrictions on use of the authors names. Prepared technical review: docs/governance/guest-license-review-2026-10-27.md; human release review remains pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/X11.txt",
+        "sha256": "e1963c9958b93bc2578b34f8ae22cfe205e8c0e7d5be7235cfdbdefbf92a5423"
+      }
+    },
+    {
+      "id": "bzip2-1.0.6",
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices",
+        "mark-altered-versions"
+      ],
+      "basis": "bzip2 license clauses 1-4 and disclaimer; exact 1.0.8 source text controls. Prepared technical review: docs/governance/guest-license-review-2026-10-27.md; human release review remains pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/bzip2-1.0.6.txt",
+        "sha256": "0a56dbabe7d2ff65dea26e8b795fe42c6204a192b974d8e9304fe356ccda9fd1"
+      }
+    },
+    {
+      "id": "NCSA",
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices",
+        "no-endorsement"
+      ],
+      "basis": "University of Illinois NCSA license conditions. Prepared technical review: docs/governance/guest-license-review-2026-10-27.md; human release review remains pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/NCSA.txt",
+        "sha256": "b31bbfd06e221b39e1a877fb3f91b32fe9e88c87c1b46d11cd2bd5c822ec71e3"
+      }
+    },
+    {
+      "id": "LicenseRef-OxideVM-Guest-Integration-1.0",
+      "class": "first-party-proprietary",
+      "packages": [
+        "oxidevm-node-api-host"
+      ],
+      "obligations": [
+        "license-text",
+        "notices"
+      ],
+      "basis": "Specific proposed first-party binary grant. Engine commercial model preserved. Official owner-approved release incorporation and first-party provenance review required. Does not admit third-party proprietary software.",
+      "text": {
+        "url": "https://github.com/spacia-ai/oxidevm-sdk-public/releases/download/image-oxidevm-playground-v0.0.1/SPDXRef-Package-oxidevm-node-api-host.LICENSE.txt",
+        "sha256": "b1a847ddaeef3327432bc5f6ca0a6dce7ddc644c76568291a981952edf046cd3"
+      }
+    },
+    {
+      "id": "GPL-2.0-only",
+      "class": "strong-copyleft",
+      "obligations": ["license-text", "notices", "corresponding-source", "source-retention", "modification-notices", "no-further-restrictions"],
+      "basis": "GPL-2.0 §1, §2(a), §3(a) with its equivalent-access paragraph, §6",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/GPL-2.0-only.txt", "sha256": "aaf135472f81c5b4a0dca9367e5bb5e9750032b5bebe5442b36e4c0a47430df3" }
+    },
+    {
+      "id": "GPL-2.0-or-later",
+      "class": "strong-copyleft",
+      "obligations": ["license-text", "notices", "corresponding-source", "source-retention", "modification-notices", "no-further-restrictions"],
+      "basis": "GPL-2.0 §1, §2(a), §3(a) with its equivalent-access paragraph, §6",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/GPL-2.0-or-later.txt", "sha256": "aaf135472f81c5b4a0dca9367e5bb5e9750032b5bebe5442b36e4c0a47430df3" }
+    },
+    {
+      "id": "GPL-3.0-only",
+      "class": "strong-copyleft",
+      "obligations": ["license-text", "notices", "corresponding-source", "source-retention", "modification-notices", "no-further-restrictions"],
+      "basis": "GPL-3.0 §4, §5(a), §6(d), §10; Installation Information (§6) applies only to User Products, which a downloadable image is not",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/GPL-3.0-only.txt", "sha256": "fb981668c18a279e285fc4d83fba1e836cc84dd4daa73c9697d3cfd2d8aca6e0" }
+    },
+    {
+      "id": "GPL-3.0-or-later",
+      "class": "strong-copyleft",
+      "obligations": ["license-text", "notices", "corresponding-source", "source-retention", "modification-notices", "no-further-restrictions"],
+      "basis": "GPL-3.0 §4, §5(a), §6(d), §10; Installation Information (§6) applies only to User Products, which a downloadable image is not",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/GPL-3.0-or-later.txt", "sha256": "fb981668c18a279e285fc4d83fba1e836cc84dd4daa73c9697d3cfd2d8aca6e0" }
+    },
+    {
+      "id": "LGPL-2.0-or-later",
+      "class": "weak-copyleft",
+      "obligations": ["license-text", "notices", "corresponding-source", "source-retention", "modification-notices", "no-further-restrictions", "relinkable-work"],
+      "basis": "LGPL-2.0 §4, §6",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/LGPL-2.0-or-later.txt", "sha256": "86dc99d7e5060915ab1dfc1378b7dd351c62088bfa74067e8aa1868c6fdba7d8" }
+    },
+    {
+      "id": "LGPL-2.1-only",
+      "class": "weak-copyleft",
+      "obligations": ["license-text", "notices", "corresponding-source", "source-retention", "modification-notices", "no-further-restrictions", "relinkable-work"],
+      "basis": "LGPL-2.1 §1, §4 with its equivalent-access paragraph, §6",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/LGPL-2.1-only.txt", "sha256": "5749785c8bdefafcb5d798270ed0a967036fe2ca63dcedade1627565dfef81d2" }
+    },
+    {
+      "id": "LGPL-2.1-or-later",
+      "class": "weak-copyleft",
+      "obligations": ["license-text", "notices", "corresponding-source", "source-retention", "modification-notices", "no-further-restrictions", "relinkable-work"],
+      "basis": "LGPL-2.1 §1, §4 with its equivalent-access paragraph, §6",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/LGPL-2.1-or-later.txt", "sha256": "5749785c8bdefafcb5d798270ed0a967036fe2ca63dcedade1627565dfef81d2" }
+    },
+    {
+      "id": "LGPL-3.0-only",
+      "class": "weak-copyleft",
+      "obligations": ["license-text", "notices", "corresponding-source", "source-retention", "modification-notices", "no-further-restrictions", "relinkable-work"],
+      "basis": "LGPL-3.0 §4 with GPL-3.0 §4-§6 for the library itself",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/LGPL-3.0-or-later.txt", "sha256": "996af0513df21f7496288951c41428a03c174e9e4a9d63665c57d670f845ccb1" }
+    },
+    {
+      "id": "LGPL-3.0-or-later",
+      "class": "weak-copyleft",
+      "obligations": ["license-text", "notices", "corresponding-source", "source-retention", "modification-notices", "no-further-restrictions", "relinkable-work"],
+      "basis": "LGPL-3.0 §4 with GPL-3.0 §4-§6 for the library itself",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/LGPL-3.0-or-later.txt", "sha256": "996af0513df21f7496288951c41428a03c174e9e4a9d63665c57d670f845ccb1" }
+    },
+    {
+      "id": "MPL-2.0",
+      "class": "weak-copyleft",
+      "obligations": ["license-text", "notices", "corresponding-source", "source-retention", "no-further-restrictions"],
+      "basis": "MPL-2.0 §3.2(a), §3.2(b), §3.4; the source duty covers the MPL-licensed files",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/MPL-2.0.txt", "sha256": "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172" }
+    },
+    {
+      "id": "Apache-2.0",
+      "class": "permissive",
+      "obligations": ["license-text", "notices", "modification-notices"],
+      "basis": "Apache-2.0 §4(a)-(d), including NOTICE file contents",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/Apache-2.0.txt", "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff" }
+    },
+    {
+      "id": "MIT",
+      "class": "permissive",
+      "obligations": ["license-text", "notices"],
+      "basis": "MIT permission notice",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/MIT.txt", "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5" }
+    },
+    {
+      "id": "ISC",
+      "class": "permissive",
+      "obligations": ["license-text", "notices"],
+      "basis": "ISC permission notice",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/ISC.txt", "sha256": "521c6f0ed8e64736684f89843d16a4df6b4b7449acbcfc6ca6630a3037ca8c53" }
+    },
+    {
+      "id": "BSD-2-Clause",
+      "class": "permissive",
+      "obligations": ["license-text", "notices"],
+      "basis": "BSD-2-Clause conditions 1-2",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/BSD-2-Clause.txt", "sha256": "f32fb3b417a194167cfad068223fc975ba96c5960513a10f66a3c28720aec1df" }
+    },
+    {
+      "id": "BSD-3-Clause",
+      "class": "permissive",
+      "obligations": ["license-text", "notices", "no-endorsement"],
+      "basis": "BSD-3-Clause conditions 1-3",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/BSD-3-Clause.txt", "sha256": "5a93d5831e1297ab10fe643e1a631e83be392896da14ee2951285a79012df69d" }
+    },
+    {
+      "id": "Zlib",
+      "class": "permissive",
+      "obligations": ["license-text", "notices", "mark-altered-versions"],
+      "basis": "Zlib conditions 1-3",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/Zlib.txt", "sha256": "bfb1112d49db5b1daecdfef24bd7e2f3ea0bafb33aa67aa0ab51e2bf8407c03d" }
+    },
+    {
+      "id": "curl",
+      "class": "permissive",
+      "obligations": ["license-text", "notices"],
+      "basis": "curl permission notice",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/curl.txt", "sha256": "272d1239bdcef73bb98bac206168ca1040bd4a31296755fadfb7515bcea18df3" }
+    },
+    {
+      "id": "Artistic-2.0",
+      "class": "permissive",
+      "obligations": ["license-text", "notices", "mark-altered-versions"],
+      "basis": "Artistic-2.0 §2 (verbatim copies keep notices) and the modified-version sections",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/Artistic-2.0.txt", "sha256": "bae466ac8d7100c304fe76632ccc627203a3897d3f7166f3cce00fb9df8c2074" }
+    },
+    {
+      "id": "Info-ZIP",
+      "class": "permissive",
+      "obligations": ["license-text", "notices", "mark-altered-versions", "no-endorsement"],
+      "basis": "Info-ZIP license conditions",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/Info-ZIP.txt", "sha256": "fa0c6949eee13c4099a6d0f78f9f1d76c7320e71adfc066d1632837320703a08" }
+    },
+    {
+      "id": "Unicode-3.0",
+      "class": "permissive",
+      "obligations": ["license-text", "notices"],
+      "basis": "Unicode License v3 notice condition; ICU's LICENSE also carries its third-party data notices",
+      "text": { "url": "https://raw.githubusercontent.com/unicode-org/icu/release-78.1/LICENSE", "sha256": "e55522d81edc687a341a4411e0776e54ca654e90147f354a90458aaced4116af" }
+    },
+    {
+      "id": "ICU",
+      "class": "permissive",
+      "obligations": ["license-text", "notices"],
+      "basis": "ICU license notice condition",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/ICU.txt", "sha256": "c7922dccc709c9e19ab6ba970fe00af174229484b05160fb07a3913f4d04cf50" }
+    },
+    {
+      "id": "IJG",
+      "class": "permissive",
+      "obligations": ["license-text", "notices"],
+      "basis": "IJG license: documentation of executable-only distributions acknowledges the Independent JPEG Group",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/IJG.txt", "sha256": "7658542977bfdced9e1059a6c934ce4281de76d103b831007b825917dc62511a" }
+    },
+    {
+      "id": "libpng-2.0",
+      "class": "permissive",
+      "obligations": ["license-text", "notices", "mark-altered-versions"],
+      "basis": "PNG Reference Library License v2 conditions",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/libpng-2.0.txt", "sha256": "f207d0f7375b977f76ce2437962c1c12a646f15cda3df48d5472ac95eb68e8ff" }
+    },
+    {
+      "id": "OpenSSL",
+      "class": "permissive",
+      "obligations": ["license-text", "notices", "no-endorsement", "advertising-acknowledgment"],
+      "basis": "OpenSSL and SSLeay license conditions; applies only if the BoringSSL revision Bun pins predates its Apache-2.0 relicensing",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/OpenSSL.txt", "sha256": "57bf9f4cefe46ae1ef5b3ae83505f01ec8b2ac94a473e2c9e3fb1f80de1e23b8" }
+    },
+    {
+      "id": "CC0-1.0",
+      "class": "permissive",
+      "obligations": [],
+      "basis": "CC0 1.0 dedication",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/CC0-1.0.txt", "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499" }
+    },
+    {
+      "id": "blessing",
+      "class": "permissive",
+      "obligations": [],
+      "basis": "SQLite public-domain dedication with a blessing",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/blessing.txt", "sha256": "592db1199aab67aafe4515db9808b420db122083807c5329b2f061951e79acbe" }
+    },
+    {
+      "id": "MirOS",
+      "class": "permissive",
+      "packages": [
+        "mksh"
+      ],
+      "obligations": [
+        "license-text",
+        "notices"
+      ],
+      "basis": "MirOS permission permits commercial use, modification and redistribution with terms, disclaimer and all copyright notices retained. Exact mksh R59c source and Alpine 59c-r4 package reviewed for default userspace shells. Preserve its Unicode-DFS-2016 AND term and embedded original notices. See docs/governance/default-image-licenses-2026-10-28.md. Human legal and owner review remain pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/MirOS.txt",
+        "sha256": "79da9e5c37adc25a27cfa41f1f64cc93cf2d6be8e52cba3fbaf02b9e8fafd3d9"
+      }
+    },
+    {
+      "id": "SSH-short",
+      "packages": [
+        "dropbear"
+      ],
+      "class": "permissive",
+      "obligations": [
+        "license-text",
+        "notices",
+        "mark-altered-versions"
+      ],
+      "basis": "Exact Dropbear 2026.94 src/sshpty.c retains the Tatu Ylonen grant and upstream modification notice. This permits use for any purpose and requires marking derivatives and naming incompatible protocol variants. No local source changes. Prepared technical review only. Human legal and owner approval remain pending.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/SSH-short.txt",
+        "sha256": "1aa57d2704f6783460f2750a9f3217d083ed5161eb95438ca43a5674213a7128"
+      }
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "GCC-exception-3.1",
+      "expression": "GPL-3.0-or-later WITH GCC-exception-3.1",
+      "appliesTo": "libgcc and libstdc++ (the gcc runtime libraries)",
+      "treatment": "Lets programs compiled with GCC be conveyed with the runtime library under terms of the distributor's choice; the runtime libraries stay GPL-3.0-or-later, so the gcc source package is published in full.",
+      "text": { "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/GCC-exception-3.1.txt", "sha256": "7103d4f7f7e2f8ce10d282a05e0689637f8d6d9ef7b399d808d1da313e69b960" }
+    },
+    {
+      "id": "LLVM-exception",
+      "expression": "Apache-2.0 WITH LLVM-exception",
+      "appliesTo": "Apache-2.0 WITH LLVM-exception components, such as the LLVM libc++abi fallback in Bun",
+      "treatment": "Approved as in the platform allowlist (ADR 0004); license text and notices only.",
+      "text": {
+        "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/LLVM-exception.txt",
+        "sha256": "e34c58338bd89d43e709e226610d8f32b3e3c47f4ad9a99a8dc1d4ac7842488e"
+      }
+    },
+    {
+      "id": "Autoconf-exception-generic",
+      "appliesTo": "ICU's aclocal.m4 build macros",
+      "treatment": "Build-time file absent from the shipped libraries; no distribution duty."
+    }
+  ],
+  "labelCorrections": [
+    {
+      "packages": ["unzip"],
+      "distributionLabel": "custom",
+      "license": "Info-ZIP",
+      "evidence": "Alpine 3.24 unzip APKBUILD installs the upstream Info-ZIP LICENSE"
+    },
+    {
+      "packages": ["icu-libs", "icu-data-en"],
+      "distributionLabel": "ICU",
+      "license": "Unicode-3.0",
+      "evidence": "ICU 78.1 LICENSE declares SPDX-License-Identifier: Unicode-3.0"
+    },
+    {
+      "packages": ["libgcc", "libstdc++"],
+      "distributionLabel": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+      "license": "GPL-3.0-or-later WITH GCC-exception-3.1",
+      "evidence": "Upstream gcc runtime library terms; publishing the full gcc source satisfies both readings"
+    }
+  ],
+  "selections": [
+    { "packages": ["libcap2"], "expression": "BSD-3-Clause OR GPL-2.0-only", "selected": "BSD-3-Clause" },
+    { "packages": ["zstd-libs"], "expression": "BSD-3-Clause OR GPL-2.0-or-later", "selected": "BSD-3-Clause" },
+    { "packages": ["libidn2"], "expression": "GPL-2.0-or-later OR LGPL-3.0-or-later", "selected": "LGPL-3.0-or-later" },
+    { "packages": ["libunistring"], "expression": "GPL-2.0-or-later OR LGPL-3.0-or-later", "selected": "LGPL-3.0-or-later" },
+    { "packages": ["ada-libs"], "expression": "( Apache-2.0 OR MIT ) AND MPL-2.0", "selected": "MIT AND MPL-2.0" },
+    { "packages": ["simdjson", "simdutf"], "expression": "Apache-2.0 OR MIT", "selected": "MIT" },
+    { "packages": ["bun"], "component": "picohttpparser", "expression": "Artistic-1.0-Perl OR MIT", "selected": "MIT" },
+    { "packages": ["bun"], "component": "zstd", "expression": "BSD-3-Clause OR GPL-2.0-only", "selected": "BSD-3-Clause" }
+  ],
+  "notApproved": {
+    "rule": "A license absent from this file needs a new review entry before it may appear in a public image.",
+    "excluded": [
+      { "id": "AGPL-3.0-only", "reason": "Its network-interaction duty (AGPL-3.0 §13) needs a separate review against Spacia's hosted offering." },
+      { "id": "AGPL-3.0-or-later", "reason": "Its network-interaction duty (AGPL-3.0 §13) needs a separate review against Spacia's hosted offering." },
+      { "id": "SSPL-1.0", "reason": "Source-available terms with service-offering duties." },
+      { "id": "BUSL-1.1", "reason": "Source-available; no general redistribution right for production use." },
+      { "id": "LicenseRef-proprietary", "reason": "Third-party proprietary software without a redistribution grant." },
+      { "id": "NOASSERTION", "reason": "Unknown licensing cannot be reviewed." }
+    ]
+  },
+  "reviewedImages": [
+    {
+      "id": "sdk-alpine-smoke",
+      "version": "2026.10.08-rc.2",
+      "manifestSHA256": "02b933781608482e9dcf1653308c56105ce9ff072faf1141fc97291df208609f",
+      "base": "Alpine Linux 3.24.1",
+      "additions": ["Bun 1.3.14 (/usr/local/bin/bun)"],
+      "packages": 61,
+      "sourcePackages": 44,
+      "copyleftSourcePackages": 20,
+      "sourceFolders": [
+        "acl-2.3.2-r1",
+        "ada-3.3.0-r0",
+        "alpine-baselayout-3.7.2-r1",
+        "apk-tools-3.0.6-r0",
+        "attr-2.5.2-r2",
+        "bridge-1.5-r5",
+        "busybox-1.37.0-r31",
+        "ca-certificates-20260611-r0",
+        "ca-certificates-20260909-r0",
+        "coreutils-9.11-r0",
+        "dash-0.5.13.1-r2",
+        "gcc-15.2.0-r5",
+        "grep-3.12-r0",
+        "libidn2-2.3.8-r0",
+        "libunistring-1.4.2-r0",
+        "musl-1.2.6-r2",
+        "pax-utils-1.3.9-r1",
+        "sed-4.9-r2",
+        "bun-1.3.14"
+      ],
+      "licenseTextOnly": ["libcap-2.78-r0", "zstd-1.5.7-r2"],
+      "bunSources": "Bun at tag bun-v1.3.14, oven-sh/WebKit at the commit that tag pins in WEBKIT_VERSION, and tinycc at its pinned revision",
+      "findings": [
+        "Alpine moves /usr/share/licenses into -doc subpackages, so the image ships only Bun's license file; the licenses/ folder next to the image provides the texts, and the pipeline should also place them inside the image.",
+        "The pipeline records the exact BoringSSL revision Bun pins and its license."
+      ]
+    }
+  ]
+}

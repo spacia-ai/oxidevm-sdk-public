@@ -1,0 +1,186 @@
+{
+  "node": "v24.18.1",
+  "colors": [
+    "reset",
+    "bold",
+    "dim",
+    "italic",
+    "underline",
+    "blink",
+    "inverse",
+    "hidden",
+    "strikethrough",
+    "doubleunderline",
+    "black",
+    "red",
+    "green",
+    "yellow",
+    "blue",
+    "magenta",
+    "cyan",
+    "white",
+    "bgBlack",
+    "bgRed",
+    "bgGreen",
+    "bgYellow",
+    "bgBlue",
+    "bgMagenta",
+    "bgCyan",
+    "bgWhite",
+    "framed",
+    "overlined",
+    "gray",
+    "redBright",
+    "greenBright",
+    "yellowBright",
+    "blueBright",
+    "magentaBright",
+    "cyanBright",
+    "whiteBright",
+    "bgGray",
+    "bgRedBright",
+    "bgGreenBright",
+    "bgYellowBright",
+    "bgBlueBright",
+    "bgMagentaBright",
+    "bgCyanBright",
+    "bgWhiteBright",
+    "grey",
+    "blackBright",
+    "bgGrey",
+    "bgBlackBright",
+    "faint",
+    "crossedout",
+    "strikeThrough",
+    "crossedOut",
+    "conceal",
+    "swapColors",
+    "swapcolors",
+    "doubleUnderline"
+  ],
+  "rows": [
+    {
+      "format": "red",
+      "text": "x",
+      "options": {
+        "validateStream": false
+      },
+      "value": "\u001b[31mx\u001b[39m"
+    },
+    {
+      "format": [
+        "bold",
+        "red"
+      ],
+      "text": "x",
+      "options": {
+        "validateStream": false
+      },
+      "value": "\u001b[1m\u001b[31mx\u001b[39m\u001b[22m"
+    },
+    {
+      "format": "#1aF",
+      "text": "x",
+      "options": {
+        "validateStream": false
+      },
+      "value": "\u001b[38;2;17;170;255mx\u001b[39m"
+    },
+    {
+      "format": "red",
+      "text": "a\u001b[39mb\u001b[39m",
+      "options": {
+        "validateStream": false
+      },
+      "value": "\u001b[31ma\u001b[31mb\u001b[39m\u001b[39m"
+    },
+    {
+      "format": "bold",
+      "text": "a\u001b[22mb",
+      "options": {
+        "validateStream": false
+      },
+      "value": "\u001b[1ma\u001b[22m\u001b[1mb\u001b[22m"
+    },
+    {
+      "format": "red",
+      "text": "x",
+      "value": "x"
+    },
+    {
+      "format": "none",
+      "text": "x",
+      "options": {
+        "validateStream": false
+      },
+      "value": "x"
+    },
+    {
+      "format": "bad",
+      "text": "x",
+      "options": {
+        "validateStream": false
+      },
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_INVALID_ARG_VALUE",
+        "message": "The argument 'format' must be one of: 'reset', 'bold', 'dim', 'italic', 'underline', 'blink', 'inverse', 'hidden', 'strikethrough', 'doubleunderline', 'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white', 'bgBlack', 'bgRed', 'bgGreen', 'bgYellow', 'bgBlue', 'bgMagenta', 'bgCyan', 'bgWhite', 'framed', 'overlined', 'gray', 'redBright', 'greenBright', 'yellowBright', 'blueBright', 'magentaBright', 'cyanBright', 'whiteBright', 'bgGray', 'bgRedBright', 'bgGreenBright', 'bgYellowBright', 'bgBlueBright', 'bgMagentaBright', 'bgCyanBright', 'bgWhiteBright', 'grey', 'blackBright', 'bgGrey', 'bgBlackBright', 'faint', 'crossedout', 'strikeThrough', 'crossedOut', 'conceal', 'swapColors', 'swapcolors', 'doubleUnderline'. Received 'bad'"
+      }
+    },
+    {
+      "format": "red",
+      "text": 42,
+      "options": {
+        "validateStream": false
+      },
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_INVALID_ARG_TYPE",
+        "message": "The \"text\" argument must be of type string. Received type number (42)"
+      }
+    },
+    {
+      "format": "red",
+      "text": "x",
+      "options": null,
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_INVALID_ARG_TYPE",
+        "message": "The \"options\" argument must be of type object. Received null"
+      }
+    },
+    {
+      "format": "red",
+      "text": "x",
+      "options": {
+        "validateStream": 0
+      },
+      "value": "\u001b[31mx\u001b[39m"
+    },
+    {
+      "format": "red",
+      "text": "x",
+      "options": {
+        "validateStream": true,
+        "stream": {}
+      },
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_INVALID_ARG_TYPE",
+        "message": "The \"stream\" argument must be an instance of ReadableStream, WritableStream, or Stream. Received an instance of Object"
+      }
+    },
+    {
+      "format": "#ggg",
+      "text": "x",
+      "options": {
+        "validateStream": false
+      },
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_INVALID_ARG_VALUE",
+        "message": "The argument 'format' must be a valid hex color (#RGB or #RRGGBB). Received '#ggg'"
+      }
+    }
+  ]
+}

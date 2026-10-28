@@ -1,0 +1,75 @@
+import {mkdtemp,mkdir,writeFile,readFile,rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {expect,it,vi} from "vitest";
+vi.mock("../defaults.generated.js", async () => ({ defaultImageLocations: (await import("../default-images.test-support.js")).legacyImageLocations }));
+import * as engineSource from "./engine-source.js";
+import * as assets from "./assets.js";
+import {createProjectLock} from "./project.js";
+import {buildImage} from "./build.js";
+import {generateImageKey,loadSigningKey} from "./keys.js";
+import {inspectImageFiles} from "./bundle.js";
+import {resolveSnapshotRecipe} from "./snapshot-recipe.js";
+import {writeSnapshotState,finalizeSnapshotBundle} from "./snapshot-publication.js";
+import {inspectSnapshot,readSnapshotBundle} from "./snapshot-bundle.js";
+import {writeBackup} from "../runtime/workers/snapshot-archive/writer.js";
+import type {UserspaceSnapshotManifest} from "../runtime/workers/snapshot-manifest.js";
+import {hash} from "./files.js";
+import {decodeSnapshotTestReport,SNAPSHOT_CHECKS} from "./snapshot-reports.js";
+import {decodeSnapshotIndex,encodeSnapshotIndex,verifySnapshotIndex} from "./snapshot-index.js";
+import {record} from "../runtime/decode.js";
+it("streams_state_and_preserves_identity_with_independent_image_and_bundle_trust",async()=>{
+  const root=await mkdtemp(join(tmpdir(),"oxidevm-bundle-"));
+  try{
+    await mkdir(join(root,"root"));await writeFile(join(root,"root","file"),"immutable A");
+    const a=await generateImageKey(join(root,"A.pem")),b=await generateImageKey(join(root,"B.pem"));
+    const image=await buildImage({id:"fixture",version:"1",mode:"userspace",source:{kind:"directory",path:"root"},smokeTest:{command:"/bin/true",expectedExitCode:0}},{recipeDir:root,signingKeyFile:a.privateKeyPath,outDir:"image"});
+    const verifiedImage=await inspectImageFiles(image.bundleDir,{trust:a.trust});
+    const graph=new Uint8Array([1]),manifestBytes=verifiedImage.read.manifestBytes,contents=new Map([[hash(graph),graph],[hash(manifestBytes),manifestBytes]]);
+    if(!("entries" in verifiedImage.read.manifest))throw new Error("expected native image");
+    const manifest:UserspaceSnapshotManifest={schema:4,mode:"userspace",id:"123e4567-e89b-42d3-a456-426614174000",createdAt:"2026-10-14T00:00:00.000Z",kind:"named",capturedAtUnixMs:Date.now(),parent:null,
+      compatibility:{format:"OXUC",version:1,abiVersion:37,memoryBytes:256*1024**2},graph:{bytes:1,chunks:[{index:0,bytes:1,sha256:hash(graph)}]},payloads:{bytes:0,chunks:[]},
+      rootfs:{origin:"managed",image:{id:"fixture",version:"1"},rootTreeSha256:verifiedImage.read.manifest.rootTreeSha256,manifest:{bytes:manifestBytes.length,sha256:hash(manifestBytes)}}};
+    const parts:Uint8Array[]=[];await writeBackup(manifest,ref=>{const bytes=contents.get(ref.sha256);if(bytes===undefined)throw new Error("missing fixture object");return Promise.resolve(bytes);},bytes=>{parts.push(bytes.slice());return Promise.resolve();});
+    const backupPath=join(root,"backup.oxvm");await writeFile(backupPath,Buffer.concat(parts));
+    await writeFile(join(root,"prepare.ts"),"export default async function() {}");await writeFile(join(root,"verify.ts"),"export default async function() {}");
+    const recipe=await resolveSnapshotRecipe({name:"ready",mode:"userspace",image:"image",workload:{module:"prepare.ts"},verify:{module:"verify.ts"}},{recipeDir:root,signingKeyFile:b.privateKeyPath,outDir:"bundle"});
+    const staging=join(root,"bundle");await mkdir(staging);
+    const verification=await readFile(join(root,"verify.ts"));
+    const staged=await writeSnapshotState({backupPath,staging,recipe,verifiedImage,verifier:{path:join(root,"verify.ts"),bytes:verification.length,sha256:hash(verification)},signer:await loadSigningKey(b.privateKeyPath),operation:"pack"});
+    const report=decodeSnapshotTestReport({schemaVersion:1,result:"passed",name:"ready",mode:"userspace",bundleSHA256:null,snapshotManifestSHA256:staged.unsignedIndex.snapshot.sha256,imageManifestSHA256:staged.unsignedIndex.image.manifestSHA256,
+      snapshot:{id:manifest.id,kind:"shipped"},sdkVersion:staged.unsignedIndex.sdkVersion,engineReleaseId:staged.unsignedIndex.engineReleaseId,browser:{name:"chromium",version:"unit fixture"},verifier:{source:"bundled",sha256:hash(verification)},checks:SNAPSHOT_CHECKS.map(check=>({check,status:"passed"}))});
+    await finalizeSnapshotBundle(staged,report);
+    expect((await inspectSnapshot(staging,{trust:b.trust})).authentication.kind).toBe("verified");
+    expect((await inspectSnapshot(staging)).authentication.kind).toBe("unverified");
+    expect((await inspectSnapshot(backupPath)).authentication.kind).toBe("unsigned");
+    expect((await readSnapshotBundle(staging,b.trust)).shipped.snapshot.id).toBe(manifest.id);
+    expect(new Uint8Array(await readFile(join(staging,"image/manifest.json")))).toEqual(manifestBytes);
+    const project=join(root,"project"),reference=join(project,"src/generated/ready.snapshot.ts");
+    await mkdir(join(project,"src/generated"),{recursive:true});
+    await writeFile(join(project,"oxidevm.lock.json"),JSON.stringify(createProjectLock({mode:"userspace"})));
+    vi.spyOn(engineSource,"resolveEngineDirectory").mockResolvedValue(root);
+    vi.spyOn(engineSource,"copyEngineRelease").mockImplementation(async()=>{await writeFile(reference,"// caller created this while assets copied\n");return 0;});
+    vi.spyOn(assets,"installStaticAssets").mockResolvedValue(0);
+    await expect(assets.installProjectAssets(project,{mode:"userspace"},{snapshotDir:staging,trust:b.trust})).rejects.toMatchObject({code:"PERMISSION_DENIED"});
+    expect(await readFile(reference,"utf8")).toBe("// caller created this while assets copied\n");
+    vi.restoreAllMocks();
+    await mkdir(join(staging,"extra"));
+    await expect(readSnapshotBundle(staging,b.trust)).rejects.toThrow("unreferenced directory");
+    await rm(join(staging,"extra"),{recursive:true});
+    const index=verifySnapshotIndex(new Uint8Array(await readFile(join(staging,"snapshot.lock.json"))),b.trust);
+    const badA=new Uint8Array(manifestBytes);
+    const original=new TextDecoder().decode(badA);
+    const signature=/("signature"\s*:\s*")([A-Za-z0-9_-])/u.exec(original);
+    if(signature?.index===undefined||signature[1]===undefined||signature[2]===undefined)throw new Error("missing A signature");
+    badA.set(new TextEncoder().encode(signature[2]==="A"?"B":"A"),signature.index+signature[1].length);
+    await writeFile(join(staging,"image/manifest.json"),badA);
+    const lock=record(JSON.parse(await readFile(join(staging,"image/image.lock.json"),"utf8")) as unknown,"image lock");
+    const lockBytes=new TextEncoder().encode(JSON.stringify({...lock,manifestSHA256:hash(badA)}));
+    await writeFile(join(staging,"image/image.lock.json"),lockBytes);
+    const endorsed=decodeSnapshotIndex({...index,image:{...index.image,manifestSHA256:hash(badA)},artifacts:index.artifacts.map(file=>file.url==="image/manifest.json"?{...file,sha256:hash(badA)}:file.url==="image/image.lock.json"?{...file,bytes:lockBytes.length,sha256:hash(lockBytes)}:file)});
+    await writeFile(join(staging,"snapshot.lock.json"),encodeSnapshotIndex(endorsed,(await loadSigningKey(b.privateKeyPath)).key));
+    expect(verifySnapshotIndex(new Uint8Array(await readFile(join(staging,"snapshot.lock.json"))),b.trust).image.manifestSHA256).toBe(hash(badA));
+    await expect(readSnapshotBundle(staging,b.trust)).rejects.toThrow(/signature/iu);
+  }finally{vi.restoreAllMocks();await rm(root,{recursive:true,force:true});}
+});

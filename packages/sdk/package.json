@@ -1,0 +1,93 @@
+{
+  "name": "@oxidevm/sdk",
+  "version": "0.0.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    "./js-process": {
+      "types": "./dist/js-process.d.ts",
+      "default": "./dist/js-process.js"
+    },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./image-builder": {
+      "types": "./dist/image-builder/index.d.ts",
+      "node": "./dist/image-builder/index.js"
+    },
+    "./machine": {
+      "types": "./dist/machine.d.ts",
+      "default": "./dist/machine.js"
+    },
+    "./diagnostics": {
+      "types": "./dist/diagnostics.d.ts",
+      "default": "./dist/diagnostics.js"
+    }
+  },
+  "files": [
+    "dist",
+    "assets/doctor",
+    "assets/image-catalog.json",
+    "assets/preview",
+    "assets/runtime-host",
+    "assets/native-process",
+    "assets/qualification",
+    "LICENSE",
+    "NOTICE",
+    "assets/interceptors",
+    "assets/compilers",
+    "assets/snapshot",
+    "THIRD_PARTY_NOTICES.txt",
+    "sbom.cdx.json",
+    "legal"
+  ],
+  "scripts": {
+    "check": "tsc -p tsconfig.browser.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.test.json && tsc -p tsconfig.worker-test.json && tsc -p tsconfig.node.json && tsc -p tsconfig.browser-tools.json && tsc -p tsconfig.preview-browser.json && tsc -p tsconfig.preview-worker.json && tsc -p tsconfig.preview-node.json && tsc -p tsconfig.preview-test.json && tsc -p tsconfig.runtime-host.json && tsc -p tsconfig.runtime-host-worker.json && tsc -p tsconfig.native-process.json",
+    "build": "node --input-type=module -e 'import { rmSync } from \"node:fs\"; rmSync(\"dist\", { recursive: true, force: true });' && tsc -p tsconfig.browser.build.json && tsc -p tsconfig.worker.build.json && tsc -p tsconfig.node.build.json && tsc -p tsconfig.browser-tools.build.json && node ../../scripts/stage-compatibility-declarations.ts && node ../../scripts/minify-distribution.ts packages/sdk/dist && node ../../scripts/build-command-interceptor-worker.ts --package && node ../../scripts/build-esbuild-wasm.ts && vite build --config vite.qualification.config.ts && vite build --config vite.snapshot.config.ts && vite build --config vite.doctor.config.ts && vite build --config asset-source/preview/vite.config.ts && vite build --config asset-source/runtime-host/vite.config.ts && vite build --config asset-source/native-process/vite.config.ts && node ../../scripts/package-notices.ts sdk",
+    "test": "vitest run --maxWorkers=2 --exclude '**/*.core-test.ts'",
+    "test:core": "vitest run --config vitest.core.config.ts --maxWorkers=2"
+  },
+  "dependencies": {
+    "@babel/generator": "7.29.7",
+    "@babel/parser": "7.29.7",
+    "@babel/traverse": "7.28.0",
+    "@babel/types": "7.29.7",
+    "@balena/dockerignore": "1.0.2",
+    "@jridgewell/trace-mapping": "0.3.31",
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.0.1",
+    "@pkgjs/parseargs": "0.11.0",
+    "@swc/wasm-web": "1.16.18",
+    "assert": "2.1.0",
+    "buffer": "6.0.3",
+    "cjs-module-lexer": "2.2.1",
+    "esbuild": "0.25.12",
+    "events": "3.3.0",
+    "node-inspect-extracted": "3.3.2",
+    "pako": "3.0.2",
+    "playwright": "1.61.1",
+    "process": "0.11.10",
+    "readable-stream": "4.7.0",
+    "systemjs": "6.15.1",
+    "tar": "7.5.22",
+    "undici": "7.28.0"
+  },
+  "devDependencies": {
+    "@types/babel__generator": "7.27.0",
+    "@types/babel__traverse": "7.28.0",
+    "@types/node": "24.13.3",
+    "typescript": "6.0.3",
+    "vitest": "3.2.4"
+  },
+  "private": false,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/spacia-ai/oxidevm-sdk-public.git",
+    "directory": "packages/sdk"
+  }
+}

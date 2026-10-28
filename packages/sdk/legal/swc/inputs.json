@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "package": "@swc/wasm-web",
+  "version": "1.16.18",
+  "revision": "63ced3ba33a9c31737ad056b39c9a8cdb4fcc486",
+  "sourceURL": "https://codeload.github.com/swc-project/swc/tar.gz/63ced3ba33a9c31737ad056b39c9a8cdb4fcc486",
+  "sourceSHA256": "802009c5cdd513b3de33e1be9d0bac3f28b966b9f0d7ff8ecdfa1d1f6cf21ce9",
+  "cargoLockSHA256": "7133e17a9e848bcc8306d1ea96035e6d662101e60daeeae79abd9d90a5dcee6f",
+  "wasmSHA256": "d19a5bdadaf0f0a20dfa652ebcb58faa87b68c48d53fd68e474906b4608766bc",
+  "npmIntegrity": "sha512-oi8tvn0Pt3r0KTKxQZ3OCcJuh11yeCBxCBW6TeMbQtwihzqxm+rzyv7bxTgPa/Hq2ErhPHckrlKEMFTpLwHYUQ==",
+  "rustRevision": "f5eca4fcfa908d1e038afd19c6e746f075859130",
+  "rustRuntimeLockSHA256": "c7fbe8811bd7b2a3737deb1bc5d1ec2ee6d631bc00221d3d8a58d05814b3e965",
+  "noticesSHA256": "bd5c86be4a1f9567917b359ccc995589c688dec72d9b5743a8b93167ff64d132",
+  "sbomSHA256": "9608818f90b06b5fa210204fb63de6001daf928875fae3be10e4d8b996e6459b",
+  "upstreamNotices": [
+    {
+      "name": "inflector",
+      "url": "https://raw.githubusercontent.com/whatisinternet/inflector/a4a95eac75043f4bffb127c7c8ec886b5b106053/LICENSE.md",
+      "file": "inflector-LICENSE.md",
+      "sha256": "03d1bd5bfbee8d44651e7f57faf9e5b4eda4233f0d4eda36a716f2f0533d230b"
+    },
+    {
+      "name": "simd",
+      "url": "https://raw.githubusercontent.com/Nugine/simd/d74c030d9dc4f3cae02146d1f497ff62726ef09a/LICENSE",
+      "file": "simd-LICENSE",
+      "sha256": "71674605ec4c087fe9eb534e3e4f9e26eb2e4aabcd76a29fd156c6a844d44b3d"
+    },
+    {
+      "name": "browserslist",
+      "url": "https://raw.githubusercontent.com/browserslist/browserslist-rs/7503606a19d9503c64738c827ee8d8657133e383/LICENSE",
+      "file": "browserslist-LICENSE",
+      "sha256": "982d71ece9934b3bb7b95cec8a143d0db7523537fce588387dec98bbe72edbe5"
+    },
+    {
+      "name": "bytes-str",
+      "url": "https://raw.githubusercontent.com/dudykr/ddbase/19f6487518dbebbc198346bfb979313ef457199e/LICENSE",
+      "file": "bytes-str-LICENSE",
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+    },
+    {
+      "name": "par-core",
+      "url": "https://raw.githubusercontent.com/dudykr/ddbase/d46ef439d30d2b64eb87d4e197929548b51b21be/LICENSE",
+      "file": "par-core-LICENSE",
+      "sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+    },
+    {
+      "name": "react",
+      "url": "https://raw.githubusercontent.com/facebook/react/ff7445e636429ab26ce3d388535a79c845d88c94/LICENSE",
+      "file": "react-LICENSE",
+      "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+    },
+    {
+      "name": "swc_sourcemap",
+      "url": "https://raw.githubusercontent.com/swc-project/swc-sourcemap/64fcb47c16547d40fb37bbe4d8790b520716c741/LICENSE",
+      "file": "swc_sourcemap-LICENSE",
+      "sha256": "7516e1cf340213f60d96bca77bb012882dbf80e7cca5922c914174f605d9ef71"
+    }
+  ]
+}

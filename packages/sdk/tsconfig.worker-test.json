@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "lib": ["ES2024", "WebWorker"], "rootDir": "src", "types": ["node"] },
+  "include": ["src/runtime/workers/**/*.test.ts", "src/runtime/workers/**/*.core-test.ts", "src/runtime/workers/userspace-tier2-browser.test-support.ts", "src/runtime/workers/userspace-jit-reuse-benchmark.test-support.ts", "src/runtime/workers/initial-start-browser-cut.test-support.ts", "src/runtime/workers/assistance/compatibility.d.ts"]
+}

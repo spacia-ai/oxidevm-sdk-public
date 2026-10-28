@@ -1,0 +1,115 @@
+[
+  {
+    "name": "dash",
+    "version": "0.5.13.5",
+    "license": "BSD-3-Clause AND Apache-2.0",
+    "archive": "dash-0.5.13.5.tar.gz",
+    "files": [
+      "bin/dash",
+      "bin/sh"
+    ]
+  },
+  {
+    "name": "xz",
+    "version": "5.8.4",
+    "license": "0BSD",
+    "archive": "xz-5.8.4.tar.gz",
+    "files": [
+      "bin/xz",
+      "bin/unxz",
+      "bin/unzip"
+    ]
+  },
+  {
+    "name": "libarchive",
+    "version": "3.8.10",
+    "license": "BSD-2-Clause AND BSD-3-Clause AND CC0-1.0",
+    "archive": "libarchive-3.8.10.tar.gz",
+    "files": [
+      "bin/unzip"
+    ]
+  },
+  {
+    "name": "dc",
+    "version": "7.0.3",
+    "license": "BSD-2-Clause",
+    "archive": "bc-7.0.3.tar.gz",
+    "files": [
+      "bin/dc"
+    ]
+  },
+  {
+    "name": "dropbear",
+    "version": "2026.94",
+    "license": "MIT AND BSD-2-Clause AND SSH-short",
+    "archive": "dropbear-2026.94.tar.gz",
+    "files": [
+      "bin/dropbearmulti",
+      "bin/dropbear",
+      "bin/dbclient",
+      "bin/dropbearkey",
+      "bin/dropbearconvert",
+      "bin/scp",
+      "bin/ssh"
+    ]
+  },
+  {
+    "name": "libtomcrypt",
+    "version": "dropbear-2026.94",
+    "license": "WTFPL",
+    "archive": "dropbear-2026.94.tar.gz",
+    "subdir": "libtomcrypt",
+    "files": [
+      "bin/dropbearmulti"
+    ]
+  },
+  {
+    "name": "libtommath",
+    "version": "dropbear-2026.94",
+    "license": "Unlicense",
+    "archive": "dropbear-2026.94.tar.gz",
+    "subdir": "libtommath",
+    "files": [
+      "bin/dropbearmulti"
+    ]
+  },
+  {
+    "name": "curl",
+    "version": "8.23.0",
+    "license": "curl",
+    "archive": "curl-8.23.0.tar.gz",
+    "files": [
+      "bin/curl"
+    ]
+  },
+  {
+    "name": "gcc-runtime",
+    "version": "15.2.0-r5",
+    "license": "GPL-3.0-or-later WITH GCC-exception-3.1",
+    "archive": "gcc-15.2.0.tar.xz",
+    "files": [
+      "bin/toybox",
+      "bin/dc",
+      "bin/xz",
+      "bin/unzip",
+      "bin/dropbearmulti",
+      "bin/curl",
+      "bin/dash"
+    ]
+  },
+  {
+    "name": "musl-crt",
+    "version": "1.2.6-r3",
+    "license": "MIT",
+    "archive": "musl-1.2.6.tar.gz",
+    "files": [
+      "bin/toybox",
+      "bin/dc",
+      "bin/xz",
+      "bin/unzip",
+      "bin/dropbearmulti",
+      "bin/curl",
+      "bin/dash"
+    ]
+  }
+]

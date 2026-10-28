@@ -1,0 +1,24 @@
+{
+  "name": "@oxidevm-example/starter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && tsc -p tsconfig.node.json && vite build",
+    "check": "tsc --noEmit && tsc -p tsconfig.node.json",
+    "test": "vitest run --maxWorkers=1"
+  },
+  "dependencies": {
+    "@oxidevm/sdk": "workspace:*",
+    "@xterm/xterm": "6.0.0",
+    "@xterm/addon-fit": "0.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "vite": "7.3.6",
+    "typescript": "6.0.3",
+    "vitest": "3.2.4"
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.browser-tools.json",
+  "compilerOptions": { "noEmit": false, "rootDir": "src", "outDir": "dist", "declaration": true, "sourceMap": false }
+}

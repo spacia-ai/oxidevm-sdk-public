@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2024"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "asset-source/preview/vite.config.ts",
+    "asset-source/preview/classic-entries.ts",
+    "asset-source/runtime-host/vite.config.ts",
+    "asset-source/runtime-host/headers.ts",
+    "vite.doctor.config.ts"
+  ]
+}
