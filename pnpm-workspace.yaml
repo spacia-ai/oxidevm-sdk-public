@@ -1,0 +1,16 @@
+packages:
+  - packages/cli
+  - packages/sdk
+  - examples/starter
+
+allowBuilds:
+  esbuild: true
+
+autoInstallPeers: false
+
+patchedDependencies:
+  assert@2.1.0: patches/assert@2.1.0.patch
+  buffer@6.0.3: patches/buffer@6.0.3.patch
+  node-inspect-extracted@3.3.2: patches/node-inspect-extracted@3.3.2.patch
+
+minimumReleaseAge: 1440

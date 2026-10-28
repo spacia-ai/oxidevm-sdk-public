@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "rootDir": "src",
+    "typeRoots": [
+      "../../types"
+    ],
+    "types": [
+      "browser"
+    ]
+  },
+  "include": [
+    "src/*.ts",
+    "src/contracts/**/*.ts",
+    "src/runtime/*.ts",
+    "src/frame/**/*.ts",
+    "src/browser-test/**/*.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test-support.ts"
+  ]
+}

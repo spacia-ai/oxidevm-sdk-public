@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": { "noEmit": false, "rootDir": "src", "outDir": "dist", "declaration": true, "declarationMap": false, "sourceMap": false },
+  "include": ["src/image-builder/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test-support.ts"]
+}

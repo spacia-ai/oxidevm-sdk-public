@@ -1,0 +1,97 @@
+[
+  {
+    "name": "toybox",
+    "version": "0.8.15",
+    "license": "0BSD"
+  },
+  {
+    "name": "dash",
+    "version": "0.5.13.5",
+    "license": "BSD-3-Clause AND Apache-2.0"
+  },
+  {
+    "name": "mksh",
+    "version": "59c-r4",
+    "license": "MirOS AND Unicode-DFS-2016"
+  },
+  {
+    "name": "nginx",
+    "version": "1.30.6-r0",
+    "license": "BSD-2-Clause"
+  },
+  {
+    "name": "musl",
+    "version": "1.2.6-r2",
+    "license": "MIT"
+  },
+  {
+    "name": "pcre2",
+    "version": "10.49-r0",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "openssl",
+    "version": "3.5.7-r0",
+    "license": "Apache-2.0"
+  },
+  {
+    "name": "zlib",
+    "version": "1.3.2-r0",
+    "license": "Zlib"
+  },
+  {
+    "name": "oxidevm-starter-files",
+    "version": "0.0.1",
+    "license": "Apache-2.0"
+  },
+  {
+    "name": "xz",
+    "version": "5.8.4",
+    "license": "0BSD"
+  },
+  {
+    "name": "libarchive",
+    "version": "3.8.10",
+    "license": "BSD-2-Clause AND BSD-3-Clause AND CC0-1.0"
+  },
+  {
+    "name": "dc",
+    "version": "7.0.3",
+    "license": "BSD-2-Clause"
+  },
+  {
+    "name": "dropbear",
+    "version": "2026.94",
+    "license": "MIT AND BSD-2-Clause AND SSH-short"
+  },
+  {
+    "name": "libtomcrypt",
+    "version": "dropbear-2026.94",
+    "license": "WTFPL"
+  },
+  {
+    "name": "libtommath",
+    "version": "dropbear-2026.94",
+    "license": "Unlicense"
+  },
+  {
+    "name": "curl",
+    "version": "8.23.0",
+    "license": "curl"
+  },
+  {
+    "name": "ca-certificates",
+    "version": "20260611-r0",
+    "license": "MPL-2.0 AND MIT"
+  },
+  {
+    "name": "gcc-runtime",
+    "version": "15.2.0-r5",
+    "license": "GPL-3.0-or-later WITH GCC-exception-3.1"
+  },
+  {
+    "name": "musl-crt",
+    "version": "1.2.6-r3",
+    "license": "MIT"
+  }
+]

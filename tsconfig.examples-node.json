@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2024"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "examples/*/vite.config.ts",
+    "examples/*/oxidevm.config.ts",
+    "examples/*/oxidevm.image.ts",
+    "examples/*/image/*.ts",
+    "scripts/**/*.ts",
+    "tests/integration/**/*.ts"
+  ]
+}

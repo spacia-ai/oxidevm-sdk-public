@@ -1,0 +1,38 @@
+import { deprecate, format, inspect } from "node:util";
+import {expect,it} from "vitest";
+import {createAsyncContext} from "./async-context.js";
+import {createNodeAsyncHooks} from "./node-async-hooks.js";
+it("keeps the pinned undefined callback diagnostic and balanced hooks after constructor replacement", () => {
+  const context = createAsyncContext(), hooks = createNodeAsyncHooks(context, { deprecate, format, inspect });
+  const events: string[] = [], hook = hooks.createHook({ before() { events.push("before"); }, after() { events.push("after"); } }).enable();
+  const resource = new hooks.AsyncResource("owned", { requireManualDestroy: true });
+  const OriginalTypeError = globalThis.TypeError;
+  let replacements = 0, failure: unknown;
+  const ReplacedTypeError = new Proxy(OriginalTypeError, {
+    construct() { replacements++; return new OriginalTypeError("replaced"); },
+  });
+  try {
+    globalThis.TypeError = ReplacedTypeError;
+    resource.runInAsyncScope(undefined);
+  } catch (error) { failure = error; }
+  finally {
+    globalThis.TypeError = OriginalTypeError;
+    resource.emitDestroy(); hook.disable(); context.resources.dispose();
+  }
+  expect(replacements).toBe(0);
+  expect(failure).toBeInstanceOf(OriginalTypeError);
+  if (!(failure instanceof OriginalTypeError)) throw new Error("Missing callback TypeError");
+  expect(Object.getPrototypeOf(failure)).toBe(OriginalTypeError.prototype);
+  expect(failure.message).toBe("Function.prototype.apply was called on undefined, which is a undefined and not a function");
+  expect(events).toEqual(["before", "after"]);
+});
+function observe(action:()=>unknown){try{return{status:"returned",value:action()};}catch(error){if(!(error instanceof Error))throw error;const code:unknown=Reflect.get(error,"code");return{status:"threw",name:error.name,code,message:error.message};}}
+it("accepts an empty resource type without init hooks and exposes no extra type property",()=>{const context=createAsyncContext(),hooks=createNodeAsyncHooks(context, { deprecate, format, inspect });const observed=observe(()=>{const resource=new hooks.AsyncResource("",{requireManualDestroy:true});const hasType="type"in resource;resource.emitDestroy();return hasType;});context.resources.dispose();expect(observed).toEqual({status:"returned",value:false});});
+it("reports the hook-specific empty-type failure after consuming an identity",()=>{const context=createAsyncContext(),hooks=createNodeAsyncHooks(context, { deprecate, format, inspect }),events:string[]=[];const first=new hooks.AsyncResource("first",{requireManualDestroy:true}),hook=hooks.createHook({init(){events.push("init");}}).enable();const observed=observe(()=>new hooks.AsyncResource("",{requireManualDestroy:true}));hook.disable();const next=new hooks.AsyncResource("next",{requireManualDestroy:true});first.emitDestroy();next.emitDestroy();context.resources.dispose();expect(observed).toEqual({status:"threw",name:"TypeError",code:"ERR_ASYNC_TYPE",message:'Invalid name for async "type": '});expect(events).toEqual([]);expect(next.asyncId()).toBe(first.asyncId()+2);});
+for(const [name,value,message]of [["undefined",undefined,'The "type" argument must be of type string. Received undefined'],["null",null,'The "type" argument must be of type string. Received null'],["number",7,'The "type" argument must be of type string. Received type number (7)'],["boolean",false,'The "type" argument must be of type string. Received type boolean (false)'],["bigint",7n,'The "type" argument must be of type string. Received type bigint (7n)'],["symbol",Symbol.for("bad"),'The "type" argument must be of type string. Received type symbol (Symbol(bad))'],["array",[],'The "type" argument must be of type string. Received an instance of Array'],["object",{},'The "type" argument must be of type string. Received an instance of Object']]as const)it("preserves constructor argument error for "+name,()=>{const context=createAsyncContext(),hooks=createNodeAsyncHooks(context, { deprecate, format, inspect });const actual=observe(()=>new hooks.AsyncResource(value));context.resources.dispose();expect(actual).toEqual({status:"threw",name:"TypeError",code:"ERR_INVALID_ARG_TYPE",message});});
+it("rejects null options before resource creation",()=>{const context=createAsyncContext(),hooks=createNodeAsyncHooks(context, { deprecate, format, inspect }),actual=observe(()=>new hooks.AsyncResource("owned",null));context.resources.dispose();expect(actual).toEqual({status:"threw",name:"TypeError",code:undefined,message:"Cannot read properties of null (reading 'triggerAsyncId')"});});
+for(const [name,trigger,message]of [["negative",-2,"Invalid triggerAsyncId value: -2"],["fraction",1.5,"Invalid triggerAsyncId value: 1.5"],["string","bad","Invalid triggerAsyncId value: bad"],["infinite",Infinity,"Invalid triggerAsyncId value: Infinity"]]as const)it("preserves async identity error for "+name,()=>{const context=createAsyncContext(),hooks=createNodeAsyncHooks(context, { deprecate, format, inspect }),actual=observe(()=>new hooks.AsyncResource("owned",{triggerAsyncId:trigger,requireManualDestroy:true}));context.resources.dispose();expect(actual).toEqual({status:"threw",name:"RangeError",code:"ERR_INVALID_ASYNC_ID",message});});
+it("reads a present trigger twice before the manual-destroy option",()=>{const context=createAsyncContext(),hooks=createNodeAsyncHooks(context, { deprecate, format, inspect }),events:string[]=[],resource=new hooks.AsyncResource("owned",{get triggerAsyncId(){events.push("trigger");return 2;},get requireManualDestroy(){events.push("manual");return true;}});resource.emitDestroy();context.resources.dispose();expect(events).toEqual(["trigger","trigger","manual"]);});
+it("validates bind input immediately",()=>{const context=createAsyncContext(),hooks=createNodeAsyncHooks(context, { deprecate, format, inspect }),resource=new hooks.AsyncResource("owned",{requireManualDestroy:true}),actual=observe(()=>resource.bind(null));resource.emitDestroy();context.resources.dispose();expect(actual).toEqual({status:"threw",name:"TypeError",code:"ERR_INVALID_ARG_TYPE",message:'The "fn" argument must be of type function. Received null'});});
+it("emits balanced callback events before a non-callable invocation fails",()=>{const context=createAsyncContext(),hooks=createNodeAsyncHooks(context, { deprecate, format, inspect }),events:string[]=[],hook=hooks.createHook({before(){events.push("before");},after(){events.push("after");}}).enable(),resource=new hooks.AsyncResource("owned",{requireManualDestroy:true});const result=observe(()=>resource.runInAsyncScope(7));resource.emitDestroy();hook.disable();context.resources.dispose();expect(result).toEqual({status:"threw",name:"TypeError",code:undefined,message:"Function.prototype.apply was called on 7, which is a number and not a function"});expect(events).toEqual(["before","after"]);});
+it("retains bound function length and accessor-based resource metadata",()=>{const context=createAsyncContext(),hooks=createNodeAsyncHooks(context, { deprecate, format, inspect }),events:string[]=[],callback=function(value:number){return value;};Object.defineProperty(callback,"length",{configurable:true,get(){events.push("length");return 5;}});const resource=new hooks.AsyncResource("owned",{requireManualDestroy:true}),bound=resource.bind(callback),length=Object.getOwnPropertyDescriptor(bound,"length"),metadata=Object.getOwnPropertyDescriptor(bound,"asyncResource");resource.emitDestroy();context.resources.dispose();expect(events).toEqual(["length"]);expect(bound.length).toBe(5);expect(length).toEqual({value:5,configurable:true,enumerable:false,writable:false});expect(typeof metadata?.get).toBe("function");expect(typeof metadata?.set).toBe("function");});

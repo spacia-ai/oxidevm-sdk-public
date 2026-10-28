@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.worker.json",
+  "compilerOptions": { "declaration": true, "declarationMap": false, "noEmit": false, "outDir": "dist", "sourceMap": false },
+  "exclude": ["src/**/*.test.ts", "src/**/*.core-test.ts", "src/**/*.test-support.ts"]
+}

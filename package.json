@@ -1,0 +1,49 @@
+{
+  "name": "oxidevm-sdk-workspace",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.17.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "check": "pnpm check:layout && pnpm check:relay && pnpm -r check && pnpm check:helpers && pnpm lint && pnpm licenses:check",
+    "check:layout": "node scripts/repository-layout.ts",
+    "check:relay": "node scripts/generate-relay-protocol.ts --check",
+    "check:helpers": "pnpm check:docs && tsc -p tsconfig.config.json && tsc -p tsconfig.examples-node.json && tsc -p tsconfig.browser-tests.json",
+    "check:docs": "node scripts/check-documentation.ts",
+    "lint": "eslint --flag unstable_native_nodejs_ts_config . --max-warnings 0",
+    "licenses:check": "node scripts/check-licenses.ts",
+    "secrets:check": "node scripts/secret-scan.ts git",
+    "test:unit": "pnpm --filter @oxidevm/sdk test",
+    "test:cli": "pnpm --filter @oxidevm/cli test",
+    "test:starter": "pnpm --filter @oxidevm-example/starter test",
+    "test:scripts": "node --test scripts/*.test.ts",
+    "test:core": "pnpm --filter @oxidevm/sdk test:core",
+    "test:packed": "node scripts/verify-release-archives.ts --target public",
+    "test:browser": "playwright test --retries 0",
+    "engine:fetch": "node scripts/fetch-engine.ts",
+    "engine:pin": "node scripts/engine-pin.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@oxidevm/sdk": "workspace:*",
+    "@playwright/test": "1.61.1",
+    "@types/node": "24.13.3",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "esbuild": "0.25.12",
+    "eslint": "10.7.0",
+    "globals": "17.7.0",
+    "tar": "7.5.22",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "typescript-interceptor": "npm:typescript@6.0.2",
+    "vite": "7.3.6",
+    "vitest": "3.2.4",
+    "@oxidevm/cli": "workspace:*"
+  }
+}

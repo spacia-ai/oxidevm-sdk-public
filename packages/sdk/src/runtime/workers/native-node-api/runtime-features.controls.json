@@ -1,0 +1,512 @@
+{
+  "schemaVersion": 1,
+  "container": "sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72",
+  "node": {
+    "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+    "version": "v24.18.1",
+    "bun": null,
+    "parent": {
+      "values": {
+        "inspector": true,
+        "debug": false,
+        "uv": true,
+        "ipv6": true,
+        "tls_alpn": true,
+        "tls_sni": true,
+        "tls_ocsp": true,
+        "tls": true,
+        "openssl_is_boringssl": false,
+        "cached_builtins": true,
+        "require_module": true,
+        "quic": false,
+        "typescript": "strip"
+      },
+      "property": {
+        "enumerable": true,
+        "configurable": false,
+        "writable": false,
+        "get": null,
+        "set": null
+      },
+      "descriptors": {
+        "inspector": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "debug": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "uv": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "ipv6": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_alpn": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_sni": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_ocsp": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "openssl_is_boringssl": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "cached_builtins": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": null,
+          "get": {
+            "name": "get cached_builtins",
+            "length": 0
+          },
+          "set": null
+        },
+        "require_module": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": null,
+          "get": {
+            "name": "get require_module",
+            "length": 0
+          },
+          "set": null
+        },
+        "quic": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": null,
+          "get": {
+            "name": "get quic",
+            "length": 0
+          },
+          "set": null
+        },
+        "typescript": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": null,
+          "get": {
+            "name": "get",
+            "length": 0
+          },
+          "set": null
+        }
+      },
+      "frozen": false,
+      "prototype": "object",
+      "changedValue": true,
+      "afterValue": "changed",
+      "changedProperty": false
+    },
+    "worker": {
+      "values": {
+        "inspector": true,
+        "debug": false,
+        "uv": true,
+        "ipv6": true,
+        "tls_alpn": true,
+        "tls_sni": true,
+        "tls_ocsp": true,
+        "tls": true,
+        "openssl_is_boringssl": false,
+        "cached_builtins": true,
+        "require_module": true,
+        "quic": false,
+        "typescript": "strip"
+      },
+      "property": {
+        "enumerable": true,
+        "configurable": false,
+        "writable": false,
+        "get": null,
+        "set": null
+      },
+      "descriptors": {
+        "inspector": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "debug": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "uv": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "ipv6": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_alpn": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_sni": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_ocsp": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "openssl_is_boringssl": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "cached_builtins": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": null,
+          "get": {
+            "name": "get cached_builtins",
+            "length": 0
+          },
+          "set": null
+        },
+        "require_module": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": null,
+          "get": {
+            "name": "get require_module",
+            "length": 0
+          },
+          "set": null
+        },
+        "quic": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": null,
+          "get": {
+            "name": "get quic",
+            "length": 0
+          },
+          "set": null
+        },
+        "typescript": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": null,
+          "get": {
+            "name": "get",
+            "length": 0
+          },
+          "set": null
+        }
+      },
+      "frozen": false,
+      "prototype": "object",
+      "changedValue": true,
+      "afterValue": "changed",
+      "changedProperty": false
+    },
+    "exit": 0
+  },
+  "bun": {
+    "binarySHA256": "500e6edbf321ddf490adcc55a6a01639993a07924616ab67492e1256c15557e2",
+    "version": "v24.3.0",
+    "bun": "1.3.14",
+    "parent": {
+      "values": {
+        "inspector": true,
+        "debug": false,
+        "uv": true,
+        "ipv6": true,
+        "tls_alpn": true,
+        "tls_sni": true,
+        "tls_ocsp": true,
+        "tls": true,
+        "cached_builtins": true,
+        "openssl_is_boringssl": true,
+        "require_module": true,
+        "typescript": "transform"
+      },
+      "property": {
+        "enumerable": true,
+        "configurable": true,
+        "writable": true,
+        "get": null,
+        "set": null
+      },
+      "descriptors": {
+        "inspector": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "debug": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "uv": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "ipv6": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_alpn": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_sni": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_ocsp": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "cached_builtins": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "openssl_is_boringssl": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "require_module": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "typescript": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        }
+      },
+      "frozen": false,
+      "prototype": "object",
+      "changedValue": true,
+      "afterValue": "changed",
+      "changedProperty": true
+    },
+    "worker": {
+      "values": {
+        "inspector": true,
+        "debug": false,
+        "uv": true,
+        "ipv6": true,
+        "tls_alpn": true,
+        "tls_sni": true,
+        "tls_ocsp": true,
+        "tls": true,
+        "cached_builtins": true,
+        "openssl_is_boringssl": true,
+        "require_module": true,
+        "typescript": "transform"
+      },
+      "property": {
+        "enumerable": true,
+        "configurable": true,
+        "writable": true,
+        "get": null,
+        "set": null
+      },
+      "descriptors": {
+        "inspector": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "debug": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "uv": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "ipv6": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_alpn": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_sni": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls_ocsp": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "tls": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "cached_builtins": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "openssl_is_boringssl": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "require_module": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        },
+        "typescript": {
+          "enumerable": true,
+          "configurable": true,
+          "writable": true,
+          "get": null,
+          "set": null
+        }
+      },
+      "frozen": false,
+      "prototype": "object",
+      "changedValue": true,
+      "afterValue": "changed",
+      "changedProperty": true
+    },
+    "exit": 0
+  }
+}

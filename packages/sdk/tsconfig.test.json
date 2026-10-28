@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "lib": ["ES2024", "DOM", "DOM.Iterable"], "rootDir": "src", "types": ["node"] },
+  "include": ["src/**/*.test.ts", "src/runtime/workers/assistance/compatibility.d.ts"],
+  "exclude": ["src/runtime/workers/**/*.test.ts"]
+}

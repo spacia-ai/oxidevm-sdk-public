@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "engineSource": "ff5c5effdefcc5712ac94bae1d937e5034e4bfef",
+  "files": [
+    {
+      "path": "config/allowed-licenses.json",
+      "sha256": "16b97e679747b3034c983304dd5270f2a1d98a85ed3121afa87eddc61f786a5e"
+    },
+    {
+      "path": "config/allowed-tool-licenses.json",
+      "sha256": "728ca0466fc2050d1ced2a9e8ef3fd4ebbaf14bd1ee42ba23fae74f3ca104d01"
+    },
+    {
+      "path": "config/allowed-guest-artifact-licenses.json",
+      "sha256": "10e3071288a04c66b234af8bd240e2d4c8b9597004237b56abc6c3842ba566cd"
+    }
+  ]
+}

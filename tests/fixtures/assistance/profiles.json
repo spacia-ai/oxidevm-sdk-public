@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "node24-next16-v1",
+      "status": "experimental",
+      "enabled": false,
+      "mode": "system",
+      "nodeApiMajor": 24,
+      "nodeApiVersion": "24.18.1",
+      "nextVersion": "16.2.12",
+      "bundler": "webpack",
+      "browsers": [
+        "chrome",
+        "edge"
+      ],
+      "requiresCrossOriginIsolation": true,
+      "dependencyUpdates": "stop-install-restart",
+      "compiler": {
+        "package": "@next/swc-wasm-web",
+        "version": "16.2.12",
+        "integrity": "sha512-6fpLq+E3WtEmwV4d1gclgRG9WNhAbENCMc603dE7EzUWZhzEvmP4e8ts/AnhIIZWX5uTV1Ee00X/TuMZhWcV6w=="
+      },
+      "moduleRuntime": {
+        "package": "systemjs",
+        "version": "6.15.1"
+      },
+      "transformCompiler": {
+        "package": "@swc/wasm-web",
+        "version": "1.16.18",
+        "integrity": "sha512-oi8tvn0Pt3r0KTKxQZ3OCcJuh11yeCBxCBW6TeMbQtwihzqxm+rzyv7bxTgPa/Hq2ErhPHckrlKEMFTpLwHYUQ=="
+      },
+      "supportedOperations": [],
+      "qualifiedArtifacts": [],
+      "gateEvidence": []
+    }
+  ]
+}

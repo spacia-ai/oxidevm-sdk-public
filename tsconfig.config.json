@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2024"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "eslint.config.ts",
+    "scripts/**/*.ts",
+    "packages/sdk/asset-source/native-process/vite.config.ts"
+  ]
+}

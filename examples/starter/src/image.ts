@@ -1,0 +1,2 @@
+import { defineImage } from "@oxidevm/sdk";
+export default defineImage({"mode":"userspace","manifestUrl":"https://cdn.oxidevm.dev/images/oxidevm-starter-nginx/0.0.7/08a15caaff78f2da43d2cc3d8a4f2443e0158967538236c52368bdf65b71cf97/manifest.json","manifestSHA256":"08a15caaff78f2da43d2cc3d8a4f2443e0158967538236c52368bdf65b71cf97","trust":{"algorithm":"Ed25519","keyId":"ed25519-29abae438e55181fdb14549bc7822a1e","publicKey":"MCowBQYDK2VwAyEAKsvegFYw3diUghqD2Y4MTa4XSIH7a1EVo3TxbIcXQvo="}});

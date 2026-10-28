@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "lib": ["ES2024", "WebWorker"], "rootDir": "src", "typeRoots": ["../../types"], "types": ["worker"] },
+  "include": ["src/runtime/workers/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.core-test.ts", "src/**/*.test-support.ts"]
+}

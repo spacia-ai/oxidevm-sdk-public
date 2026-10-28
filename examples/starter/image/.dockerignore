@@ -1,0 +1,10 @@
+*
+!Dockerfile
+!build-dash.sh
+!dash-signames.c
+!build-toybox.sh
+!build-supplements.sh
+!.cache/
+.cache/*
+!.cache/inputs/
+!.cache/inputs/**

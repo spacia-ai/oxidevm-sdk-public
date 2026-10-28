@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "browser"
+    ],
+    "typeRoots": [
+      "../../types"
+    ]
+  },
+  "include": [
+    "asset-source/preview/src/main.ts",
+    "asset-source/preview/src/keeper.ts",
+    "asset-source/preview/src/keeper-worker.ts",
+    "asset-source/preview/src/location.ts",
+    "asset-source/preview/src/navigation-timing.ts",
+    "asset-source/preview/src/websocket.ts",
+    "asset-source/preview/src/vite-env.d.ts"
+  ],
+  "exclude": [
+    "**/*.test.ts"
+  ]
+}

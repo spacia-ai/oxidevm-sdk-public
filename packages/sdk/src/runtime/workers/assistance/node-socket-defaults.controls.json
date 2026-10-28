@@ -1,0 +1,746 @@
+{
+  "node": {
+    "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+    "initial": {
+      "auto": true,
+      "timeout": 250
+    },
+    "rows": [
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "true",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": null,
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "false",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": null,
+        "after": {
+          "auto": false,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "undefined",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" argument must be of type boolean. Received undefined"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "null",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" argument must be of type boolean. Received null"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "number",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" argument must be of type boolean. Received type number (1)"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "string",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" argument must be of type boolean. Received type string ('true')"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "object",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" argument must be of type boolean. Received an instance of Object"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "one",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": null,
+        "after": {
+          "auto": true,
+          "timeout": 10
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "nine",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": null,
+        "after": {
+          "auto": true,
+          "timeout": 10
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "ten",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": null,
+        "after": {
+          "auto": true,
+          "timeout": 10
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "normal",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": null,
+        "after": {
+          "auto": true,
+          "timeout": 2500
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "max",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": null,
+        "after": {
+          "auto": true,
+          "timeout": 2147483647
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "zero",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be >= 1 && <= 2147483647. Received 0"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "negative",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be >= 1 && <= 2147483647. Received -1"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "overflow",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be >= 1 && <= 2147483647. Received 2147483648"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "fraction",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be an integer. Received 1.5"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "nan",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be an integer. Received NaN"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "infinity",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be an integer. Received Infinity"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "undefined",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" argument must be of type number. Received undefined"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "null",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" argument must be of type number. Received null"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "string",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" argument must be of type number. Received type string ('250')"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "boolean",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" argument must be of type number. Received type boolean (true)"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "bigint",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" argument must be of type number. Received type bigint (1n)"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      }
+    ]
+  },
+  "bun": {
+    "binarySHA256": "500e6edbf321ddf490adcc55a6a01639993a07924616ab67492e1256c15557e2",
+    "initial": {
+      "auto": true,
+      "timeout": 250
+    },
+    "rows": [
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "true",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": true,
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "false",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": false,
+        "after": {
+          "auto": false,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "undefined",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "autoSelectFamilyDefault"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "null",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "autoSelectFamilyDefault"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "number",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "autoSelectFamilyDefault"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "string",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "autoSelectFamilyDefault"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamily",
+        "label": "object",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "autoSelectFamilyDefault"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "one",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": 10,
+        "after": {
+          "auto": true,
+          "timeout": 10
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "nine",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": 10,
+        "after": {
+          "auto": true,
+          "timeout": 10
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "ten",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": 10,
+        "after": {
+          "auto": true,
+          "timeout": 10
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "normal",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": 2500,
+        "after": {
+          "auto": true,
+          "timeout": 2500
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "max",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "returned": 2147483647,
+        "after": {
+          "auto": true,
+          "timeout": 2147483647
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "zero",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be >= 1 and <= 2147483647. Received 0"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "negative",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be >= 1 and <= 2147483647. Received -1"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "overflow",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be >= 1 and <= 2147483647. Received 2147483648"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "fraction",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be an integer. Received 1.5"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "nan",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be an integer. Received NaN"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "infinity",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "RangeError",
+          "code": "ERR_OUT_OF_RANGE",
+          "message": "The value of \"value\" is out of range. It must be an integer. Received Infinity"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "undefined",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" property must be of type number, got undefined"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "null",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" property must be of type number, got object"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "string",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" property must be of type number, got string"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "boolean",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" property must be of type number, got boolean"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      },
+      {
+        "method": "setDefaultAutoSelectFamilyAttemptTimeout",
+        "label": "bigint",
+        "before": {
+          "auto": true,
+          "timeout": 250
+        },
+        "error": {
+          "name": "TypeError",
+          "code": "ERR_INVALID_ARG_TYPE",
+          "message": "The \"value\" property must be of type number, got bigint"
+        },
+        "after": {
+          "auto": true,
+          "timeout": 250
+        }
+      }
+    ]
+  }
+}

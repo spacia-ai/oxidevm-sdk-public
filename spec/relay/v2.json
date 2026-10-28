@@ -1,0 +1,162 @@
+{
+  "constants": {
+    "VERSION": 2,
+    "HEADER": 40,
+    "MAX_FRAME": 65536,
+    "MAX_CREDIT": 262144,
+    "BUFFER_LIMIT": 8388608,
+    "STREAM_LIMIT": 64
+  },
+  "kinds": {
+    "OPEN": 1,
+    "OPENED": 2,
+    "DATA": 3,
+    "HALF_CLOSE": 4,
+    "RESET": 5,
+    "WINDOW": 6,
+    "PING": 7,
+    "PONG": 8,
+    "FETCH": 9,
+    "FETCH_HEADERS": 10
+  },
+  "failures": [
+    "relay-not-found",
+    "discovery-failed",
+    "approval-denied",
+    "approval-expired",
+    "permission-denied",
+    "authentication-failed",
+    "version-mismatch",
+    "destination-denied",
+    "quota-exceeded",
+    "timed-out",
+    "protocol-error",
+    "disconnected",
+    "connection-refused",
+    "connection-reset",
+    "network-unreachable",
+    "host-unreachable"
+  ],
+  "vectors": [
+    {
+      "name": "open",
+      "session": "7",
+      "hex": "4f58524c0200010007000000000000000100000000000000000000000000000014000000800000000602005008080808000000000000000000000000",
+      "kind": 1
+    },
+    {
+      "name": "opened",
+      "session": "7",
+      "hex": "4f58524c020002000700000000000000010000000000000000000000000000000000000080000000",
+      "kind": 2
+    },
+    {
+      "name": "data",
+      "session": "7",
+      "hex": "4f58524c02000300070000000000000001000000000000000000000000000000050000000000000068656c6c6f",
+      "kind": 3
+    },
+    {
+      "name": "half_close",
+      "session": "7",
+      "hex": "4f58524c02000400070000000000000001000000000000000000000000000000010000000000000001",
+      "kind": 4
+    },
+    {
+      "name": "reset",
+      "session": "7",
+      "hex": "4f58524c02000500070000000000000001000000000000000000000000000000120000000000000064657374696e6174696f6e2d64656e696564",
+      "kind": 5
+    },
+    {
+      "name": "window",
+      "session": "7",
+      "hex": "4f58524c020006000700000000000000010000000000000000000000000000000000000080000000",
+      "kind": 6
+    },
+    {
+      "name": "ping",
+      "session": "7",
+      "hex": "4f58524c020007000700000000000000000000000000000000000000000000000000000000000000",
+      "kind": 7
+    },
+    {
+      "name": "pong",
+      "session": "7",
+      "hex": "4f58524c020008000700000000000000000000000000000000000000000000000000000000000000",
+      "kind": 8
+    },
+    {
+      "name": "fetch",
+      "session": "7",
+      "hex": "4f58524c020009000700000000000000010000000000000000000000000000001e000000800000007b2275726c223a2268747470733a2f2f6578616d706c652e636f6d2f227d",
+      "kind": 9
+    },
+    {
+      "name": "fetch_headers",
+      "session": "7",
+      "hex": "4f58524c02000a000700000000000000010000000000000000000000000000001b000000000000007b22737461747573223a3230302c2268656164657273223a7b7d7d",
+      "kind": 10
+    },
+    {
+      "name": "version-1",
+      "session": "7",
+      "hex": "4f58524c0100010007000000000000000100000000000000000000000000000014000000000000000000000000000000000000000000000000000000",
+      "reason": "version-mismatch"
+    },
+    {
+      "name": "flags",
+      "session": "7",
+      "hex": "4f58524c020002010700000000000000010000000000000000000000000000000000000000000000",
+      "reason": "protocol-error"
+    },
+    {
+      "name": "empty-data",
+      "session": "7",
+      "hex": "4f58524c020003000700000000000000010000000000000000000000000000000000000000000000",
+      "reason": "protocol-error"
+    },
+    {
+      "name": "zero-window",
+      "session": "7",
+      "hex": "4f58524c020006000700000000000000010000000000000000000000000000000000000000000000",
+      "reason": "protocol-error"
+    },
+    {
+      "name": "excessive-credit",
+      "session": "7",
+      "hex": "4f58524c020002000700000000000000010000000000000000000000000000000000000001000400",
+      "reason": "protocol-error"
+    },
+    {
+      "name": "unknown-kind",
+      "session": "7",
+      "hex": "4f58524c020063000700000000000000010000000000000000000000000000000000000000000000",
+      "reason": "protocol-error"
+    },
+    {
+      "name": "short-header",
+      "session": "7",
+      "hex": "4f58524c",
+      "reason": "protocol-error"
+    },
+    {
+      "name": "invalid-half-close",
+      "session": "7",
+      "hex": "4f58524c02000400070000000000000001000000000000000000000000000000010000000000000003",
+      "reason": "protocol-error"
+    },
+    {
+      "name": "stream-zero",
+      "session": "7",
+      "hex": "4f58524c020002000700000000000000000000000000000000000000000000000000000000000000",
+      "reason": "protocol-error"
+    },
+    {
+      "name": "length-mismatch",
+      "session": "7",
+      "hex": "4f58524c02000300070000000000000001000000000000000000000000000000050000000000000068656c6c",
+      "reason": "protocol-error"
+    }
+  ]
+}

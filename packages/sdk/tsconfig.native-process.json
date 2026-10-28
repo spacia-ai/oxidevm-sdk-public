@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "lib": ["ES2024", "DOM", "DOM.Iterable"], "types": ["browser"], "typeRoots": ["../../types"] },
+  "include": ["asset-source/native-process/entry.ts"]
+}

@@ -1,0 +1,12 @@
+title = "OxideVM SDK secret scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Dummy PEM text that exercises PEM header validation in docker-context tests"
+targetRules = ["private-key"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''packages/sdk/src/image-builder/docker-context\.test\.ts$''']
+regexes = ['''BEGIN PRIVATE KEY-----\\nprivate''']

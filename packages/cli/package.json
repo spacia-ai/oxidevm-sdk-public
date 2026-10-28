@@ -1,0 +1,48 @@
+{
+  "name": "@oxidevm/cli",
+  "version": "0.0.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "bin": {
+    "oxidevm": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "node": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.txt",
+    "sbom.cdx.json"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "build": "node --input-type=module -e 'import { rmSync } from \"node:fs\"; rmSync(\"dist\", { recursive: true, force: true });' && tsc -p tsconfig.build.json && node ../../scripts/stage-starter.ts && node ../../scripts/minify-distribution.ts packages/cli/dist && node ../../scripts/package-notices.ts cli",
+    "test": "node ../../scripts/stage-starter.ts && vitest run --maxWorkers=2"
+  },
+  "dependencies": {
+    "@oxidevm/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "6.0.3",
+    "vitest": "3.2.4"
+  },
+  "private": false,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/spacia-ai/oxidevm-sdk-public.git",
+    "directory": "packages/cli"
+  }
+}

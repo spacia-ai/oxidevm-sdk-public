@@ -1,0 +1,79 @@
+diff --git a/build/internal/util/comparisons.js b/build/internal/util/comparisons.js
+index fd8180d8c95693695a4a04649bae36ba658cea32..d7c20bc243a78889b67e1f70e1d18440582a0024 100644
+--- a/build/internal/util/comparisons.js
++++ b/build/internal/util/comparisons.js
+@@ -3,6 +3,9 @@
+ 
+ 'use strict';
+ 
++// OxideVM: retain the Node v24.18.1 comparison rules exercised by this profile.
++// Reference: nodejs/node v24.18.1 lib/internal/util/comparisons.js (MIT).
++
+ function _slicedToArray(arr, i) { return _arrayWithHoles(arr) || _iterableToArrayLimit(arr, i) || _unsupportedIterableToArray(arr, i) || _nonIterableRest(); }
+ function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+ function _unsupportedIterableToArray(o, minLen) { if (!o) return; if (typeof o === "string") return _arrayLikeToArray(o, minLen); var n = Object.prototype.toString.call(o).slice(8, -1); if (n === "Object" && o.constructor) n = o.constructor.name; if (n === "Map" || n === "Set") return Array.from(o); if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _arrayLikeToArray(o, minLen); }
+@@ -104,7 +107,7 @@ var kIsMap = 3;
+ 
+ // Check if they have the same source and flags
+ function areSimilarRegExps(a, b) {
+-  return regexFlagsSupported ? a.source === b.source && a.flags === b.flags : RegExp.prototype.toString.call(a) === RegExp.prototype.toString.call(b);
++  return a.lastIndex === b.lastIndex && (regexFlagsSupported ? a.source === b.source && a.flags === b.flags : RegExp.prototype.toString.call(a) === RegExp.prototype.toString.call(b));
+ }
+ function areSimilarFloatArrays(a, b) {
+   if (a.byteLength !== b.byteLength) {
+@@ -183,7 +186,7 @@ function innerDeepEqual(val1, val2, strict, memos) {
+     if (val1 === null || _typeof(val1) !== 'object') {
+       if (val2 === null || _typeof(val2) !== 'object') {
+         // eslint-disable-next-line eqeqeq
+-        return val1 == val2;
++        return val1 == val2 || numberIsNaN(val1) && numberIsNaN(val2);
+       }
+       return false;
+     }
+@@ -218,9 +221,10 @@ function innerDeepEqual(val1, val2, strict, memos) {
+     }
+   }
+   if (isDate(val1)) {
+-    if (!isDate(val2) || Date.prototype.getTime.call(val1) !== Date.prototype.getTime.call(val2)) {
+-      return false;
+-    }
++    if (!isDate(val2)) return false;
++    var time1 = Date.prototype.getTime.call(val1);
++    var time2 = Date.prototype.getTime.call(val2);
++    if (time1 !== time2 && !(numberIsNaN(time1) && numberIsNaN(time2))) return false;
+   } else if (isRegExp(val1)) {
+     if (!isRegExp(val2) || !areSimilarRegExps(val1, val2)) {
+       return false;
+@@ -228,9 +232,12 @@ function innerDeepEqual(val1, val2, strict, memos) {
+   } else if (isNativeError(val1) || val1 instanceof Error) {
+     // Do not compare the stack as it might differ even though the error itself
+     // is otherwise identical.
+-    if (val1.message !== val2.message || val1.name !== val2.name) {
+-      return false;
+-    }
++    if (!(isNativeError(val2) || val2 instanceof Error) ||
++        !enumerableOrEqual(val1, val2, 'message', strict, memos) ||
++        !enumerableOrEqual(val1, val2, 'name', strict, memos) ||
++        !enumerableOrEqual(val1, val2, 'cause', strict, memos) ||
++        !enumerableOrEqual(val1, val2, 'errors', strict, memos) ||
++        hasOwnProperty(val1, 'cause') !== hasOwnProperty(val2, 'cause')) return false;
+   } else if (isArrayBufferView(val1)) {
+     if (!strict && (isFloat32Array(val1) || isFloat64Array(val1))) {
+       if (!areSimilarFloatArrays(val1, val2)) {
+@@ -264,9 +271,16 @@ function innerDeepEqual(val1, val2, strict, memos) {
+     }
+   } else if (isBoxedPrimitive(val1) && !isEqualBoxedPrimitive(val1, val2)) {
+     return false;
++  } else if (typeof URL === 'function' && val1 instanceof URL) {
++    if (!(val2 instanceof URL) || val1.href !== val2.href) return false;
++  } else if (val1 instanceof Promise || _require$types.isWeakMap(val1) || _require$types.isWeakSet(val1)) {
++    return false;
+   }
+   return keyCheck(val1, val2, strict, memos, kNoIterator);
+ }
++function enumerableOrEqual(val1, val2, key, strict, memos) {
++  return propertyIsEnumerable(val2, key) || innerDeepEqual(val1[key], val2[key], strict, memos);
++}
+ function getEnumerables(val, keys) {
+   return keys.filter(function (k) {
+     return propertyIsEnumerable(val, k);

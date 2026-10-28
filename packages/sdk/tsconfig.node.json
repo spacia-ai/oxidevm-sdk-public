@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2024"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "vitest.core.config.ts",
+    "src/image-builder/**/*.ts",
+    "vite.qualification.config.ts",
+    "vite.snapshot.config.ts"
+  ]
+}
