@@ -68,6 +68,8 @@ export async function verifyReleaseArchives(root: string, target: "private-previ
   await cp(join(root, "examples"), join(consumer, "examples"), { recursive: true, filter: path => !path.split("/").some(part => ["node_modules", "dist", ".cache"].includes(part)) && !path.includes("/public/oxidevm/") && !path.endsWith("/public/oxidevm") });
   await cp(join(root, "tsconfig.base.json"), join(consumer, "tsconfig.base.json"));
   await cp(join(root, "types"), join(consumer, "types"), { recursive: true });
+  await mkdir(join(consumer, "scripts"));
+  await cp(join(root, "scripts/license-expression.ts"), join(consumer, "scripts/license-expression.ts"));
   run(consumer, "pnpm", ["install", "--no-frozen-lockfile"]);
   run(consumer, "pnpm", ["install", "--frozen-lockfile"]);
   await writeFile(join(consumer, "consumer.ts"), 'import { createVM, defineImage, defaultImage } from "@oxidevm/sdk";\nimport type { VM } from "@oxidevm/sdk";\nimport * as machine from "@oxidevm/sdk/machine";\nimport * as diagnostics from "@oxidevm/sdk/diagnostics";\nimport * as js from "@oxidevm/sdk/js-process";\nimport { getSDKRelease, buildImage } from "@oxidevm/sdk/image-builder";\nexport const api = { createVM, defineImage, defaultImage, machine, diagnostics, js, getSDKRelease, buildImage };\nexport type ConsumerVM = VM;\n');
