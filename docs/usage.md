@@ -22,7 +22,7 @@ The examples use these names:
 | **Userspace** — run supported Linux applications without booting a guest kernel | `--mode userspace` | `mode: "userspace"` |
 | **System** — boot a real Linux kernel and run its applications | `--mode system` | `mode: "system"` |
 
-The creator selects Userspace mode and the prebuilt nginx image for the starter. SDK calls use explicit mode and image options. For custom tools and System mode, see [custom images](#8-create-and-use-your-own-image).
+The creator selects Userspace mode and the prebuilt Python + pandas image for the starter. SDK calls use explicit mode and image options. For custom tools and System mode, see [custom images](#8-create-and-use-your-own-image).
 
 ## 1. Hello in the browser
 
@@ -45,7 +45,7 @@ There are two environments to keep straight:
 
 ### Give the page a Run button
 
-The starter already runs nginx. To replace it with a small command demo, use the generated `src/image.ts` reference and replace `src/main.ts` with this code. It creates its own button and output element.
+The starter already runs Python and pandas. To replace it with a small command demo, use the generated `src/image.ts` reference and replace `src/main.ts` with this code. It creates its own button and output element.
 
 <!-- typecheck: usage/main.ts -->
 ```ts
@@ -197,7 +197,7 @@ You can read bytes with `readFile`, write bytes with `writeFile`, list a directo
 
 ## 4. Run a web app inside the browser
 
-This example creates a tiny guest Node application, runs `npm run dev`, and exposes port 3000. It needs an image with Node.js and npm. Supply that image's signed reference as `src/image.ts`. The nginx starter image contains neither tool. A Node/npm image with both tools preinstalled needs no guest package download for this example.
+This example creates a tiny guest Node application, runs `npm run dev`, and exposes port 3000. It needs an image with Node.js and npm. Supply that image's signed reference as `src/image.ts`. The Python + pandas starter image contains neither tool. A Node/npm image with both tools preinstalled needs no guest package download for this example.
 
 **Prerequisite:** configure a preview host using the [preview hosting reference](deployment.md#preview-host). Pass its real origin into `startWebApp`; `https://preview.example.net/` is an example address to replace. Preview setup is separate from starting the guest process.
 

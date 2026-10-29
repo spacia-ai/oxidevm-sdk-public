@@ -5,11 +5,11 @@ import { approvedControllerSource } from "./publication-bootstrap.ts";
 
 await test("the protected job binds private code to the approved archive before executing it", () => {
   const source = "a".repeat(40), commit = "b".repeat(40), scope = "c".repeat(64);
-  const bytes = Buffer.from(JSON.stringify({ schemaVersion: 1, target: "public", version: "0.0.1", source, exportCommit: commit, legalScopeSHA256: scope }));
+  const bytes = Buffer.from(JSON.stringify({ schemaVersion: 1, target: "public", version: "0.0.2", source, exportCommit: commit, legalScopeSHA256: scope }));
   const candidate = createHash("sha256").update(bytes).digest("hex");
   const human = { status: "approved", reviewer: "Human reviewer", reviewedAt: "2026-10-26T00:00:00Z", evidence: "reviews/review.md", sha256: "f".repeat(64) };
   const authorization = { schemaVersion: 1, candidateSHA256: candidate, legalScopeSHA256: scope, ownerApproval: human, legalReview: human };
-  const expected = { source, commit, candidate, version: "0.0.1" };
+  const expected = { source, commit, candidate, version: "0.0.2" };
   assert.equal(approvedControllerSource(bytes, authorization, expected), source);
   assert.throws(() => approvedControllerSource(bytes, authorization, { ...expected, source: "d".repeat(40) }), /source/u);
   assert.throws(() => approvedControllerSource(bytes, authorization, { ...expected, commit: "d".repeat(40) }), /source/u);

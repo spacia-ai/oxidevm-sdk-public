@@ -10,7 +10,14 @@ OxideVM SDK and CLI. Keep it private until the owner explicitly authorizes
 public visibility. Repository visibility and npm publication are separate
 decisions. Neither follows automatically from a source export.
 
-The export contains the SDK, CLI, and one nginx starter. Do not add extra
+The starter runs Linux Python, NumPy and pandas. Its CSV calculations must run
+in the Linux guest. Do not substitute JavaScript, Pyodide or remote compute.
+Keep upload validation, bounded DataFrame decoding and safe text rendering.
+Keep binaries outside Git and package archives. Build the pinned NumPy and
+pandas sources without libquadmath, libgfortran or external BLAS. Preserve
+complete source materials, selected license branches and human release gates.
+
+The export contains the SDK, CLI, and one Python + pandas starter. Do not add extra
 examples, empty directories, task reports, or redundant generated artifacts.
 
 ## Development and export ownership

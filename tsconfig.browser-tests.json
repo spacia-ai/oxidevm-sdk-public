@@ -12,7 +12,7 @@
   },
   "include": [
     "playwright.config.ts",
-    "tests/release/nginx-*.ts",
+    "tests/release/pandas-*.ts",
     "tests/fixtures/**/*.ts"
   ]
 }

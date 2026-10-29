@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0842c8"><title>OxideVM · Your starter app</title></head>
+<head><meta charset="utf-8"><link rel="icon" href="/favicon.png" type="image/png" sizes="96x96"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0842c8"><title>OxideVM · Your data starter</title></head>
 <body>
   <a class="skip-link" href="#demo">Skip to demo</a>
   <header class="masthead">
@@ -12,26 +12,34 @@
         </a>
         <div class="nav-links"><a href="https://github.com/spacia-ai/oxidevm-sdk-public/blob/main/docs/usage.md" target="_blank" rel="noreferrer">Docs <span aria-hidden="true">↗</span></a><a href="https://github.com/spacia-ai/oxidevm-sdk-public" target="_blank" rel="noreferrer">Source <span aria-hidden="true">↗</span></a></div>
       </nav>
-      <div class="title-row"><h1>Your starter app.</h1><span class="demo-label">INTERACTIVE DEMO</span></div>
-      <p class="intro">Change the code. Make this app your own.</p>
+      <div class="title-row"><h1>Your data starter.</h1><span class="demo-label">INTERACTIVE DEMO</span></div>
+      <p class="intro">Run real Linux Python. Explore your data in this browser.</p>
     </div>
   </header>
   <main class="container" id="demo" tabindex="-1">
-    <section class="process-window" aria-label="Linux server demo">
-      <div class="process-bar"><div><strong>nginx</strong><span class="process-platform">Linux x86-64</span></div><div class="process-actions"><span id="state" role="status">Opening Linux…</span><button id="toggle" type="button">Cancel</button></div></div>
-      <div class="request-bar"><code>GET /index.html</code><output id="response" aria-label="Last server response">Waiting</output></div>
-      <div class="page-area">
-        <p id="progress" role="status">Preparing the browser runtime…</p>
-        <div id="failure" role="alert" hidden><h2>Linux could not start.</h2><p id="error-message"></p><p>Check the starter README, then try Start again.</p></div>
-        <iframe id="preview" title="Page served by the Linux nginx process" hidden></iframe>
-        <div class="page-actions"><button id="edit" class="text-button" type="button" disabled aria-controls="editor" aria-expanded="false">Edit this page</button></div>
-        <form id="editor" hidden><label for="html">/workspace/site/index.html</label><textarea id="html" spellcheck="false" autocapitalize="off"></textarea><div class="editor-actions"><button type="submit">Save &amp; reload</button><button id="close-editor" type="button" class="text-button">Close editor</button><span id="save-status" role="status"></span></div></form>
+    <section class="process-window" aria-label="Linux Python and pandas demo">
+      <div class="process-bar"><div><strong>Linux Python + pandas</strong><span class="process-platform">Linux x86-64</span></div><div class="process-actions"><span id="state" role="status">Opening Linux…</span><button id="cancel" type="button" hidden>Stop execution</button><button id="run" type="button" disabled>Run code</button></div></div>
+      <div class="workbench">
+        <section class="editor-pane" aria-label="Python editor">
+          <div class="pane-bar"><div role="tablist" aria-label="Workspace files"><button id="code-tab" type="button" role="tab" aria-selected="true" aria-controls="code-panel">analysis.py</button><button id="csv-tab" type="button" role="tab" aria-selected="false" aria-controls="csv-panel" tabindex="-1">data.csv</button></div><button id="upload" type="button" disabled>Upload CSV</button><input id="file" type="file" accept=".csv,text/csv" aria-label="Upload CSV file" hidden></div>
+          <div id="code-panel" role="tabpanel" aria-labelledby="code-tab"><label class="sr-only" for="code">Python code</label><pre id="code-highlight" aria-hidden="true"></pre><textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-describedby="code-hint"></textarea></div>
+          <div id="csv-panel" role="tabpanel" aria-labelledby="csv-tab" hidden><pre id="csv-source" tabindex="0"></pre></div>
+          <div class="editor-hint" id="code-hint">Use the sample CSV or upload your own data. <span>Ctrl/⌘ + Enter to run</span></div>
+          <div id="error" role="alert" hidden><strong id="error-title">Python could not complete.</strong><pre id="error-message"></pre></div>
+          <details id="output-panel" hidden><summary>Python output</summary><pre id="output"></pre></details>
+        </section>
+        <section class="data-pane" aria-label="Dataframe preview">
+          <div class="pane-bar"><div><strong>Dataframe</strong><code>result</code></div><button id="export" class="text-button" type="button" disabled>Export CSV ↓</button></div>
+          <p id="progress" role="status">Opening the Linux Python runtime…</p>
+          <div id="table-scroll" tabindex="0" role="region" aria-label="Dataframe table" hidden><table id="table"><caption class="sr-only">Result from analysis.py</caption><thead id="columns"></thead><tbody id="rows"></tbody></table></div>
+          <div class="data-footer"><output id="shape" aria-live="polite">No result yet</output><span id="dataset">From sample CSV</span></div>
+        </section>
       </div>
-      <div class="binary-bar"><code>/usr/sbin/nginx</code><span id="binary">Checking executable…</span></div>
+      <div class="binary-bar"><code>/usr/bin/python3</code><span id="binary">Checking Linux executable…</span></div>
       <details class="terminal-panel" open><summary>Terminal <span>Linux shell</span></summary><div id="terminal" aria-label="Interactive Linux terminal"></div><div class="terminal-tools"><button id="interrupt" type="button" disabled>Send Ctrl+C</button><button id="focus-terminal" type="button" disabled>Focus terminal</button></div></details>
     </section>
-    <footer><div><p class="start-here">Start here <span aria-hidden="true">→</span> edit <code>src/main.ts</code></p><p id="persistence">Checking browser storage…</p></div><button id="reset" class="text-button" type="button" disabled>Reset demo</button></footer>
-    <dialog id="reset-dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reset the demo page?</h2><p>This replaces your saved index.html. Other workspace files stay in place.</p><form method="dialog"><button value="cancel" autofocus>Keep my changes</button><button value="reset">Reset page</button></form></dialog>
+    <footer><div><p class="start-here">Start here → edit <code>analysis.py</code></p><p id="persistence">Checking browser storage…</p></div><button id="reset" class="text-button" type="button" disabled>Reset demo</button></footer>
+    <dialog id="reset-dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reset the demo?</h2><p>This restores the sample CSV and Python code. Other workspace files stay in place.</p><form method="dialog"><button value="cancel" autofocus>Keep my changes</button><button value="reset">Reset demo</button></form></dialog>
   </main>
   <script type="module" src="/src/main.ts"></script>
 </body></html>
