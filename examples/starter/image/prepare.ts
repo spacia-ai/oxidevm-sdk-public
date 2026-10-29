@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-const value: unknown = JSON.parse(await readFile(new URL("./inputs.lock.json", import.meta.url), "utf8"));
+async function prepareInputs(value: unknown, directory: string): Promise<void> {
 if (!Array.isArray(value) || value.length === 0 || value.length > 128) throw new Error("Invalid image input lock");
 const inputs = Array.from<unknown>(value).map(value => {
   if (typeof value !== "object" || value === null || !("name" in value) || !("url" in value) || !("sha256" in value)) throw new Error("Invalid image input");
@@ -13,7 +13,6 @@ const inputs = Array.from<unknown>(value).map(value => {
   return { name, url, sha256 };
 });
 if (new Set(inputs.map(input => input.name)).size !== inputs.length) throw new Error("Duplicate image input");
-const directory = join(import.meta.dirname, ".cache/inputs");
 await mkdir(directory, { recursive: true });
 for (const input of inputs) {
   const file = join(directory, input.name);
@@ -43,4 +42,21 @@ for (const input of inputs) {
   if (createHash("sha256").update(bytes).digest("hex") !== input.sha256) throw new Error(`Cached image input changed: ${input.name}`);
 }
 await writeFile(join(directory, "SHA256SUMS"), inputs.map(input => `${input.sha256}  ${input.name}\n`).join(""));
-process.stdout.write("Verified all pinned runtime, utility source and build inputs.\n");
+}
+await prepareInputs(JSON.parse(await readFile(new URL("./inputs.lock.json", import.meta.url), "utf8")), join(import.meta.dirname, ".cache/inputs"));
+const python: unknown = JSON.parse(await readFile(new URL("./python-inputs.lock.json", import.meta.url), "utf8"));
+if (typeof python !== "object" || python === null || !("inputs" in python) || !("base" in python)) throw new Error("Invalid Python inputs");
+if (!Array.isArray(python.inputs)) throw new Error("Invalid Python input list");
+const pythonInputs = Array.from<unknown>(python.inputs).map(value => { if (typeof value !== "object" || value === null || !("filename" in value) || !("url" in value) || !("sha256" in value)) throw new Error("Invalid Python input"); return { name: value.filename, url: value.url, sha256: value.sha256 }; });
+await prepareInputs(pythonInputs, join(import.meta.dirname, ".cache/python-inputs"));
+const base = python.base;
+if (typeof base !== "object" || base === null || !("sha256" in base) || !("filename" in base) || base.filename !== "docs-python-rootfs.tar.gz" || typeof base.sha256 !== "string") throw new Error("Invalid Python base identity");
+const supplied = process.env["OXIDEVM_PANDAS_BASE_ROOTFS"];
+const destination = join(import.meta.dirname, ".cache/python-inputs/docs-python-rootfs.tar.gz");
+if (supplied !== undefined) {
+  if (createHash("sha256").update(await readFile(supplied)).digest("hex") !== base.sha256) throw new Error("Python base archive differs from its qualified digest");
+  await copyFile(supplied, destination);
+}
+if (createHash("sha256").update(await readFile(destination)).digest("hex") !== base.sha256) throw new Error("Supply the qualified base archive through OXIDEVM_PANDAS_BASE_ROOTFS");
+await writeFile(join(import.meta.dirname, ".cache/python-inputs/BASE.SHA256SUMS"), `${base.sha256}  ${base.filename}\n`);
+process.stdout.write("Verified all pinned utility, Python, NumPy and pandas inputs.\n");

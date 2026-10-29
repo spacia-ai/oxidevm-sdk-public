@@ -7,38 +7,38 @@ RUN cd /inputs && sha256sum -c SHA256SUMS \
     && tar -xzf /inputs/toybox-0.8.15.tar.gz -C /src/toybox --strip-components=1 \
     && sh /build-toybox.sh && sh /build-supplements.sh && sh /build-dash.sh
 
-FROM alpine:3.24.2@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS inputs
-COPY .cache/inputs/ /inputs/
-COPY --from=utilities /out/ /utilities/
-RUN cd /inputs && sha256sum -c SHA256SUMS \
-    && apk add --no-network --no-cache /inputs/nginx-1.30.6-r0.apk /inputs/pcre2-10.49-r0.apk /inputs/mksh-59c-r4.apk \
-    && mkdir -p /rootfs/bin /rootfs/usr/sbin /rootfs/usr/lib /rootfs/lib /rootfs/etc /rootfs/workspace /rootfs/tmp /rootfs/proc /rootfs/dev /rootfs/run \
-    && cp /utilities/toybox /rootfs/bin/toybox \
-    && for applet in $(/utilities/toybox); do ln -s toybox "/rootfs/bin/$applet"; done \
-    && mkdir -p /rootfs/usr/bin && ln -s ../../bin/env /rootfs/usr/bin/env \
-    && cp /utilities/supplements/* /rootfs/bin/ \
-    && ln -s xz /rootfs/bin/unxz \
-    && for applet in dropbear dbclient dropbearkey dropbearconvert scp; do ln -s dropbearmulti "/rootfs/bin/$applet"; done \
-    && ln -s dbclient /rootfs/bin/ssh \
-    && cp /bin/mksh /rootfs/bin/mksh \
-    && cp /utilities/dash/sh /rootfs/bin/dash \
-    && ln -s dash /rootfs/bin/sh \
-    && cp /usr/sbin/nginx /rootfs/usr/sbin/nginx \
-    && mkdir -p /rootfs/etc/ssl/certs \
-    && cp /etc/ssl/certs/ca-certificates.crt /rootfs/etc/ssl/certs/ \
-    && ln -s certs/ca-certificates.crt /rootfs/etc/ssl/cert.pem \
-    && cp /lib/ld-musl-x86_64.so.1 /rootfs/lib/ld-musl-x86_64.so.1 \
-    && ln -s ld-musl-x86_64.so.1 /rootfs/lib/libc.musl-x86_64.so.1 \
-    && cp -L /usr/lib/libpcre2-8.so.0 /usr/lib/libssl.so.3 /usr/lib/libcrypto.so.3 /usr/lib/libz.so.1 /rootfs/usr/lib/ \
-    && printf 'oxidevm:x:1000:1000:OxideVM:/workspace:/bin/sh\n' > /rootfs/etc/passwd \
-    && printf 'oxidevm:x:1000:\n' > /rootfs/etc/group \
-    && printf '127.0.0.1 localhost\n::1 localhost\n' > /rootfs/etc/hosts \
-    && printf 'nameserver 192.0.2.1\n' > /rootfs/etc/resolv.conf \
-    && chown 1000:1000 /rootfs/workspace \
-    && chmod 1777 /rootfs/tmp
 
+FROM utilities AS build
+COPY .cache/python-inputs/ /python-inputs/
+RUN cd /python-inputs && sha256sum -c SHA256SUMS && sha256sum -c BASE.SHA256SUMS \
+ && mkdir /base && tar -xzf docs-python-rootfs.tar.gz -C /base && cp -a /base/usr/. /usr/
+COPY install-python-inputs.py /install-python-inputs.py
+RUN /usr/bin/python3 /install-python-inputs.py \
+ && /usr/bin/python3 -m zipfile -e /python-inputs/pip-25.2-py3-none-any.whl /tools \
+ && /usr/bin/python3 -m venv --without-pip /build-env
+ENV PYTHONPATH=/tools PATH=/build-env/bin:/usr/lib/ninja-build/bin:/usr/bin:/bin \
+    CFLAGS="-O2 -march=x86-64-v2" CXXFLAGS="-O2 -march=x86-64-v2" \
+    SOURCE_DATE_EPOCH=1792886400 PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN python -m pip install --no-index --find-links=/python-inputs meson==1.8.3 meson-python==0.18.0 packaging==25.0 pyproject-metadata==0.9.1 Cython==3.1.4 versioneer==0.29 wheel==0.45.1 \
+ && mkdir -p /src /wheels && tar -xzf /python-inputs/numpy-2.2.6.tar.gz -C /src && tar -xzf /python-inputs/pandas-2.3.3.tar.gz -C /src \
+ && python -m pip wheel --no-deps --no-index --no-build-isolation -w /wheels \
+    -Csetup-args=-Dblas=none -Csetup-args=-Dlapack=none -Csetup-args=-Dallow-noblas=true \
+    -Csetup-args=-Dcpu-baseline=SSE2 -Csetup-args=-Dcpu-dispatch=none -Ccompile-args=-j4 /src/numpy-2.2.6 \
+ && python -m pip install --no-index --no-deps /wheels/numpy-*.whl \
+ && python -m pip wheel --no-deps --no-index --no-build-isolation -w /wheels -Ccompile-args=-j4 /src/pandas-2.3.3
+RUN mkdir -p /rootfs && tar -xzf /python-inputs/docs-python-rootfs.tar.gz -C /rootfs \
+ && python -m pip install --no-compile --no-index --no-deps --target=/rootfs/usr/lib/python3.12/site-packages /wheels/*.whl \
+    /python-inputs/python_dateutil-*.whl /python-inputs/pytz-*.whl /python-inputs/tzdata-*.whl /python-inputs/six-*.whl \
+ && cp -a /usr/lib/libstdc++.so.6* /usr/lib/libgcc_s.so.1 /rootfs/usr/lib/ \
+ && PYTHONPATH=/rootfs/usr/lib/python3.12/site-packages python -c 'import pandas as pd,numpy as np; assert pd.DataFrame({"a":[1,2]}).a.sum()==3; print(pd.__version__,np.__version__)' \
+ && find /rootfs/usr/lib/python3.12/site-packages -type d \( -name tests -o -name __pycache__ \) -prune -exec rm -rf {} + \
+ && rm -rf /rootfs/usr/lib/python3.12/site-packages/bin \
+ && find /rootfs/usr/lib/python3.12/site-packages -name '*.a' -delete \
+ && find /rootfs/usr/lib/python3.12/site-packages -name direct_url.json -delete \
+ && PYTHONPATH= /usr/bin/python3 -m compileall -q -f --invalidation-mode checked-hash -s /rootfs -p / /rootfs/usr/lib/python3.12/site-packages \
+ && ! find /rootfs -name '*quadmath*' -o -name '*gfortran*' -o -name '*openblas*' | grep .
 FROM scratch
-COPY --from=inputs /rootfs/ /
+COPY --from=build /rootfs/ /
 USER 1000:1000
 WORKDIR /workspace
 ENV HOME=/workspace PATH=/usr/sbin:/usr/bin:/bin

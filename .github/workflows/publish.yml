@@ -36,6 +36,7 @@ jobs:
     env:
       NODE_OPTIONS: --max-old-space-size=4096
       PUBLICATION_APPROVED_SHA256: ${{ inputs.candidate_sha256 }}
+      CLOUDFLARE_ACCOUNT_ID: 4fb2ff2487ac03af9da7ef24c7a8d19a
     steps:
       - name: Require the reviewed main commit
         env:

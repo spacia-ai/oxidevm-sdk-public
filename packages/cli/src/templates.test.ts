@@ -79,7 +79,7 @@ it("scaffolds an explicitly trusted image and rejects a mode mismatch before cre
   });
 });
 
-it("creates the canonical nginx starter and preserves its private archive override", async () => {
+it("creates the canonical Python + pandas starter and preserves its private archive override", async () => {
   await scratch(async root => {
     const sdk = join(root, "sdk.tgz"), cli = join(root, "cli.tgz");
     await writeFile(sdk, "fixture"); await writeFile(cli, "fixture");
@@ -87,8 +87,11 @@ it("creates the canonical nginx starter and preserves its private archive overri
     await initializeApplication(app, "userspace", true, new AbortController().signal, { ...await imageInputs(root), archives: { sdk, cli } });
     const manifest: unknown = JSON.parse(await readFile(join(app, "package.json"), "utf8"));
     expect(manifest).toMatchObject({ private: true, dependencies: { "@oxidevm/sdk": `file:${sdk}`, "@xterm/xterm": "6.0.0" }, overrides: { "@oxidevm/sdk": `file:${sdk}` } });
-    expect(await readFile(join(app, "index.html"), "utf8")).toContain("Your starter app.");
-    expect(await readFile(join(app, "src/server.ts"), "utf8")).toContain("/usr/sbin/nginx");
+    expect(await readFile(join(app, "index.html"), "utf8")).toContain("Your data starter.");
+    expect(await readFile(join(app, "public/favicon.png"))).toEqual(await readFile(new URL("../../../examples/starter/public/favicon.png", import.meta.url)));
+    expect(await readFile(join(app, "src/python.ts"), "utf8")).toContain("/usr/bin/python3");
+    expect(await readFile(join(app, "src/editor.ts"), "utf8")).toContain("highlight.js/lib/languages/python");
+    expect(await readFile(join(app, "public/licenses/highlight.js.txt"), "utf8")).toContain("BSD 3-Clause");
     expect(await readFile(join(app, "tsconfig.json"), "utf8")).not.toContain("../../");
     expect(await readFile(join(app, "tsconfig.node.json"), "utf8")).not.toContain("../../");
   });
