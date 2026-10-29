@@ -1,1 +1,1 @@
-export { default } from "./tests/release/nginx-playwright.config.ts";
+export { default } from "./tests/release/pandas-playwright.config.ts";

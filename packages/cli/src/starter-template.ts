@@ -22,7 +22,7 @@ export async function writeStarter(directory: string): Promise<void> {
     if (typeof content !== "string" || content.length > 1024 ** 2) throw new VMError("PROTOCOL_ERROR", "Starter template file exceeds its limit");
     const value = content;
     await mkdir(dirname(join(directory, path)), { recursive: true });
-    if (path.endsWith(".woff2")) await writeFile(join(directory, path), Buffer.from(value, "base64"), { flag: "wx" });
+    if (path.endsWith(".woff2") || path.endsWith(".png")) await writeFile(join(directory, path), Buffer.from(value, "base64"), { flag: "wx" });
     else await file(directory, path, value);
   }
   await file(directory, "tsconfig.node.json", `${JSON.stringify({ extends: "./tsconfig.json", compilerOptions: { lib: ["ES2024"], types: ["node"] }, include: ["vite.config.ts", "dev/**/*.ts", "oxidevm.config.ts"] }, null, 2)}\n`);

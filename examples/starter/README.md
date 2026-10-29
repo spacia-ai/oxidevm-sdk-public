@@ -1,56 +1,90 @@
-# Your OxideVM starter
+# Your Linux Python data starter
 
-This small Vite and TypeScript app runs nginx, a Linux server, in your browser.
-Edit the page, use a real shell, restart nginx, and keep edits across reloads.
-The starter uses explicit Userspace mode and a signed image. It does not boot
-a kernel. Browser storage has best-effort retention.
+Edit Python on the left and inspect its pandas DataFrame on the right.
+This Vite and TypeScript application runs the actual Linux x86-64 Python,
+NumPy and pandas binaries through OxideVM Userspace. It does not boot a kernel.
+Python executes in the browser's hosted runtime iframe. There is no data-processing backend.
 
-## Start development
+## Start
 
-The creator installs dependencies and starts Vite when you use `--start`.
-To start the generated app again, run `npm run dev` or `bun run dev`.
-If you omitted `--start`, install dependencies first with `npm install` or
-`bun install`. Node.js 24 or newer is required.
+Use Node.js 24 or newer:
 
-## Make it yours
+```sh
+npx @oxidevm/cli@latest init app --start
+```
 
-`src/main.ts` connects the SDK to the interface. `src/runtime.ts` selects the
-hosted runtime for both development and production. `src/server.ts` owns nginx
-configuration and process lifecycle. `src/page.ts` seeds the guest page.
-`src/terminal.ts` connects xterm to a real guest PTY. The hosted preview service displays the Linux server.
+Or use Bun:
 
-nginx listens on guest port 8080. Edit HTML with **Edit this page**, then choose
-**Save & reload**. Stop and restart nginx with the server controls. Reset
-replaces only `site/index.html`, after confirmation.
+```sh
+bunx --package @oxidevm/cli@latest oxidevm init app-bun --use-bun --start
+```
 
-`src/image.ts` and `src/production-image.ts` pin the same signed hosted image
-by default. The browser downloads and verifies it. Image building belongs to
-image maintainers. App users need no image paths or compiler toolchains.
+For a fixed release, replace `@latest` with its exact version. The generated
+project pins matching SDK and CLI versions.
 
-## Deployment and licenses
+The creator installs dependencies and starts Vite with `--start`.
+Restart a generated application with `npm run dev` or `bun run dev`.
+Use Node.js 24 or newer. Image building and compiler toolchains are not needed.
 
-`npm run build` or `bun run build` creates static files. Development and production
-load the runtime through a hidden iframe on `https://run.oxidevm.dev`.
-The creator installs no engine, image bundle, or compliance files in your
-project. Wasm and the signed image load inside the browser. Both environments
-use the hosted per-session preview service. The build does not copy engine
-binaries into your deployment. Licensed self-hosting requires explicit
-configuration and a commercial self-hosting agreement. `oxidevm init` with
-`--engine-dir` selects an explicit local development runtime. Local custom
-images can be staged with `--image` and `--image-trust` without installing an
-engine. The runtime must be published for the pinned SDK version before the
-hosted starter can run. It never falls back to a local engine.
+## Explore your data
 
-The application code uses Apache-2.0. Engine use follows separate proprietary
-terms. The image is a collection of separately licensed programs. Its materials
-include notices, license texts, inventories, checksums, and corresponding
-sources. Fonts keep their OFL notices in `public/fonts`.
+The sample groups eight orders by country. Change `analysis.py` in the editor
+and choose **Run code**, or press Ctrl/Command + Enter. Assign a pandas
+DataFrame to `result`. The preview shows up to 200 rows and 64 columns, with
+column types and the actual total row count. Cell values render as text.
+The editor highlights Python syntax while preserving native text editing,
+selection, undo, and the run shortcut.
 
-## Source downloads
+Choose **Upload CSV** for a file up to 5 MiB. The original file is retained in
+`uploads/` with a unique name. Its selected copy is `data.csv`. Python's real
+`pd.read_csv` parses it. The unchanged sample script switches to a generic
+preview for uploaded data. Custom Python code is preserved; adapt its column
+names to the new CSV when needed. The data file tab previews its first 65,536
+characters.
 
-See [GPL sources and license materials](../../docs/licensing.md) for the exact
-image source archives, rebuild instructions, notices, and checksums.
+**Export CSV** downloads the result, with a 10 MiB limit. A failed or interrupted
+run preserves the previous successful table. After an upload, export stays
+disabled until the new dataset produces a result. Choose **Stop execution** to
+interrupt a running script. Each run has a three-minute limit.
 
-Changing an existing app from a local runtime to the hosted frame changes its
-browser storage origin. Existing local data is not deleted or automatically
-migrated. Export any workspace or backup you need before switching.
+Python stays alive between runs and imports NumPy and pandas once. Script
+globals start fresh each time. Imported module state remains in the session.
+Stop execution, a Python process failure, or Reset demo restarts the interpreter.
+The next run then imports the libraries again. Reloading the page also starts
+a new interpreter.
+
+The terminal shares the same Linux workspace. Try:
+
+```sh
+python3 -c 'import pandas, numpy; print(pandas.__version__, numpy.__version__)'
+ls uploads
+```
+
+Code, the selected CSV and uploads persist when browser storage is available.
+Browsers can reclaim local storage. Export important results. **Reset demo**
+restores the sample code and CSV after confirmation; other files remain.
+
+## Source layout
+
+- `src/main.ts` connects controls, upload, persistence and rendering.
+- `src/python.ts` executes Linux Python and validates its results.
+- `src/analysis.ts` contains the sample and the guest Python result writer.
+- `src/dataframe.ts` validates the bounded preview protocol.
+- `src/terminal.ts` connects xterm to a real Linux PTY.
+
+`src/image.ts` and `src/production-image.ts` pin the signed image. Both development
+and production use `https://run.oxidevm.dev`. Normal initialization downloads
+no local engine or image archive. The production build contains no proprietary
+engine binaries. Explicit licensed self-hosting and custom images remain available.
+
+## Licenses and builds
+
+`npm run build` or `bun run build` produces static application files.
+The SDK, CLI and starter code use Apache-2.0. The engine has separate proprietary
+terms. Python, NumPy, pandas, other guest libraries and fonts retain their own
+licenses and notices. See [the licensing guide](../../docs/licensing.md).
+The image recipe and exact dependency inputs live beside this example in `image/`.
+
+NumPy is built without external BLAS/LAPACK and without bundled Fortran or
+quadmath libraries. It uses its internal fallback routines. This starter
+qualifies CSV/dataframe operations; it makes no numerical-performance claim.

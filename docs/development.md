@@ -34,16 +34,16 @@ images and an HTTPS or loopback host with isolation headers. See
 [deployment](deployment.md) and [images](images.md). System images are supplied
 by the developer.
 
-Stage the signed nginx image and pinned engine with the starter. Start its
+Stage the signed Python + pandas image and pinned engine with the starter. Start its
 Vite server, then run `OXIDEVM_STARTER_URL=http://127.0.0.1:5173 pnpm test:browser`.
-The browser test verifies actual nginx HTTP content, editing, stop/start,
-persistence, reset confirmation and terminal input. Images and private
+The browser test verifies real Linux Python and native NumPy/pandas extensions,
+CSV upload and export, editing, cancellation, persistence, reset and terminal input. Images and private
 qualification reports stay outside Git. `pnpm test:starter` runs the focused
-server-record, executable-identity and preview-host tests without an image.
+DataFrame validation, executable-identity and preview-host tests without an image.
 
 ## Install both archives
 
-Download both archives and `SHA256SUMS` from the same private GitHub prerelease.
+Download both archives and `SHA256SUMS` from the same GitHub release.
 Verify their checksums before installation. Add these entries to the consumer's
 `pnpm-workspace.yaml`, using absolute paths and the actual version:
 
@@ -51,36 +51,51 @@ Verify their checksums before installation. Add these entries to the consumer's
 packages:
   - .
 overrides:
-  '@oxidevm/sdk': file:/absolute/path/oxidevm-sdk-0.0.1.tgz
+  '@oxidevm/sdk': file:/absolute/path/oxidevm-sdk-0.0.2.tgz
 allowBuilds:
   esbuild: true
 ```
 
 ```sh
-pnpm add /absolute/path/oxidevm-sdk-0.0.1.tgz
-pnpm add -D /absolute/path/oxidevm-cli-0.0.1.tgz
+pnpm add /absolute/path/oxidevm-sdk-0.0.2.tgz
+pnpm add -D /absolute/path/oxidevm-cli-0.0.2.tgz
 pnpm exec oxidevm --version
 ```
 
 The override ensures that the CLI resolves the supplied SDK archive. Do not
-map this release to a registry. Both packages remain `private: true`.
+mix archives from different releases. Public packages also install from npm.
 
-## Run the prepared starter
+## Create a starter
 
-Application users receive a prepared private preview containing the packages,
-prebuilt signed image, trusted author key and pinned engine. Its launcher has
-a private distribution profile. From that directory, use:
+Use the public npm package:
 
 ```sh
-npx --no-install oxidevm init app --start
-bunx --no-install oxidevm init app-bun --use-bun --start
+npx @oxidevm/cli@latest init data-starter --start
 ```
 
-The creator reads the profile, checks the exact SDK version and image trust,
-and stages the prebuilt runtime. It uses the supplied archive override for
-host dependencies. Image building and signing remain release-operator work.
+Or use Bun:
 
-Explicit `--mode`, `--image`, `--image-trust`, `--engine-dir`, `--sdk-archive`
-and `--cli-archive` options remain available for custom integrations. They are
-advanced inputs, not the starter quickstart. SDK runtime options continue to
-use explicit mode discriminants.
+```sh
+bunx --package @oxidevm/cli@latest oxidevm init data-starter-bun --use-bun --start
+```
+
+For a fixed release, replace `@latest` with an exact version such as `0.0.2`.
+The generated project pins matching SDK and CLI versions.
+
+Use a new directory name for each test. The creator preserves existing files.
+Open the printed localhost URL. Development and production use the hosted
+iframe. Neither initialization nor the application build downloads engine
+binaries into the project.
+
+The starter runs Linux Python and pandas. Upload a CSV, edit `analysis.py`,
+and inspect or export `result`. The first Python import can take time.
+
+Explicit local image bundles and licensed self-hosting remain available for
+advanced consumers. They are optional and do not form part of the quickstart.
+
+## Continuous integration
+
+Source checks use self-hosted runners. Fork contributions must be reviewed and
+imported into a repository-owned export branch before checks. Publication uses
+GitHub-hosted runners for npm provenance and trusted publishing. Publication
+credentials are restricted to the protected release environment.

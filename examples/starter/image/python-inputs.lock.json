@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "base": {
+    "id": "docs-python",
+    "version": "1.0.6",
+    "manifestSHA256": "e61390b869351082cf5fdfda4da6336b8f60c1ec75b7fcf69b696ea5ca4e33d0",
+    "filename": "docs-python-rootfs.tar.gz",
+    "sha256": "f40af5f7918a74c1cbe2bd1af419d6311d24140dc73c7dcdc11e872f7ee44548"
+  },
+  "inputs": [
+    {
+      "name": "pip",
+      "version": "25.2",
+      "filename": "pip-25.2-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/b7/3f/945ef7ab14dc4f9d7f40288d2df998d1837ee0888ec3659c813487572faa/pip-25.2-py3-none-any.whl",
+      "sha256": "6d67a2b4e7f14d8b31b8b52648866fa717f45a1eb70e83002f4331d07e953717"
+    },
+    {
+      "name": "meson",
+      "version": "1.8.3",
+      "filename": "meson-1.8.3-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/4b/bf/1a2f345a6e8908cd0b17c2f0a3c4f41667f724def84276ff1ce87d003594/meson-1.8.3-py3-none-any.whl",
+      "sha256": "ef02b806ce0c5b6becd5bb5dc9fa67662320b29b337e7ace73e4354500590233"
+    },
+    {
+      "name": "meson-python",
+      "version": "0.18.0",
+      "filename": "meson_python-0.18.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/28/58/66db620a8a7ccb32633de9f403fe49f1b63c68ca94e5c340ec5cceeb9821/meson_python-0.18.0-py3-none-any.whl",
+      "sha256": "3b0fe051551cc238f5febb873247c0949cd60ded556efa130aa57021804868e2"
+    },
+    {
+      "name": "packaging",
+      "version": "25.0",
+      "filename": "packaging-25.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl",
+      "sha256": "29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484"
+    },
+    {
+      "name": "pyproject-metadata",
+      "version": "0.9.1",
+      "filename": "pyproject_metadata-0.9.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/7e/b1/8e63033b259e0a4e40dd1ec4a9fee17718016845048b43a36ec67d62e6fe/pyproject_metadata-0.9.1-py3-none-any.whl",
+      "sha256": "ee5efde548c3ed9b75a354fc319d5afd25e9585fa918a34f62f904cc731973ad"
+    },
+    {
+      "name": "Cython",
+      "version": "3.1.4",
+      "filename": "cython-3.1.4-cp312-cp312-musllinux_1_2_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/21/eb/2ad9fa0896ab6cf29875a09a9f4aaea37c28b79b869a013bf9b58e4e652e/cython-3.1.4-cp312-cp312-musllinux_1_2_x86_64.whl",
+      "sha256": "c2754034fa10f95052949cd6b07eb2f61d654c1b9cfa0b17ea53a269389422e8"
+    },
+    {
+      "name": "numpy",
+      "version": "2.2.6",
+      "filename": "numpy-2.2.6.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/76/21/7d2a95e4bba9dc13d043ee156a356c0a8f0c6309dff6b21b4d71a073b8a8/numpy-2.2.6.tar.gz",
+      "sha256": "e29554e2bef54a90aa5cc07da6ce955accb83f21ab5de01a62c8478897b264fd"
+    },
+    {
+      "name": "pandas",
+      "version": "2.3.3",
+      "filename": "pandas-2.3.3.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/33/01/d40b85317f86cf08d853a4f495195c73815fdf205eef3993821720274518/pandas-2.3.3.tar.gz",
+      "sha256": "e05e1af93b977f7eafa636d043f9f94c7ee3ac81af99c13508215942e64c993b"
+    },
+    {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "filename": "python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+      "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427"
+    },
+    {
+      "name": "pytz",
+      "version": "2025.2",
+      "filename": "pytz-2025.2-py2.py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/81/c4/34e93fe5f5429d7570ec1fa436f1986fb1f00c3e0f43a589fe2bbcd22c3f/pytz-2025.2-py2.py3-none-any.whl",
+      "sha256": "5ddf76296dd8c44c26eb8f4b6f35488f3ccbf6fbbd7adee0b7262d43f0ec2f00"
+    },
+    {
+      "name": "tzdata",
+      "version": "2025.2",
+      "filename": "tzdata-2025.2-py2.py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/5c/23/c7abc0ca0a1526a0774eca151daeb8de62ec457e77262b66b359c3c7679e/tzdata-2025.2-py2.py3-none-any.whl",
+      "sha256": "1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8"
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "filename": "six-1.17.0-py2.py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+      "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"
+    },
+    {
+      "name": "ninja-build-1.13.2-r1",
+      "version": "ninja-build-1.13.2-r1",
+      "filename": "ninja-build-1.13.2-r1.apk",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/community/x86_64/ninja-build-1.13.2-r1.apk",
+      "sha256": "095f32b8ff198272012e485942c602bf2df4b7abed11f7f01bc54503e5afb635"
+    },
+    {
+      "name": "libgcc-15.2.0-r5",
+      "version": "libgcc-15.2.0-r5",
+      "filename": "libgcc-15.2.0-r5.apk",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libgcc-15.2.0-r5.apk",
+      "sha256": "393dcd32629f06d7d85409c272d142d0c082772d10b87ef55ee82f47de3be637"
+    },
+    {
+      "name": "libstdc++-15.2.0-r5",
+      "version": "libstdc++-15.2.0-r5",
+      "filename": "libstdc++-15.2.0-r5.apk",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libstdc++-15.2.0-r5.apk",
+      "sha256": "14c987b556f5385a5db18376e788c75f37d85321b8dc1920d926ea7daac1d6f6"
+    },
+    {
+      "name": "python3-3.12.15-r0",
+      "version": "python3-3.12.15-r0",
+      "filename": "python3-3.12.15-r0.apk",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/python3-3.12.15-r0.apk",
+      "sha256": "29694494393f3cd4b19297504baafdea612d9b8144bf9bb8fbac0c15dd5e7baf"
+    },
+    {
+      "name": "python3-dev-3.12.15-r0",
+      "version": "python3-dev-3.12.15-r0",
+      "filename": "python3-dev-3.12.15-r0.apk",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/python3-dev-3.12.15-r0.apk",
+      "sha256": "216fd91818caf5c61bf3b41e8c48914e90231fd63022804152c56f1b4be1f899"
+    },
+    {
+      "name": "versioneer",
+      "version": "0.29",
+      "filename": "versioneer-0.29-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/b0/79/f0f1ca286b78f6f33c521a36b5cbd5bd697c0d66217d8856f443aeb9dd77/versioneer-0.29-py3-none-any.whl",
+      "sha256": "0f1a137bb5d6811e96a79bb0486798aeae9b9c6efc24b389659cebb0ee396cb9"
+    },
+    {
+      "name": "wheel",
+      "version": "0.45.1",
+      "filename": "wheel-0.45.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/0b/2c/87f3254fd8ffd29e4c02732eee68a83a1d3c346ae39bc6822dcbcb697f2b/wheel-0.45.1-py3-none-any.whl",
+      "sha256": "708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248"
+    },
+    {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "filename": "python-dateutil-2.9.0.post0.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz",
+      "sha256": "37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3"
+    },
+    {
+      "name": "pytz",
+      "version": "2025.2",
+      "filename": "pytz-2025.2.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/f8/bf/abbd3cdfb8fbc7fb3d4d38d320f2441b1e7cbe29be4f23797b4a2b5d8aac/pytz-2025.2.tar.gz",
+      "sha256": "360b9e3dbb49a209c21ad61809c7fb453643e048b38924c765813546746e81c3"
+    },
+    {
+      "name": "tzdata",
+      "version": "2025.2",
+      "filename": "tzdata-2025.2.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/95/32/1a225d6164441be760d75c2c42e2780dc0873fe382da3e98a2e1e48361e5/tzdata-2025.2.tar.gz",
+      "sha256": "b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "filename": "six-1.17.0.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz",
+      "sha256": "ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"
+    }
+  ],
+  "runtime": [
+    {
+      "name": "numpy",
+      "version": "2.2.6",
+      "license": "BSD-3-Clause AND MIT AND Zlib",
+      "archive": "numpy-2.2.6.tar.gz"
+    },
+    {
+      "name": "pandas",
+      "version": "2.3.3",
+      "license": "BSD-3-Clause AND BSD-2-Clause AND MIT AND Apache-2.0 AND PSF-2.0",
+      "archive": "pandas-2.3.3.tar.gz"
+    },
+    {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "license": "BSD-3-Clause",
+      "archive": "python-dateutil-2.9.0.post0.tar.gz"
+    },
+    {
+      "name": "pytz",
+      "version": "2025.2",
+      "license": "MIT",
+      "archive": "pytz-2025.2.tar.gz"
+    },
+    {
+      "name": "tzdata",
+      "version": "2025.2",
+      "license": "Apache-2.0",
+      "archive": "tzdata-2025.2.tar.gz"
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "license": "MIT",
+      "archive": "six-1.17.0.tar.gz"
+    }
+  ]
+}

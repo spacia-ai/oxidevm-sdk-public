@@ -45,3 +45,18 @@ await test("CLAUDE.md is the sole admitted symlink and must reference AGENTS.md"
   assert.ok(repositoryEntryError(policy, "CLAUDE.md", "120000", "../AGENTS.md") !== undefined);
   assert.ok(repositoryEntryError(policy, "packages/sdk/src/link.ts", "120000", "../../private") !== undefined);
 });
+
+await test("the exact reviewed favicon is admitted without allowing other PNGs or renamed binaries", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const path = "examples/starter/public/favicon.png";
+  const icon = await readFile(new URL("../examples/starter/public/favicon.png", import.meta.url));
+  const approved = (bytes: Uint8Array) => decodeRepositoryPolicy({ schemaVersion: 2, files: [path, "LICENSE"], trees: [], assets: { [path]: { sha256: createHash("sha256").update(bytes).digest("hex"), license: "LICENSE" } } });
+  const policy = approved(icon);
+  assert.equal(repositoryFileContentError(policy, path, icon), undefined);
+  const changed = Buffer.from(icon); changed[changed.length - 1] = 1;
+  assert.ok(repositoryFileContentError(policy, path, changed) !== undefined);
+  const elf = Buffer.alloc(48); elf.set([127, 69, 76, 70]);
+  assert.ok(repositoryFileContentError(approved(elf), path, elf) !== undefined);
+  assert.ok(repositoryFileContentError(policy, "other.png", icon) !== undefined);
+  assert.throws(() => decodeRepositoryPolicy({ schemaVersion: 2, files: ["other.png", "LICENSE"], trees: [], assets: { "other.png": { sha256: createHash("sha256").update(icon).digest("hex"), license: "LICENSE" } } }));
+});

@@ -7,5 +7,5 @@ export default defineConfig({
   server: { host: "127.0.0.1", headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" } },
   preview: { headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" } },
   worker: { format: "es" },
-  optimizeDeps: { noDiscovery: true, include: ["@xterm/xterm", "@xterm/addon-fit"], exclude: ["@oxidevm/sdk"] },
+  optimizeDeps: { noDiscovery: true, include: ["highlight.js/lib/core", "highlight.js/lib/languages/python", "@xterm/xterm", "@xterm/addon-fit"], exclude: ["@oxidevm/sdk"] },
 });

@@ -51,6 +51,7 @@
     "examples/starter/index.html",
     "examples/starter/oxidevm.config.ts",
     "examples/starter/package.json",
+    "examples/starter/public/licenses/highlight.js.txt",
     "examples/starter/public/fonts/Archivo-OFL.txt",
     "examples/starter/public/fonts/JetBrainsMono-OFL.txt",
     "examples/starter/public/fonts/README.md",
@@ -142,12 +143,19 @@
     "tests/fixtures/js-process-peer.c",
     "tests/fixtures/native-addon-consumer.ts",
     "tests/fixtures/shared-performance.ts",
-    "tests/release/nginx-playwright.config.ts",
-    "tests/release/nginx-starter.spec.ts",
+    "tests/release/pandas-playwright.config.ts",
+    "tests/release/pandas-starter.spec.ts",
     "tsconfig.base.json",
     "tsconfig.browser-tests.json",
     "tsconfig.config.json",
-    "tsconfig.examples-node.json"
+    "tsconfig.examples-node.json",
+    "examples/starter/image/python-inputs.lock.json",
+    "examples/starter/image/install-python-inputs.py",
+    "examples/starter/image/pandas-materials.py",
+    "examples/starter/image/LICENSE-SELECTIONS.md",
+    "config/release-policy.json",
+    "scripts/release-version-policy.ts",
+    "examples/starter/public/favicon.png"
   ],
   "trees": [
     "packages/sdk/src/",
@@ -178,6 +186,10 @@
     "examples/starter/public/fonts/jetbrains-mono.woff2": {
       "sha256": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e",
       "license": "examples/starter/public/fonts/JetBrainsMono-OFL.txt"
+    },
+    "examples/starter/public/favicon.png": {
+      "sha256": "cc0add35985b4ae95efb4ad2d3baace82648f71eb02de67c59038480b359034c",
+      "license": "LICENSE"
     }
   }
 }

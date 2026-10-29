@@ -8,3 +8,6 @@
 .cache/*
 !.cache/inputs/
 !.cache/inputs/**
+!install-python-inputs.py
+!.cache/python-inputs/
+!.cache/python-inputs/**

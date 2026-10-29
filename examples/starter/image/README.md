@@ -1,54 +1,53 @@
-# nginx starter image
+# Python + pandas starter image
 
-This independently versioned image recipe contains nginx 1.30.6-r0,
-Toybox 0.8.15, dash 0.5.13.5, mksh R59c, musl 1.2.6-r2, pcre2 10.49-r0, OpenSSL 3.5.7-r0 and
-zlib 1.3.2-r0 from the pinned Alpine 3.24.2 image and package repositories.
-The utility closure also contains XZ 5.8.4, libarchive 3.8.10's ZIP extractor,
-Gavin Howard dc 7.0.3, Dropbear 2026.94 and curl 8.23.0.
-The final stage copies only their runtime closure, certificates and account files. Its empty
-workspace belongs to uid/gid 1000. It has no kernel, JavaScript runtime,
-package manager, Git, project, package cache or acceleration artifact.
+This independently versioned image runs CPython 3.12.15, NumPy 2.2.6 and pandas
+2.3.3 as real Linux x86-64 programs. It has an empty writable workspace owned
+by uid/gid 1000. The starter application seeds its example files at first use.
+It includes Toybox, dash, mksh and their qualified utility closure. It contains
+no Linux kernel, engine, Node.js, npm, Bun, Git, compiler or preinstalled project.
+
+Application users receive the prebuilt signed image. These commands are for
+image maintainers only. Keep signing keys outside Git and package archives.
+
+## Build from recorded inputs
+
+`python-inputs.lock.json` pins the independently qualified Python base archive,
+all Python package sources, wheel inputs, headers and native build tools.
+`inputs.lock.json` pins the separate utility build inputs. NumPy and pandas
+compile from source with `-O2 -march=x86-64-v2`. NumPy uses `blas=none`,
+`lapack=none`, SSE2 baseline and no CPU dispatch. Its internal BLAS/LAPACK
+fallback suits this small CSV demo. No broad numerical performance claim is made.
+The image rejects libquadmath, libgfortran and OpenBLAS. The compiler and Python
+build tools stay outside the final image. GCC runtime libraries retain their
+explicit Runtime Library Exception and original source materials.
+
+Supply the exact qualified base archive through `OXIDEVM_PANDAS_BASE_ROOTFS`.
+Supply its signed bundle and independent trust file through
+`OXIDEVM_PANDAS_BASE_BUNDLE` and `OXIDEVM_PANDAS_BASE_TRUST`. Preparation rejects
+changed base identities and archives. The base's component sources retain their
+upstream archives, Alpine recipes, patches, build inputs and notices.
 
 ```sh
 node examples/starter/image/prepare.ts
-pnpm exec oxidevm image keygen --out /absolute/private/author.pem
-pnpm exec oxidevm image build examples/starter/image/oxidevm.image.ts --signing-key /absolute/private/author.pem
-pnpm exec oxidevm image test examples/starter/image/dist --trust /absolute/private/author.public.json --engine-dir /absolute/pinned-engine
+node examples/starter/image/compliance.ts
 ```
 
-`prepare.ts` verifies every download against `inputs.lock.json`. The Docker
-build uses those inputs offline. It compiles Toybox from its exact source and
-builds dash with an independent signal table, and copies mksh from its pinned Alpine package. Build tools stay in the build
-stage. `build-supplements.sh` builds only the missing utilities from hashed
-upstream archives. `supplements.json` owns their file and license mappings,
-including the libraries linked into Dropbear and unzip. musl, OpenSSL and zlib come from the immutable base image. Their exact
-versions remain in the final SBOM.
+The compliance command captures the actual final rootfs. It compares unchanged
+files against the authenticated base inventory. It verifies new GCC library
+bytes against the pinned APK payloads. It maps new Python files to the pinned
+source builds. Unknown files fail. SPDX, CycloneDX, notices, source mappings,
+license texts and checksums come from that same inventory.
 
-Keep the signed bundle, private signing key and qualification reports outside
-Git and SDK/CLI archives. The author trust file must arrive independently.
-Reuse the image by immutable manifest digest. Bump its own version when its
-inputs change; it does not follow the SDK package version.
+Set `OXIDEVM_IMAGE_SIGNING_KEY` to prepare a signed development bundle in the
+private candidate directory. A development bundle cannot pass distribution
+checks. Distribution requires the existing image builder's independent rebuild,
+complete material validation, browser checks, and separate human reviews.
+Do not reuse approval for the previous nginx image.
 
-Local builds without `--distribution` remain incomplete development bundles.
-Generate exact materials with `node examples/starter/image/compliance.ts`,
-then build a separate output with `--distribution`. Distribution remains blocked until
-the image builder accepts the complete SBOM, notices, exact corresponding
-sources, technical license policy, two matching builds and browser evidence.
-External distribution also requires the human owner and legal gates.
-Pinned package versions alone are not reproduction evidence or legal approval.
-
-Toybox uses 0BSD. mksh uses MirOS AND Unicode-DFS-2016. Preserve their
-complete original notices and the supplied source/configuration/build inputs.
-This default image contains no BusyBox or Bun. Historical and custom copyleft
-images retain all corresponding-source and relinking obligations.
-Record package provenance, source checksums, build revisions and licenses for
-nginx, musl, pcre2, OpenSSL and zlib too.
-
-nginx uses its normal foreground, single-process development configuration.
-It listens on unprivileged port 8080. Temporary files live under `/tmp`; its
-configuration and access log live under `/workspace`. The SDK watches that
-log for actual HTTP status. Reads are bounded at 64 KiB; when the log exceeds
-that limit the interface shows status unavailable until nginx restarts.
+Keep binary archives, build caches and signed bundles outside Git and SDK/CLI
+archives. Never overwrite a published image digest. The image version is
+independent of the SDK version. Private preview replacement does not change
+normal release immutability rules.
 
 ## Utility coverage
 

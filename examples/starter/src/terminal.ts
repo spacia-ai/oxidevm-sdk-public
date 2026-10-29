@@ -26,7 +26,7 @@ export class TerminalView {
     void handle.exit.then(exit => { if (!this.#closed) this.#terminal.writeln(`\r\n[${exit.kind === "exited" ? `Exited ${String(exit.code)}` : `Signal ${exit.signal ?? String(exit.signalNumber)}`}]`); }).catch(failed);
   }
   static async open(vm: VM, container: HTMLElement, failed: (error: unknown) => void): Promise<TerminalView> {
-    const handle = await vm.spawn({ command: "/bin/sh", args: ["-c", "printf '$ uname -m\\n'; uname -m; printf '$ command -v nginx\\n'; command -v nginx; if [ -x /bin/mksh ]; then export SHELL=/bin/mksh; exec /bin/mksh -i; else exec /bin/sh -i; fi"], terminal: { columns: 80, rows: 8 }, env: { HOME: "/workspace", PATH: "/usr/sbin:/usr/bin:/bin", TERM: "xterm-256color", PS1: "$ " } });
+    const handle = await vm.spawn({ command: "/bin/sh", args: ["-c", "printf '$ uname -m\\n'; uname -m; printf '$ command -v python3\\n'; command -v python3; if [ -x /bin/mksh ]; then export SHELL=/bin/mksh; exec /bin/mksh -i; else exec /bin/sh -i; fi"], terminal: { columns: 80, rows: 8 }, env: { HOME: "/workspace", PATH: "/usr/sbin:/usr/bin:/bin", TERM: "xterm-256color", PS1: "$ " } });
     return new TerminalView(handle, container, failed);
   }
   write(text: string, failed: (error: unknown) => void): void {

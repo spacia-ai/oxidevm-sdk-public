@@ -37,10 +37,10 @@ export function decodeRepositoryPolicy(value: unknown): RepositoryPolicy {
   }
   const files = paths("files"), trees = paths("trees");
   const assets: Record<string, { readonly sha256: string; readonly license: string }> = {};
-  if (version === 2) for (const [path, entry] of Object.entries(record(input["assets"], "font assets"))) {
-    const value = record(entry, "font asset"); exactKeys(value, ["sha256", "license"]);
-    const sha256 = string(value["sha256"], "font digest"), license = string(value["license"], "font license");
-    if (!plainPath(path) || !path.endsWith(".woff2") || !files.includes(path) || !files.includes(license) || !/^[a-f0-9]{64}$/u.test(sha256)) throw new Error("Font assets require an approved file, license and SHA-256");
+  if (version === 2) for (const [path, entry] of Object.entries(record(input["assets"], "source assets"))) {
+    const value = record(entry, "source asset"); exactKeys(value, ["sha256", "license"]);
+    const sha256 = string(value["sha256"], "asset digest"), license = string(value["license"], "asset license");
+    if (!plainPath(path) || !(path.endsWith(".woff2") || path === "examples/starter/public/favicon.png") || !files.includes(path) || !files.includes(license) || !/^[a-f0-9]{64}$/u.test(sha256)) throw new Error("Binary assets require an approved file, license and SHA-256");
     assets[path] = { sha256, license };
   }
   return { schemaVersion: version, files, trees, assets };
@@ -64,10 +64,19 @@ export function repositoryContentError(bytes: Uint8Array, maximumBytes = 16 * 10
   return undefined;
 }
 
-/** The only binary source assets are reviewed fonts with an exact policy digest. */
+/** Only reviewed fonts and the exact starter favicon can enter as binary source assets. */
 export function repositoryFileContentError(policy: RepositoryPolicy, path: string, bytes: Uint8Array): string | undefined {
   const asset = policy.assets[path];
   if (asset === undefined) return repositoryContentError(bytes);
+  if (path === "examples/starter/public/favicon.png") {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (bytes.length < 33 || bytes.length > 64 * 1024
+      || ![137, 80, 78, 71, 13, 10, 26, 10].every((value, index) => bytes[index] === value)
+      || view.getUint32(8) !== 13 || new TextDecoder().decode(bytes.subarray(12, 16)) !== "IHDR"
+      || view.getUint32(16) !== 96 || view.getUint32(20) !== 96
+      || createHash("sha256").update(bytes).digest("hex") !== asset.sha256) return "favicon differs from its reviewed 96×96 PNG bytes";
+    return undefined;
+  }
   if (bytes.length < 48 || bytes.length > 256 * 1024 || new TextDecoder().decode(bytes.subarray(0, 4)) !== "wOF2"
     || new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(8) !== bytes.length
     || createHash("sha256").update(bytes).digest("hex") !== asset.sha256) return "font asset differs from its reviewed WOFF2 bytes";
