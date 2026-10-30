@@ -18,6 +18,12 @@ Keep the Python session alive between runs. Reuse its result protocol and bounde
 
 For a request such as “add a revenue chart,” inspect the existing render function and its caller. Add the chart to that result path. Handle an empty result, missing columns and non-numeric values. Use existing components or browser APIs before adding a chart dependency.
 
+## Change guest packages only through an explicit image workflow
+
+Generated starters do not include an `image/` directory. Read `README.md` for release-pinned recipe and custom-image guide links. Read `LICENSES.md` for the image's own source and license release. Inspect the actual Dockerfile, locks and build instructions before proposing a recipe. Host npm packages do not install Linux programs. Do not invent missing files or assume a source archive is a runnable rootfs.
+
+The default recipe builds NumPy and pandas from pinned sources and needs a separately supplied exact Python base plus independent author trust. Missing base inputs block that rebuild. The custom-image guide also covers creating an author-owned image, keys, build and smoke tests, immutable hosting, explicit image references and lock updates. Keep the app on `runtime: { hosting: "frame" }`. Follow the guide's image-only staging path rather than installing an engine implicitly. Update both development and production references when requested; preserve the old pins and workspace data for rollback. Do not infer package compatibility from a successful Docker build or reuse distribution approval after changing dependencies.
+
 ## Keep the app usable
 
 - Preserve Python syntax highlighting, CSV selection and upload limits, cancellation, errors and keyboard execution.
