@@ -243,7 +243,7 @@ obtained from the downloaded image. Both managed modes authenticate the whole
 manifest and its referenced artifact closure before execution.
 
 In an explicit-image release, `defaultImage` fails with `FEATURE_NOT_AVAILABLE`.
-Legacy private releases retain the following managed-image behavior.
+Older catalog-schema releases retain the following managed-image behavior.
 
 `defaultImage(mode, manifestUrl?)` returns the SDK's pinned default image for a
 mode: the exact manifest digest and author key this SDK version pins, at its
@@ -257,7 +257,7 @@ host. The digest and key stay pinned whatever the address.
 | `generateImageKey`, `readImageTrust` | Exclusive restrictive Ed25519 key creation and public trust loading |
 | `testImage` | Real browser readiness, files, command, terminal, persistence and applicable preview/evidence checks |
 | `inspectImage` | Read-only integrity inspection; authentication stays unverified without external trust |
-| `installProjectAssets`, `cacheImageBundle` | Stage the pinned engine release (from `engineDir`, `OXIDEVM_ENGINE_DIR`, the engine cache or the private release, each verified), authenticated image assets and generated references |
+| `installProjectAssets`, `cacheImageBundle` | Stage the pinned engine release (from `engineDir`, `OXIDEVM_ENGINE_DIR`, the engine cache or the verified CDN release), authenticated image assets and generated references |
 | `doctorProject` | Inspect actual served headers, MIME, bytes, worker execution, storage and preview configuration |
 | `createProjectLock`, `validateProjectLock` | Bind the exact SDK/CLI, engine, image and chosen staging layout |
 

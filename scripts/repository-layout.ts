@@ -68,7 +68,12 @@ export function repositoryContentError(bytes: Uint8Array, maximumBytes = 16 * 10
 /** Only reviewed fonts and the exact starter favicon can enter as binary source assets. */
 export function repositoryFileContentError(policy: RepositoryPolicy, path: string, bytes: Uint8Array): string | undefined {
   const asset = policy.assets[path];
-  if (asset === undefined) return repositoryContentError(bytes);
+  if (asset === undefined) {
+    const error = repositoryContentError(bytes);
+    if (error !== undefined) return error;
+    if (path.startsWith(".github/workflows/")) return "public repositories must not contain CI or publication workflows";
+    return undefined;
+  }
   if (path === "examples/starter/public/favicon.png") {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     if (bytes.length < 33 || bytes.length > 64 * 1024

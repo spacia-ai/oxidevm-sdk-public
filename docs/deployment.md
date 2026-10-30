@@ -68,9 +68,8 @@ can be cross-origin isolated only inside an isolated page. Without them
   explicit `preview`.
 - `getDiagnostics` and raw machines (`@oxidevm/sdk/machine`) need a self-hosted
   runtime.
-- The starter selects frame hosting in development and production. The pinned
-  runtime must be published before the default starter can run. Preparation
-  tests its exact hosted URLs with a private browser fixture and deploys nothing.
+- The starter selects frame hosting in development and production. The starter uses the pinned hosted runtime at `run.oxidevm.dev`.
+  Allow that origin in your application's `frame-src` policy.
 
 The frame page itself is `assets/runtime-host/` in the SDK package. Whoever
 serves it (Spacia's CDN, or a licensed self-hosted mirror) sends the headers in
@@ -82,9 +81,9 @@ CORP `cross-origin` and its CSP, which allows WebAssembly compilation and
 
 Explicit self-hosting with `oxidevm assets install` stages the SDK's pinned engine release and the
 selected authenticated image. The SDK package contains no engine: the release comes
-from `--engine-dir <release>`, `OXIDEVM_ENGINE_DIR`, the local engine cache
-(`~/.cache/oxidevm/engine/<release id>`) or, with `OXIDEVM_DOWNLOAD_TOKEN`, the
-private release channel. Its `release.json` must hash to the pinned release ID, and
+from the verified CDN release, `--engine-dir <release>`, `OXIDEVM_ENGINE_DIR`,
+or the local engine cache (`~/.cache/oxidevm/engine/<release id>`). Authenticated
+custom release channels are also supported. Its `release.json` must hash to the pinned release ID, and
 each module and the engine `LICENSE` must match their pinned size and SHA-256, before
 all six files are staged, world-readable, under `runtime/`; the engine keeps its own
 license terms. `oxidevm.lock.json` records versions, descriptor, digests,
@@ -94,11 +93,11 @@ Keep retained image bases needed by persisted workspaces and restore points.
 Publish a complete directory atomically; do not select partial downloads or
 overwrite unrelated assets.
 
-Guest artifacts are a separate distribution with their own license/source
-obligations. They are not embedded in the npm platform package. In this private
-alpha, remote guest-artifact delivery remains blocked; staging a local authenticated
-qualification bundle is supported. A warm local cache is not proof that a clean
-external consumer can download a release.
+Guest artifacts are separate distributions with their own license and source
+obligations. They are not embedded in npm packages. The starter loads a signed
+image from the CDN. Its corresponding sources and notices are available through
+the links in the [licensing guide](licensing.md). Custom images require explicit
+author trust and verified references.
 
 ## Preview host
 
