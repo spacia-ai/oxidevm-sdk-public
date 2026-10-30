@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { decodeRepositoryPolicy, repositoryContentError, repositoryEntryError, repositoryFileContentError } from "./repository-layout.ts";
 import { createHash } from "node:crypto";
@@ -39,11 +41,20 @@ await test("repository policy admits only its exact files and source trees", () 
   }
 });
 
-await test("CLAUDE.md is the sole admitted symlink and must reference AGENTS.md", () => {
+await test("root instructions preserve the exact CLAUDE.md symlink", () => {
   assert.equal(repositoryEntryError(policy, "CLAUDE.md", "120000", "AGENTS.md"), undefined);
   assert.ok(repositoryEntryError(policy, "CLAUDE.md", "100644") !== undefined);
   assert.ok(repositoryEntryError(policy, "CLAUDE.md", "120000", "../AGENTS.md") !== undefined);
   assert.ok(repositoryEntryError(policy, "packages/sdk/src/link.ts", "120000", "../../private") !== undefined);
+});
+
+await test("the reviewed starter Claude alias cannot escape the canonical skill snapshot", () => {
+  const path = "examples/starter/.claude/skills";
+  const approved = { ...policy, files: [...policy.files, path] };
+  assert.equal(repositoryEntryError(approved, path, "120000", "../.agents/skills"), undefined);
+  assert.ok(repositoryEntryError(approved, path, "120000", "../../../private") !== undefined);
+  assert.ok(repositoryEntryError(approved, path, "100644") !== undefined);
+  assert.ok(repositoryEntryError(approved, "examples/starter/.claude/settings.json", "100644") !== undefined);
 });
 
 await test("the exact reviewed favicon is admitted without allowing other PNGs or renamed binaries", async () => {
@@ -59,4 +70,25 @@ await test("the exact reviewed favicon is admitted without allowing other PNGs o
   assert.ok(repositoryFileContentError(approved(elf), path, elf) !== undefined);
   assert.ok(repositoryFileContentError(policy, "other.png", icon) !== undefined);
   assert.throws(() => decodeRepositoryPolicy({ schemaVersion: 2, files: ["other.png", "LICENSE"], trees: [], assets: { "other.png": { sha256: createHash("sha256").update(icon).digest("hex"), license: "LICENSE" } } }));
+});
+
+await test("a Git export validates the reviewed starter alias and rejects retargeting", async () => {
+  const { mkdtemp, mkdir, rm, symlink, writeFile } = await import("node:fs/promises");
+  const { execFileSync } = await import("node:child_process");
+  const { checkRepositoryLayout } = await import("./repository-layout.ts");
+  const root = await mkdtemp(join(tmpdir(), "oxidevm-skill-layout-"));
+  try {
+    await mkdir(join(root, "config"));
+    await mkdir(join(root, "examples/starter/.claude"), { recursive: true });
+    const files = ["AGENTS.md", "CLAUDE.md", "LICENSE", "NOTICE", "config/public-repository.json", "examples/starter/.claude/skills"];
+    for (const name of ["AGENTS.md", "LICENSE", "NOTICE"]) await writeFile(join(root, name), "fixture");
+    await writeFile(join(root, "config/public-repository.json"), JSON.stringify({ schemaVersion: 1, files, trees: [] }));
+    await symlink("AGENTS.md", join(root, "CLAUDE.md"));
+    const alias = join(root, "examples/starter/.claude/skills");
+    await symlink("../.agents/skills", alias);
+    execFileSync("git", ["init", "--quiet", root]); execFileSync("git", ["-C", root, "add", "."]);
+    await checkRepositoryLayout(root);
+    await rm(alias); await symlink("../../../../.env", alias);
+    await assert.rejects(checkRepositoryLayout(root), /canonical project skills/u);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

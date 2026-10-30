@@ -2,6 +2,9 @@
 
 Start with the [starter application](../examples/starter/README.md), then use this guide to add files, processes, terminals and previews to your application.
 
+The starter includes [Codex and Claude Code project skills](agent-skills.md).
+Open its folder in your code app; no plugin installation is required.
+
 The CLI creates your local web application. Linux programs execute inside the browser when someone opens that application.
 
 | I want to… | Start here |

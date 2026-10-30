@@ -9,8 +9,11 @@ import type { Dataframe } from "./dataframe.js";
 import { PythonSession, verifyPython } from "./python.js";
 import { pythonEditor } from "./editor.js";
 import { TerminalView } from "./terminal.js";
+import { mountAgentSkills } from "./agent-skills.js";
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
+
+mountAgentSkills();
 
 function element<T extends HTMLElement>(id: string, constructor: { new(): T }): T {
   const value = document.getElementById(id);

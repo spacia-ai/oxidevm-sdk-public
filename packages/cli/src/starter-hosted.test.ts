@@ -21,6 +21,12 @@ it("normal init creates a hosted starter without downloading engine, image or co
     const code = await runCLI(["init", "app", "--json"], { directory: root, environment: {}, signal: new AbortController().signal, stdout: value => { stdout.push(value); }, stderr: value => { stderr.push(value); } });
     expect(code, stderr.join("\n") + stdout.join("\n")).toBe(0);
     expect(fetch).not.toHaveBeenCalled();
+    const skills: unknown = JSON.parse(await readFile(join(root, "app/AGENT_SKILLS.json"), "utf8"));
+    expect(skills).toMatchObject({ schemaVersion: 1, repository: "https://github.com/spacia-ai/oxidevm-skills" });
+    for (const skill of ["oxidevm-sdk", "oxidevm-starter", "oxidevm-debugging"]) {
+      const canonical = await readFile(join(root, "app/.agents/skills", skill, "SKILL.md"), "utf8");
+      expect(await readFile(join(root, "app/.claude/skills", skill, "SKILL.md"), "utf8")).toBe(canonical);
+    }
     expect(await readFile(join(root, "app/src/runtime.ts"), "utf8")).toContain('hosting: "frame"');
     expect(await readFile(join(root, "app/src/image.ts"), "utf8")).toContain("https://cdn.oxidevm.dev/images/");
     expect(await readFile(join(root, "app/src/production-image.ts"), "utf8")).toEqual(await readFile(join(root, "app/src/image.ts"), "utf8"));

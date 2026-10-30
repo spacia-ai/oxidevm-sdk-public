@@ -5,6 +5,22 @@ This Vite and TypeScript application runs the actual Linux x86-64 Python,
 NumPy and pandas binaries through OxideVM Userspace. It does not boot a kernel.
 Python executes in the browser's hosted runtime iframe. There is no data-processing backend.
 
+## Build with Codex or Claude
+
+OxideVM project skills are included. Open this folder in Codex or Claude Code
+and try:
+
+> Add a revenue chart from the DataFrame result. Keep Python running in Linux.
+
+The app has a **Copy prompt** button below the demo. Generated starters include
+portable project skills for both clients and an `AGENT_SKILLS.json` source and
+version receipt. The repository example uses a relative Claude skills link;
+CLI-generated projects do not require symlink privileges.
+
+See [agent setup](../../docs/agent-skills.md) for desktop apps, optional plugins
+in other projects, and updates. Skills do not grant access to local files merely
+because this page is open.
+
 ## Start
 
 Use Node.js 24 or newer:

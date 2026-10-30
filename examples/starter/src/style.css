@@ -56,3 +56,19 @@ td[data-numeric=true]{text-align:right}
 :focus-visible{outline:2px solid var(--cobalt);outline-offset:3px}
 @media(max-width:800px){.workbench{grid-template-columns:1fr}.editor-pane{border-right:0;border-bottom:1px solid var(--rule)}.process-bar{flex-wrap:wrap;gap:12px}.process-platform{display:block;margin:5px 0 0}.process-actions{margin-left:auto}.pane-bar{padding:0 12px;gap:8px}#code,#code-highlight{font-size:13px;padding:16px}#code-panel,#csv-panel{height:300px}#table-scroll{margin:8px 10px 0;max-height:300px}th,td{padding:12px}.binary-bar{flex-wrap:wrap;gap:6px}.editor-hint span{display:none}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+
+.agent-help{display:grid;grid-template-columns:minmax(250px,.9fr) minmax(0,1.3fr);gap:32px;border-top:1px solid var(--rule);padding:30px 0 36px;margin-top:22px;scroll-margin-top:24px}
+.agent-help-heading{display:flex;flex-direction:column;align-items:flex-start;gap:18px}
+.agent-help h2{font-size:clamp(26px,2.4vw,34px);line-height:1.14;letter-spacing:-.025em;margin:0;text-wrap:balance}
+.agent-help-heading>a{font-size:15px;color:var(--link-ink,var(--muted))}
+.agent-help-body{min-width:0;border-left:1px solid var(--rule);padding-left:32px}
+.agent-help-body>p{margin:0 0 12px;font-size:15px;line-height:1.5}
+.agent-included{display:flex;align-items:center;gap:9px;color:var(--muted)}
+.agent-included svg{width:20px;height:20px;color:var(--cobalt);flex-shrink:0}
+.agent-prompt{display:flex;align-items:center;gap:18px;padding:10px 12px;border:1px solid #b8c9f0;border-radius:4px;background:#eff3fc}
+.agent-prompt>p{flex:1;margin:0;font-size:14px;line-height:1.5;min-width:0;user-select:text}
+.agent-prompt button{flex-shrink:0;background:var(--cobalt);color:white;border:1px solid var(--cobalt);padding:10px 14px;border-radius:2px;font-size:14px;font-weight:600}
+.agent-prompt button:hover:not(:disabled){background:#0637ad}
+.agent-help-body>.agent-help-note{font-size:13px;margin-top:10px;color:var(--muted)}
+.agent-help-body>.agent-copy-status{font-size:13px;min-height:20px;margin:0;color:var(--muted)}
+@media(max-width:760px){.agent-help{grid-template-columns:1fr;gap:22px;padding-block:24px}.agent-help-heading{gap:12px}.agent-help-body{border-left:0;padding-left:0}.agent-prompt{align-items:flex-start;flex-direction:column;gap:12px}.agent-help h2{max-width:24ch}.agent-help-heading>a{font-size:14px}}

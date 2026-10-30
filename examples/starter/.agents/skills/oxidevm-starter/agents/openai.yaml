@@ -1,0 +1,4 @@
+interface:
+  display_name: "OxideVM starter"
+  short_description: "Extend the Linux Python and pandas starter"
+  default_prompt: "Use $oxidevm-starter to extend this Linux data starter."
