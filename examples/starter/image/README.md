@@ -9,6 +9,48 @@ no Linux kernel, engine, Node.js, npm, Bun, Git, compiler or preinstalled projec
 Application users receive the prebuilt signed image. These commands are for
 image maintainers only. Keep signing keys outside Git and package archives.
 
+## Locate the complete recipe
+
+This directory belongs to the SDK source release. It is not copied into
+CLI-generated applications. Start from the release-pinned recipe link in the
+application README, not a newer branch. The app's `LICENSES.md` identifies the
+selected image's separate source/license release. Its archives contain source
+materials, not an OCI base or the required prebuilt Python rootfs.
+
+| File | Purpose |
+| --- | --- |
+| `Dockerfile`, `.dockerignore` | Runtime stages and bounded build context |
+| `oxidevm.image.ts` | Userspace resources, evidence paths and import smoke test |
+| `inputs.lock.json`, `python-inputs.lock.json` | Exact utility, Python, NumPy and pandas inputs |
+| `source-lock.json`, `components.json`, `LICENSE-SELECTIONS.md` | Source identities, component inventory and license selections |
+| `prepare.ts` | Download and verify pinned inputs and the supplied Python rootfs |
+| `compliance.ts`, `pandas-materials.py`, `material-inputs.ts`, `inventory.ts` | Reconcile actual files with source and license evidence |
+| `build-*.sh`, `dash-signames.c`, `install-python-inputs.py`, `supplements.json` | Recorded build steps and utility inputs |
+| `test-utilities.sh` | Utility behavior checks |
+
+Use Node.js 24 or newer, the checkout's pinned pnpm, Python 3 and a working
+Docker Buildx/BuildKit Linux x86-64 builder. From the SDK checkout root, install
+with `pnpm install --frozen-lockfile` and run `pnpm build` before running the
+preparation scripts. Do not copy only the Dockerfile into a generated app.
+The recipe depends on the complete sibling scripts and locks.
+
+Supply these inputs outside Git before preparation:
+
+| Variable | Required input |
+| --- | --- |
+| `OXIDEVM_PANDAS_BASE_ROOTFS` | Exact rootfs archive named and hashed in `python-inputs.lock.json` |
+| `OXIDEVM_PANDAS_BASE_BUNDLE` | Complete signed, distribution-qualified base bundle matching that lock's manifest digest |
+| `OXIDEVM_PANDAS_BASE_TRUST` | Independently retained base-author public trust file |
+| `OXIDEVM_IMAGE_SIGNING_KEY` | Your own external private key, only when creating a signed development bundle |
+
+Do not replace missing inputs with similarly named files or skip the checks.
+If the exact base is unavailable, this particular rebuild is blocked. Use the
+[custom-image guide](../../../docs/images.md) to create an author-owned image
+from independently pinned inputs instead. It also explains signing, browser
+tests, image-only staging with the hosted runtime, production configuration and
+distribution checks. Keep the application's engine hosted unless explicit
+licensed self-hosting is requested.
+
 ## Build from recorded inputs
 
 `python-inputs.lock.json` pins the independently qualified Python base archive,
@@ -31,6 +73,15 @@ upstream archives, Alpine recipes, patches, build inputs and notices.
 node examples/starter/image/prepare.ts
 node examples/starter/image/compliance.ts
 ```
+
+Preparation downloads and hash-checks the recorded inputs. Compliance writes
+`.cache/candidate/rootfs`, `evidence/` and `recipe.json`. If
+`OXIDEVM_IMAGE_SIGNING_KEY` is set, it also writes a development `bundle/` and
+`RESULT.json`. These paths are relative to this recipe directory. Each candidate
+needs a fresh output directory; retain previous evidence separately before
+rebuilding. The original published recipe and image identities remain immutable.
+For a changed image, select your own ID/version and update all affected pins,
+component mappings, source materials and smoke tests before qualification.
 
 The compliance command captures the actual final rootfs. It compares unchanged
 files against the authenticated base inventory. It verifies new GCC library

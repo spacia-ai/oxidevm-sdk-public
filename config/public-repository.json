@@ -143,6 +143,7 @@
     "scripts/secret-scan.test.ts",
     "scripts/secret-scan.ts",
     "scripts/stage-compatibility-declarations.ts",
+    "scripts/stage-starter.test.ts",
     "scripts/stage-starter.ts",
     "scripts/verify-release-archives.test.ts",
     "scripts/verify-release-archives.ts",

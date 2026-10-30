@@ -33,6 +33,24 @@ it("scaffolds System images from explicit kernel and disk files without a manage
   });
 });
 
+it("documents the required scaffold-lock reset when choosing a custom image identity", async () => {
+  const guide = await readFile(new URL("../../../docs/images.md", import.meta.url), "utf8");
+  expect(guide).toContain("rm images/my-linux/image.lock.json");
+  await scratch(async root => {
+    const directory = join(root, "image");
+    await initializeImage(directory, "userspace");
+    await mkdir(join(directory, "rootfs"));
+    await writeFile(join(directory, "rootfs/input"), "fixture");
+    const key = await generateImageKey(join(root, "author.pem"));
+    const recipe = { mode: "userspace" as const, id: "my-linux", version: "1.0.0", sourceDateEpoch: 0,
+      source: { kind: "directory" as const, path: "rootfs" }, smokeTest: { command: "/bin/true", expectedExitCode: 0 as const } };
+    const options = { recipeDir: directory, signingKeyFile: key.privateKeyPath };
+    await expect(buildImage(recipe, options)).rejects.toThrow(/another recipe/u);
+    await rm(join(directory, "image.lock.json"));
+    expect((await buildImage(recipe, options)).mode).toBe("userspace");
+  });
+});
+
 it("maps the package's configured registry only when this release has one", async () => {
   // While the packages are private, a same-named public package must never be installed instead.
   const cli: unknown = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
@@ -94,6 +112,11 @@ it("creates the canonical Python + pandas starter and preserves its private arch
     expect(await readFile(join(app, "public/licenses/highlight.js.txt"), "utf8")).toContain("BSD 3-Clause");
     expect(await readFile(join(app, "tsconfig.json"), "utf8")).not.toContain("../../");
     expect(await readFile(join(app, "tsconfig.node.json"), "utf8")).not.toContain("../../");
+    const readme = await readFile(join(app, "README.md"), "utf8");
+    expect(readme).toContain(`/tree/v${getSDKRelease().sdkVersion}/examples/starter/image`);
+    expect(readme).toContain(`/blob/v${getSDKRelease().sdkVersion}/docs/images.md`);
+    expect(readme).not.toContain("../../docs/");
+    await expect(readFile(join(app, "image/Dockerfile"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

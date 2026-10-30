@@ -99,7 +99,22 @@ engine binaries. Explicit licensed self-hosting and custom images remain availab
 The SDK, CLI and starter code use Apache-2.0. The engine has separate proprietary
 terms. Python, NumPy, pandas, other guest libraries and fonts retain their own
 licenses and notices. See [the licensing guide](../../docs/licensing.md).
-The image recipe and exact dependency inputs live beside this example in `image/`.
+
+## Customize the Linux image
+
+Generated applications use a prebuilt signed image and do not include an `image/` directory.
+The [image recipe](image/) contains the Dockerfile, exact dependency inputs,
+build scripts and component inventory in the matching SDK source release.
+The [custom-image guide](../../docs/images.md) explains prerequisites, building,
+signing, testing and selecting a custom image. Generated README links are
+release-pinned to the installed SDK version. An unpublished candidate's links
+become available when its matching source release is published.
+
+The image's independent version differs from the SDK version. See
+[the licensing guide](../../docs/licensing.md) for the selected image's source
+and license materials. In generated applications, `LICENSES.md` records those
+materials. A source/license archive is not a ready-to-run rootfs or an OCI image.
+Changing host npm dependencies does not add programs to Linux.
 
 NumPy is built without external BLAS/LAPACK and without bundled Fortran or
 quadmath libraries. It uses its internal fallback routines. This starter

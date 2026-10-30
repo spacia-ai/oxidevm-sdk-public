@@ -1,5 +1,17 @@
 import { expect, it } from "vitest";
 import { parseArguments } from "./arguments.js";
+import { readFile } from "node:fs/promises";
+
+it("accepts the exact commands in the custom-image guide without implicit engine installation", async () => {
+  const guide = await readFile(new URL("../../../docs/images.md", import.meta.url), "utf8");
+  const commands = [...guide.matchAll(/^\s*npm exec -- oxidevm (.+)$/gmu)].map(match => {
+    const words = (match[1] ?? "").match(/"[^"]*"|\S+/gu) ?? [];
+    const invocation = parseArguments(words.map(word => word.replace(/^"|"$/gu, "")), {});
+    expect(invocation.kind).toBe("command");
+    return invocation.kind === "command" ? invocation.command : "help";
+  });
+  expect(commands).toEqual(["image init", "image keygen", "image build", "image inspect", "image test", "init"]);
+});
 
 it("creates the prebuilt starter with the short npx or bunx command", () => {
   expect(parseArguments(["init", "app", "--start"], {})).toMatchObject({ command: "init", mode: "userspace", start: true, packageManager: "npm" });
