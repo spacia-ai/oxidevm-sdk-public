@@ -142,8 +142,9 @@ pnpm exec oxidevm assets install --image /absolute/path/starter --trust /absolut
 The first run writes `oxidevm.lock.json`, which binds the exact SDK, CLI, engine and image; commit it. Later runs validate it and never replace it.
 
 The SDK package contains no engine. The command stages the engine release the SDK
-pins from `--engine-dir <release>`, `OXIDEVM_ENGINE_DIR`, the local engine cache or,
-with `OXIDEVM_DOWNLOAD_TOKEN`, the private release, and verifies it first.
+pins from the CDN and verifies it first. You can also supply a verified local
+release through `--engine-dir <release>`, `OXIDEVM_ENGINE_DIR`, or the engine cache.
+An authenticated release channel remains available for custom distributions.
 
 Configure your development server/static host with:
 

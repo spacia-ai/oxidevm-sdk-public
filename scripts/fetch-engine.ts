@@ -1,6 +1,6 @@
 // Stages the SDK's pinned engine release at .cache/engine/current, where core tests and local
 // tools read it through OXIDEVM_ENGINE_DIR. The release comes from OXIDEVM_ENGINE_DIR, the local
-// engine cache, or a download of the private release with OXIDEVM_DOWNLOAD_TOKEN or GH_TOKEN.
+// engine cache, or the pinned CDN release. Authenticated custom channels are also supported.
 //
 // usage: pnpm engine:fetch [--print-dir]   (--print-dir prints only the directory, for $(...))
 import { join, resolve } from "node:path";
