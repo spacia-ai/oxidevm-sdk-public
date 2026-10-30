@@ -18,7 +18,9 @@ export async function writeStarter(directory: string): Promise<void> {
   const template = object(JSON.parse(await readFile(new URL("../dist/starter.json", import.meta.url), "utf8")), "starter template");
   if (Object.keys(template).length > 64) throw new VMError("PROTOCOL_ERROR", "Starter template exceeds its file limit");
   for (const [path, content] of Object.entries(template)) {
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9/._-]*$/u.test(path) || path.split("/").some(part => part === ".." || part === "." || part === "")) throw new VMError("PROTOCOL_ERROR", "Starter template contains an escaping path");
+    const ordinary = /^[a-zA-Z0-9][a-zA-Z0-9/._-]*$/u.test(path);
+    const skill = /^\.(?:agents|claude)\/skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/(?:SKILL\.md|agents\/openai\.yaml)$/u.test(path);
+    if (!(ordinary || skill) || path.split("/").some(part => part === ".." || part === "." || part === "")) throw new VMError("PROTOCOL_ERROR", "Starter template contains an escaping path");
     if (typeof content !== "string" || content.length > 1024 ** 2) throw new VMError("PROTOCOL_ERROR", "Starter template file exceeds its limit");
     const value = content;
     await mkdir(dirname(join(directory, path)), { recursive: true });

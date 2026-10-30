@@ -1,0 +1,4 @@
+interface:
+  display_name: "OxideVM debugging"
+  short_description: "Diagnose browser VM and guest integration errors"
+  default_prompt: "Use $oxidevm-debugging to investigate this application error."

@@ -136,6 +136,14 @@ Every tracked file must serve the public SDK, CLI, examples, documentation,
 tests, build, repository governance, or license requirements.
 
 `examples/starter` is the only example and the source of the CLI template.
+Its reviewed project skills are pinned to an immutable public
+`spacia-ai/oxidevm-skills` revision in `agent-skills.lock.json`. Maintain the
+canonical skill instructions there and regenerate the snapshot. Builds check
+every content hash and bind `AGENT_SKILLS.json` to the actual SDK version.
+The source example's `.claude/skills` link points to `../.agents/skills`;
+scaffolding writes portable checked copies for both clients, without symlink
+privileges or network access. Do not broaden this exception to private agent
+configuration or unrelated hidden files.
 Builds stage it into `packages/cli/dist/starter.json`. Do not maintain another
 copy. The versioned repository policy admits only the three exact WOFF2 brand
 fonts with SHA-256 and their license texts. It still rejects engine and guest
@@ -151,7 +159,7 @@ Keep the following material in the private source repository:
   promotion, and release tooling;
 - the container acceptance fixture and System lab examples;
 - private `.claude`, `.codex`, `.claude-plugin`, and other agent configuration;
-- the SDK usage plugin until it receives a separate publication review;
+- private operator skills and engine-development agent instructions;
 - proprietary engine source, ISA specifications, engine binaries, kernels,
   rootfs archives, guest disk images, snapshots, and staged guest artifacts;
 - credentials, signing keys, download tokens, private environment files,

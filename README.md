@@ -28,6 +28,8 @@ installed in your project. Open the localhost URL. Edit
 the page, use the terminal, run pandas code, and keep edits across reloads.
 No GitHub access, launcher, image authoring, or compiler toolchain is required.
 
+The starter includes [Codex and Claude Code skills](docs/agent-skills.md).
+
 Read the [starter guide](examples/starter/README.md) and
 [licensing guide](docs/licensing.md). Engine and guest licenses remain separate.
 

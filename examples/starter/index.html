@@ -10,7 +10,7 @@
           <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>
           <span>OxideVM</span><span class="architecture">64-bit</span>
         </a>
-        <div class="nav-links"><a href="https://oxidevm.dev/docs/" target="_blank" rel="noreferrer">Docs <span aria-hidden="true">↗</span></a></div>
+        <div class="nav-links"><a href="https://oxidevm.dev/docs/" target="_blank" rel="noreferrer">Docs <span aria-hidden="true">↗</span></a><a href="#agent-skills">AI skills</a></div>
       </nav>
       <div class="title-row"><h1>Your data starter.</h1><span class="demo-label">INTERACTIVE DEMO</span></div>
       <p class="intro">Run real Linux Python. Explore your data in this browser.</p>
@@ -39,6 +39,10 @@
       <details class="terminal-panel" open><summary>Terminal <span>Linux shell</span></summary><div id="terminal" aria-label="Interactive Linux terminal"></div><div class="terminal-tools"><button id="interrupt" type="button" disabled>Send Ctrl+C</button><button id="focus-terminal" type="button" disabled>Focus terminal</button></div></details>
     </section>
     <footer><div><p class="start-here">Start here → edit <code>analysis.py</code></p><p id="persistence">Checking browser storage…</p></div><button id="reset" class="text-button" type="button" disabled>Reset demo</button></footer>
+    <section id="agent-skills" class="agent-help" aria-labelledby="agent-heading">
+      <div class="agent-help-heading"><h2 id="agent-heading">Build with Codex or Claude.</h2><a href="https://oxidevm.dev/docs/start/quickstart/#build-with-codex-or-claude" target="_blank" rel="noreferrer">Plugin setup for other projects <span aria-hidden="true">↗</span></a></div>
+      <div class="agent-help-body"><p class="agent-included"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>OxideVM skills are included</p><p>Open this project in Codex or Claude Code. Then try:</p><div class="agent-prompt"><p id="agent-prompt" tabindex="0">Add a revenue chart from the DataFrame result. Keep Python running in Linux.</p><button id="copy-agent-prompt" type="button">Copy prompt</button></div><p class="agent-help-note">Works in the terminal and desktop code apps.</p><p id="agent-copy-status" class="agent-copy-status" role="status" aria-live="polite"></p></div>
+    </section>
     <dialog id="reset-dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reset the demo?</h2><p>This restores the sample CSV and Python code. Other workspace files stay in place.</p><form method="dialog"><button value="cancel" autofocus>Keep my changes</button><button value="reset">Reset demo</button></form></dialog>
   </main>
   <script type="module" src="/src/main.ts"></script>

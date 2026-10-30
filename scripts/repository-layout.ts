@@ -53,6 +53,7 @@ export function repositoryEntryError(policy: RepositoryPolicy, path: string, mod
   if (/\.(?:wasm|img|qcow2|oxvm|tar|tgz|zip|pem|key|log)$/iu.test(path)) return "binary, credential or generated artifact";
   if (!policy.files.includes(path) && !policy.trees.some(prefix => path.startsWith(prefix))) return "outside the approved repository layout";
   if (path === "CLAUDE.md") return mode === "120000" && target === "AGENTS.md" ? undefined : "CLAUDE.md must be a relative symlink to AGENTS.md";
+  if (path === "examples/starter/.claude/skills") return mode === "120000" && target === "../.agents/skills" ? undefined : "Starter Claude skills must link to the canonical project skills";
   if (mode !== "100644" && mode !== "100755") return "unexpected symlink or file mode";
   return undefined;
 }
@@ -98,7 +99,7 @@ export async function checkRepositoryLayout(root: string): Promise<void> {
   for (const entry of listed.split("\0").filter(Boolean)) {
     const separator = entry.indexOf("\t"), path = entry.slice(separator + 1), mode = entry.split(" ")[0];
     if (separator < 0 || mode === undefined) throw new Error("Invalid Git index entry");
-    const initial = repositoryEntryError(policy, path, mode, mode === "120000" && path === "CLAUDE.md" ? "AGENTS.md" : undefined);
+    const initial = repositoryEntryError(policy, path, mode, mode === "120000" ? await readlink(join(root, path)) : undefined);
     if (initial !== undefined) { failures.push(`${path}: ${initial}`); continue; }
     paths.add(path);
     const file = join(root, path), metadata = await lstat(file);

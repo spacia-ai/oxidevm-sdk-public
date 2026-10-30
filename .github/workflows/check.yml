@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  NODE_OPTIONS: --max-old-space-size=4096
+  NODE_OPTIONS: --max-old-space-size=8192
 concurrency:
   group: source-checks-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true

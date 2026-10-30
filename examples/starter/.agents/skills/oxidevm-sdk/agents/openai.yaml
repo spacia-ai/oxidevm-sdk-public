@@ -1,0 +1,4 @@
+interface:
+  display_name: "OxideVM SDK"
+  short_description: "Build browser apps that run real Linux programs"
+  default_prompt: "Use $oxidevm-sdk to integrate OxideVM into this application."
