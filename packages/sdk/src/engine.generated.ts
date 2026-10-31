@@ -3,13 +3,13 @@
 // verifies: engineReleaseId is the SHA-256 of release.json's exact bytes, which are
 // JSON.stringify(engineRelease, null, 2) followed by one newline. engineLicense identifies the
 // release's LICENSE, which release.json does not cover.
-export const engineReleaseId = "4a74583a32e1e4acad6b95af1a3edbefc4ed87b64d7e4a06a90406ad923c4a79";
+export const engineReleaseId = "e4628918adbf648c1b7e114fa9ca9780cdf61e6c4be1498ecea094e529b20684";
 export const engineRelease = {
   "schemaVersion": 3,
   "engineSource": {
-    "commit": "74f5b3b648ce1ecb4160e9679735b53b792a88bd",
+    "commit": "e727d68d7cadf01172f8f074422da8ebd4f1f09d",
     "dirty": false,
-    "nativeInputsSHA256": "6317ea11c6de705e5bf240151e9e396a87c585c6c6bcbba8f6ca5a7266cc05bd"
+    "nativeInputsSHA256": "67c34ed204a9a981ed9c3cf06dd3d9f0efa5300fdb50c6afd2f4affad3a4e369"
   },
   "identities": {
     "coreApi": 19,
@@ -40,7 +40,7 @@ export const engineRelease = {
       "name": "oxidevm_userspace.wasm",
       "mode": "userspace",
       "bytes": 13938728,
-      "sha256": "12e278a0e6c2a97dd51026679bcd691d1a83f6cd26df92dd998e85c29dc85576"
+      "sha256": "a04747147386b14bcc9f5e16852b32cb3e4192c0f1b822667f3d26596099d353"
     }
   ]
 } as const;
@@ -50,11 +50,11 @@ export const engineLicense = {
 } as const;
 export const engineDownload = {
   "kind": "cdn",
-  "release": "engine-4a74583a32e1e4acad6b95af1a3edbefc4ed87b64d7e4a06a90406ad923c4a79",
-  "baseUrl": "https://cdn.oxidevm.dev/engine/4a74583a32e1e4acad6b95af1a3edbefc4ed87b64d7e4a06a90406ad923c4a79/"
+  "release": "engine-e4628918adbf648c1b7e114fa9ca9780cdf61e6c4be1498ecea094e529b20684",
+  "baseUrl": "https://cdn.oxidevm.dev/engine/e4628918adbf648c1b7e114fa9ca9780cdf61e6c4be1498ecea094e529b20684/"
 } as const;
 export const engineCompliance: unknown = {
-  "url": "https://cdn.oxidevm.dev/engine/4a74583a32e1e4acad6b95af1a3edbefc4ed87b64d7e4a06a90406ad923c4a79/compliance/6a4ef98bbec8641cfd89747795264aed52af73ffd17cb5c929492de093b76943/compliance.json",
+  "url": "https://cdn.oxidevm.dev/engine/e4628918adbf648c1b7e114fa9ca9780cdf61e6c4be1498ecea094e529b20684/compliance/ee369dcc9a30fa4187f608c15ec014befe9b2dff6819c700cbb5a70603a279f6/compliance.json",
   "bytes": 746,
-  "sha256": "6a4ef98bbec8641cfd89747795264aed52af73ffd17cb5c929492de093b76943"
+  "sha256": "ee369dcc9a30fa4187f608c15ec014befe9b2dff6819c700cbb5a70603a279f6"
 };
