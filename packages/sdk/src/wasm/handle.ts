@@ -1,5 +1,5 @@
 import type { ProcessHandle } from "../contracts.js";
-import type { OptionValue } from "./define.js";
+import type { CommandsOf, OptionValue } from "./define.js";
 import type { CommandDecl, EndpointDecl, ModuleDecl, OptionDecl, ServiceDecl } from "./manifest-types.js";
 
 export interface Pin {
@@ -39,13 +39,17 @@ export type OptionArgs<O> = O extends Readonly<Record<string, OptionDecl>>
   : never;
 
 /** A manifest whose `id` is a plain `string` has lost its literal type (it was loaded, not generated), so nothing about it can be derived. */
-type Erased<M extends ModuleDecl> = string extends M["id"] ? true : false;
+export type Erased<M extends ModuleDecl> = string extends M["id"] ? true : false;
+
+/** The command names a handle's module declares; every string for an erased handle, whose names the runtime checks. */
+export type CommandName<M extends ModuleDecl> = Erased<M> extends true ? string : CommandsOf<M>;
 
 type CommandOnly<M> = M extends CommandDecl
   ? { readonly args?: readonly string[]; readonly cwd?: string; readonly env?: Readonly<Record<string, string>> }
   : unknown;
 type ExclusiveOnly<M> = M extends { readonly process: { readonly exclusive: "workspace" } } ? { readonly workspaceId: string } : unknown;
-type OptionsField<M> = M extends { readonly options: infer O }
+/** The `options` a module's manifest declares: required when one of them has no default, absent when it declares none. */
+export type OptionsField<M> = M extends { readonly options: infer O }
   ? Record<never, never> extends OptionArgs<O> ? { readonly options?: OptionArgs<O> } : { readonly options: OptionArgs<O> }
   : unknown;
 

@@ -1,4 +1,5 @@
 import { JsProcessWorkers } from "./js-process/driver.js";
+import { ModuleCommands, nativeModuleCommandTable } from "./js-process/module-commands.js";
 import { nativePromiseCapability } from "../promise-brand.js";
 import { nativeErrorCapability } from "../error-brand.js";
 import { captureUserspaceJitProfileForRuntime } from "./userspace-jit-profile.js";
@@ -51,10 +52,7 @@ import {
   USERSPACE_PENDING_PROCESS_EXIT,
   USERSPACE_PENDING_TIMER,
 } from "../userspace-abi.js";
-import {
-  decodeUserspaceRequest,
-  type UserspaceRequest,
-} from "../userspace-protocol.js";
+import { answeredWhenCancelled, decodeUserspaceRequest, type UserspaceRequest } from "../userspace-protocol.js";
 import { decodeGuestProcessPortAck } from "../protocol/agent.js";
 import { decodeRequestId, PROTOCOL_VERSION } from "../protocol/common.js";
 import type { ExecutionTimingMode } from "../protocol/common.js";
@@ -86,7 +84,6 @@ import { runUserspaceSlice, type UserspaceSlicePorts } from "./userspace-run-loo
 
 const MAX_COMPLETED_TRACES = 64;
 const MAX_MANAGED_CACHE_BYTES = 512 * 1024 * 1024;
-
 
 let module: WebAssembly.Module | undefined;
 let wasmUrl: string | undefined;
@@ -144,6 +141,8 @@ const previewRuntime = new UserspacePreviewRuntime({
   opened: pid => { previewReferences.set(pid, (previewReferences.get(pid) ?? 0) + 1); }, closed: releasePreviewReference,
 });
 const attachments = new UserspaceWorkerAttachments();
+const moduleCommands = new ModuleCommands({ runtime: () => runtimeState?.startup === "ready" ? nativeModuleCommandTable(runtimeState) : undefined, fetch: (url, init) => fetch(url, { signal: init.signal }),
+  environment: () => ({ crossOriginIsolated: globalThis.crossOriginIsolated, initialUser: mount.initialUser }), changed: () => { void scheduleWorkspaceCommit(); if (runtimeState !== undefined) scheduleRun(runtimeState); } });
 let checkpointPort: UserspaceCheckpointPort | undefined;
 let checkpointSession: UserspaceWorkerCheckpoints | undefined;
 const canceled = new Set<number>();
@@ -227,12 +226,12 @@ async function receive(value: unknown): Promise<void> {
     let result: unknown;
     if (decoded.type === "stdin") result = await admitUserspaceInput(checkpointGate, execute);
     else result = await checkpointGate.operation(execute);
-    if (!canceled.delete(decoded.id)) {
+    if (!canceled.delete(decoded.id) || answeredWhenCancelled(decoded)) {
       self.postMessage({ id: decoded.id, version: PROTOCOL_VERSION, ok: true, value: result }, result instanceof MessagePort ? [result] : []);
     }
     if (decoded.type === "dispose") self.close();
   } catch (error) {
-    if (!canceled.delete(decoded.id)) respondError(decoded.id, error);
+    if (!canceled.delete(decoded.id) || answeredWhenCancelled(decoded)) respondError(decoded.id, error);
   }
 }
 
@@ -281,7 +280,7 @@ async function handle(request: UserspaceRequest): Promise<unknown> {
       if (isDisposing() || canceled.has(request.id)) throw new VMError("ABORTED", "JS process creation cancelled");
       const workers = runtime.jsProcesses;
       if (workers === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "JS process transport is unavailable");
-      const token = workers.register(request.worker);
+      const token = workers.register(request.worker, request.launch);
       try {
         const pid = admitJSProcess(runtime, token, request.arguments, request.environment, request.cwd, request.terminal);
         const process = connectSpawnedProcess(runtime, pid, request.port, "js-process", request.terminal);
@@ -290,6 +289,7 @@ async function handle(request: UserspaceRequest): Promise<unknown> {
         return process;
       } catch (error) { workers.retireLaunch(token); throw error; }
     }
+    case "module-commands": { const cancellation = new AbortController(); admissionReads.set(request.id, cancellation); try { return await moduleCommands.request(request, cancellation.signal); } finally { admissionReads.delete(request.id); } }
     case "spawn-managed": {
       const client = storage;
       if (client === undefined) throw filesUnavailable("no-root-filesystem");
@@ -407,7 +407,7 @@ async function handle(request: UserspaceRequest): Promise<unknown> {
     case "dispose": {
       disposing = true;
       for (const admission of admissionReads.values()) admission.abort();
-      checkpointGate.close(); checkpointPort?.close(); checkpointSession?.close(); attachments.clear(); accelerationKnowledge?.close();
+      checkpointGate.close(); checkpointPort?.close(); checkpointSession?.close(); attachments.clear(); accelerationKnowledge?.close(); moduleCommands.dispose();
       runtimeMountingCancellation?.abort();
       runtimeWakeTimer.cancel(); runtimeRunScheduled = false;
       let disposalFailure: Error | undefined;
@@ -545,7 +545,6 @@ function clearManagedBytes(): void {
   managedRootTree = undefined;
 }
 
-
 /** A new instance starts with an empty table, so the stored records go in before acceleration. */
 function enableNativeAcceleration(binding: Pick<RuntimeState, "instance" | "memory">, operation: string): void {
   if (nativeExecutionPort === undefined) return;
@@ -578,7 +577,7 @@ async function createMountedRuntime(rootfs: Uint8Array, cpuProfile: "x86-64-v2" 
     runtime.rootPersistence?.configure();
     if (startup === "files") {
       await runtime.rootPersistence?.initialize(cancellation.signal);
-      await runtime.workspacePersistence?.initialize(cancellation.signal);
+      await runtime.workspacePersistence?.initialize(cancellation.signal); moduleCommands.reapply(nativeModuleCommandTable(runtime));
     }
     if (isDisposing()) throw new VMError("ABORTED", "Userspace mounting cancelled");
     runtimeState = runtime;
@@ -590,7 +589,7 @@ async function createMountedRuntime(rootfs: Uint8Array, cpuProfile: "x86-64-v2" 
 function configureRuntimeRoot(runtime:RuntimeState):void {runtime.rootPersistence?.configure();}
 
 function bindRuntimeServices(runtime: RuntimeState, previous?: RuntimeState, origin:"restored"|"remounted"="restored", workspace:"now"|"later"="now"): void {
-  runtime.jsProcesses = new JsProcessWorkers({ runtime, ...(interceptors?.[0] === undefined ? {} : { interceptor: interceptors[0].worker }),
+  runtime.jsProcesses = new JsProcessWorkers({ runtime, commands: moduleCommands, ...(interceptors?.[0] === undefined ? {} : { interceptor: interceptors[0].worker }),
     ...(nativeExecutionPort === undefined ? {} : { nativeExecution: nativeExecutionPort }),
     attention: { watch: counter => hostAttention.watch("js-process", counter) },
     knowledge: { remember: (notice, failure) => { void accelerationKnowledge?.remember(notice, failure); } },
@@ -687,7 +686,7 @@ async function configureCheckpoints(configuration: NativeCheckpointConfiguration
     coldPublished: () => {
       if (interceptors !== undefined) assertStatus(call(current().instance, "oxidevm_userspace_command_enable"), "enable cold command interceptor");
       enableNativeAcceleration(current(), "enable cold native acceleration");
-      current().startup="ready";workspaceCommit.reset();workspaceFailure=undefined;resumeCheckpointClock(current());checkpointGate.resume();
+      current().startup="ready";workspaceCommit.reset();workspaceFailure=undefined;resumeCheckpointClock(current());checkpointGate.resume();moduleCommands.reapply(nativeModuleCommandTable(current()));
     },
     coldFailed: async () => {
       previewRuntime.retire();
@@ -745,7 +744,7 @@ async function configureCheckpoints(configuration: NativeCheckpointConfiguration
           completedSyscallTraces.clear(); completedExecutionProfiles.clear();
         }
         workspaceCommit.reset(); workspaceFailure = undefined;
-        runtimeState = replacement; runtimeMounting = undefined;
+        runtimeState = replacement; runtimeMounting = undefined; moduleCommands.reapply(nativeModuleCommandTable(replacement));
         if (managedRootTree !== replacement.rootTreeSha256) {
           clearManagedBytes(); managedRootTree = replacement.rootTreeSha256;
         }
@@ -1239,7 +1238,6 @@ function warnJitDegraded(degradation: JitDegradation): void {
   console.warn("oxidevm: Tier-1 JIT degraded", jitDegradationWarning("userspace", degradation));
 }
 
-
 function releasePreviewReference(pid: number): void {
   const references = previewReferences.get(pid);
   if (references === undefined) return;
@@ -1265,7 +1263,6 @@ function requireGeneration(pid: number, sessionId: number): ProcessState {
   if (active.sessionId !== sessionId) throw new VMError("PROTOCOL_ERROR", "stale process generation");
   return active;
 }
-
 
 function signalNumber(signal: "TERM" | "KILL" | "INT" | "HUP"): number {
   switch (signal) {

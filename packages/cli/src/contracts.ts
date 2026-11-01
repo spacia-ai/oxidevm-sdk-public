@@ -23,6 +23,11 @@ export interface WasmInitResult {
   readonly abi: string;
   /** Every file created, relative to the directory and sorted. */
   readonly files: readonly string[];
+  /**
+   * A command module's `commands` as module.ts declares them: its id, or none when the id starts with the reserved prefix
+   * `oxidevm`. A service has no such key.
+   */
+  readonly commands?: readonly string[];
 }
 
 /** A finished build plus the commands that publish it. Nothing here has been run. */

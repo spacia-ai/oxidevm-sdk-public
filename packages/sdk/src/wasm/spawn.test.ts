@@ -2,12 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LinuxSignal, PipeJSProcessSpec, ProcessExit, ProcessHandle } from "../contracts.js";
 import { decodeProcessId } from "../values.js";
 import { VMError } from "../runtime/errors.js";
+import type { RunnerHostLaunch } from "../runtime/js-process/launch.js";
 import { moduleHandle } from "./handle.js";
 import { COMMAND_DECLARATION, SERVICE_DECLARATION, buildRelease, type Release } from "./runner/fixtures.test-support.js";
 import { parseLaunchArgument } from "./runner/descriptor.js";
 import { spawnModule, stopModule, type ModuleVM } from "./spawn.js";
 
-afterEach(() => { vi.useRealTimers(); });
+/** The VM's owner record, which starts the runner with its launch in the start message (engine ADR 0027). */
+const owner = vi.hoisted(() => ({ start: vi.fn<(vm: object, spec: PipeJSProcessSpec, launch: RunnerHostLaunch) => Promise<ProcessHandle>>() }));
+vi.mock("../vm-adapter.js", () => ({ spawnOwnedModuleProcess: owner.start }));
+
+afterEach(() => { vi.useRealTimers(); owner.start.mockReset(); });
 
 const encoder = new TextEncoder();
 const pid = decodeProcessId(42);
@@ -38,10 +43,15 @@ function fakeProcess() {
   };
 }
 
+/** A VM whose owner starts `process`. Its public `spawnJS` never runs: a launch description in argv would reach `/proc/<pid>/cmdline`. */
 function fakeVM(process: ProcessHandle) {
-  const specs: PipeJSProcessSpec[] = [];
-  const vm: ModuleVM = { spawnJS: spec => { specs.push(spec); return Promise.resolve(process); } };
-  return { vm, specs };
+  const specs: PipeJSProcessSpec[] = [], launches: RunnerHostLaunch[] = [];
+  const vm: ModuleVM = { spawnJS: () => Promise.reject(new Error("spawnModule must not start through the public spawnJS")) };
+  owner.start.mockImplementation((target, spec, launch) => {
+    if (target !== vm) return Promise.reject(new Error("started through another VM"));
+    specs.push(spec); launches.push(launch); return Promise.resolve(process);
+  });
+  return { vm, specs, launches };
 }
 
 const handleFor = (release: Release) => moduleHandle(release.manifest, { release: release.descriptor.release, adapter: release.descriptor.adapter, artifacts: release.descriptor.artifacts });
@@ -50,8 +60,8 @@ const serviceRelease = () => buildRelease({ adapter: "export default () => ({ pr
 const commandRelease = () => buildRelease({ adapter: "export default () => ({ main: () => 0 });", declaration: { ...COMMAND_DECLARATION, options: { mode: { type: "enum", values: ["a", "b"], default: "a" } } } });
 
 describe("spawning a command module", () => {
-  it("passes the descriptor first, then the command's own arguments, working directory and environment", async () => {
-    const release = await commandRelease(), process = fakeProcess(), { vm, specs } = fakeVM(process.handle);
+  it("passes the descriptor in the runner's start message and only the command's own arguments, working directory and environment as the process's", async () => {
+    const release = await commandRelease(), process = fakeProcess(), { vm, specs, launches } = fakeVM(process.handle);
     const signal = new AbortController().signal;
     const handle = handleFor(release);
     const started = await spawnModule(vm, handle, { args: ["in.md", "out.html"], cwd: "/workspace", env: { MODE: "fast" }, options: { mode: "b" }, signal });
@@ -60,19 +70,23 @@ describe("spawning a command module", () => {
     const spec = specs[0];
     expect(spec).toMatchObject({ cwd: "/workspace", env: { MODE: "fast" }, signal });
     expect(spec?.worker.pathname.endsWith("/assets/module-runner/runner.worker.js")).toBe(true);
-    expect(spec?.args?.slice(1)).toEqual(["in.md", "out.html"]);
-    const descriptor = parseLaunchArgument(spec?.args?.[0]);
+    // argv, and so /proc/<pid>/cmdline, holds the caller's arguments and nothing of the descriptor or its options.
+    expect(spec?.args).toEqual(["in.md", "out.html"]);
+    expect(launches).toHaveLength(1);
+    expect(launches[0]?.kind).toBe("host");
+    const descriptor = parseLaunchArgument(launches[0]?.descriptor);
     expect(descriptor.options).toEqual({ mode: "b" });
     expect(descriptor.manifest.id).toBe("tool");
     expect(descriptor.adapter.url).toBe(release.descriptor.adapter.url);
   });
 
-  it("sends defaults explicitly and starts with no options at all", async () => {
-    const release = await commandRelease(), { vm, specs } = fakeVM(fakeProcess().handle);
+  it("sends defaults explicitly and starts with no options and no arguments at all", async () => {
+    const release = await commandRelease(), { vm, specs, launches } = fakeVM(fakeProcess().handle);
     await spawnModule(vm, handleFor(release));
-    expect(parseLaunchArgument(specs[0]?.args?.[0]).options).toEqual({ mode: "a" });
-    expect(specs[0]?.args).toHaveLength(1);
+    expect(parseLaunchArgument(launches[0]?.descriptor).options).toEqual({ mode: "a" });
+    expect(specs[0]?.args).toEqual([]);
   });
+
 
   it("rejects bad options, a corrupt handle and a bad signal before starting anything", async () => {
     const release = await commandRelease(), { vm, specs } = fakeVM(fakeProcess().handle);
@@ -82,13 +96,16 @@ describe("spawning a command module", () => {
     await expect(spawnModule(vm, forged)).rejects.toMatchObject({ code: "INVALID_ARGUMENT", detail: { reason: "wasm-manifest-invalid" } });
     // @ts-expect-error the type already requires an AbortSignal; the run-time check is for callers without types
     await expect(spawnModule(vm, handleFor(release), { signal: "nope" })).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    // A caller without types may pass anything as the handle: it is refused as a module, not with a TypeError.
+    const untyped: { spawn(vm: unknown, handle: unknown): Promise<unknown> } = { spawn: spawnModule };
+    for (const handle of [null, {}, { manifest: release.manifest }]) await expect(untyped.spawn(vm, handle)).rejects.toMatchObject({ code: "INVALID_ARGUMENT", detail: { reason: "wasm-manifest-invalid" } });
     expect(specs).toEqual([]);
   });
 });
 
 describe("spawning a service module", () => {
   it("resolves when the ready line arrives and exposes the declared endpoints and the adapter's info", async () => {
-    const release = await serviceRelease(), process = fakeProcess(), { vm, specs } = fakeVM(process.handle);
+    const release = await serviceRelease(), process = fakeProcess(), { vm, launches } = fakeVM(process.handle);
     const pending = spawnModule(vm, handleFor(release), { workspaceId: "ws" });
     process.err("warming up\n");
     process.out(READY({ version: "18.6", ready: true }));
@@ -96,7 +113,7 @@ describe("spawning a service module", () => {
     expect(running.endpoints?.["pg"]).toEqual({ kind: "tcp", port: 5432, protocol: "postgres-3.0" });
     expect(running.info).toEqual({ version: "18.6", ready: true });
     expect(running.pid).toBe(pid);
-    expect(parseLaunchArgument(specs[0]?.args?.[0]).workspaceId).toBe("ws");
+    expect(parseLaunchArgument(launches[0]?.descriptor).workspaceId).toBe("ws");
     // Both streams are still whole: the ready line and the earlier diagnostics reach the caller.
     const out = running.stdout.getReader(), err = running.stderr.getReader();
     expect(new TextDecoder().decode((await out.read()).value)).toBe(READY({ version: "18.6", ready: true }));
@@ -132,6 +149,14 @@ describe("spawning a service module", () => {
       process.exits(status);
       await expect(pending, String(status)).rejects.toMatchObject({ code, detail: { reason, status, missing: ["guest executable /usr/bin/python3"] }, message: expect.stringContaining("Missing: guest executable /usr/bin/python3") as unknown });
     }
+  });
+
+  it("reports a pinned file the runner could not fetch as CORE_LOAD_FAILED wasm-module-artifact", async () => {
+    const release = await serviceRelease(), process = fakeProcess(), { vm } = fakeVM(process.handle);
+    const pending = spawnModule(vm, handleFor(release), { workspaceId: "ws" });
+    process.err(`${JSON.stringify({ oxidevm: "error", v: 1, kind: "launch", message: "Artifact db.wasm is unavailable (HTTP 404)", reason: "wasm-module-artifact" })}\n`);
+    process.exits(120);
+    await expect(pending).rejects.toMatchObject({ code: "CORE_LOAD_FAILED", detail: { reason: "wasm-module-artifact", status: 120 }, message: expect.stringContaining("Artifact db.wasm is unavailable (HTTP 404)") as unknown });
   });
 
   it("falls back to the end of standard error when the runner left no report, and handles a crash by signal", async () => {
@@ -201,12 +226,14 @@ describe("stopping a module", () => {
 });
 
 describe("a VM that cannot start the runner", () => {
-  it("passes the VM's own typed error through unchanged and starts nothing", async () => {
+  it("passes the VM owner's own typed error through unchanged and never falls back to the public spawnJS", async () => {
     const release = await commandRelease();
-    const failure = new VMError("FEATURE_NOT_AVAILABLE", "This client cannot start JavaScript processes");
+    const failure = new VMError("FEATURE_NOT_AVAILABLE", "JS processes require self-hosted Userspace");
     const calls: PipeJSProcessSpec[] = [];
-    const vm: ModuleVM = { spawnJS: spec => { calls.push(spec); return Promise.reject(failure); } };
+    const vm: ModuleVM = { spawnJS: spec => { calls.push(spec); return Promise.reject(new Error("unused")); } };
+    owner.start.mockRejectedValue(failure);
     await expect(spawnModule(vm, handleFor(release))).rejects.toBe(failure);
-    expect(calls).toHaveLength(1);
+    expect(owner.start).toHaveBeenCalledOnce();
+    expect(calls).toHaveLength(0);
   });
 });

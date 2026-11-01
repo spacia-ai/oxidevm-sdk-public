@@ -23,6 +23,7 @@ For an image failure, retain the exact manifest reference, digest and independen
 - Inspect the current upload and dataset generation when the displayed result appears stale. Preserve bounded decoding and previous-result/error handling.
 - For storage failures, record the SDK's typed error and browser storage state. Do not erase workspaces, switch to in-memory storage or claim persistence without the user's intent and a verified result.
 - For network and preview failures, inspect the existing permission flow, transport and isolated preview origin. Do not substitute a backend that executes or stores the workspace.
+- A program in `/usr/local/bin` that prints `oxidevm: this command runs a WebAssembly module that is not enabled for this process; the VM diagnostics name the reason` and exits 126 is a module command that is not turned on in this VM, or that this process may not start (not uid 1000, the module's concurrency limit, a full host command table). Turn it on with `enableModuleCommands`; the JS-process placement trace names the reason.
 
 Use diagnostics exposed by the installed public SDK only when needed. Redact credentials and unrelated guest data. Changes to SDK internals or the proprietary engine require their owning repository and permission; this skill supplies consumer integration guidance.
 

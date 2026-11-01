@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { COMMAND_DECLARATION, buildRelease, type Release } from "./fixtures.test-support.js";
-import { launch, records } from "./harness.test-support.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { COMMAND_DECLARATION, SERVICE_DECLARATION, buildRelease, type Release } from "./fixtures.test-support.js";
+import { encodeLaunchArgument } from "./descriptor.js";
+import { commandLaunch, launch, records } from "./harness.test-support.js";
+
+afterEach(() => { vi.restoreAllMocks(); Reflect.deleteProperty(globalThis, "verifiedModule"); Reflect.deleteProperty(globalThis, "mintedUrl"); });
 
 const wasm = Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 0);
 const commandRelease = (adapter: string, extras: Partial<Parameters<typeof buildRelease>[0]> = {}): Promise<Release> =>
@@ -15,6 +18,14 @@ describe("command modules", () => {
     const running = launch({ release, args: ["in.md", "out.html"], environment: ["MODE=fast", "EMPTY=", "=ignored", "NOEQUALS"], cwd: "/workspace" });
     await expect(running.done).resolves.toBe(7);
     expect(running.linux.stderrLines).toEqual(['args=["in.md","out.html"] cwd=/workspace mode=fast out=1 same=true']);
+  });
+
+  it("takes its launch description from the start message, so every argument, even one that looks like a description, is the caller's", async () => {
+    const release = await commandRelease(`export default host => ({ main: io => { host.log(JSON.stringify(io.args)); return 0; } });`);
+    const lookalike = encodeLaunchArgument(release.descriptor);
+    const running = launch({ release, args: [lookalike, "in.md"] });
+    await expect(running.done).resolves.toBe(0);
+    expect(running.linux.stderrLines).toEqual([JSON.stringify([lookalike, "in.md"])]);
   });
 
   it("returns the status of host.fail and writes its message", async () => {
@@ -157,5 +168,80 @@ describe("runner failures", () => {
   it("refuses to hand an adapter a status for host.fail outside 1 to 119", async () => {
     const release = await commandRelease(`export default host => ({ main: () => { try { host.fail(0, "x"); } catch { return host.fail(120 - 1, "ok"); } return 50; } });`);
     await expect(launch({ release }).done).resolves.toBe(119);
+  });
+});
+
+// Engine ADR 0027: a program in the VM ran one of the module's commands, and the runner starts with the copies the
+// Userspace worker verified when the commands were turned on.
+describe("commands a program in the VM runs", () => {
+  const python = { ...COMMAND_DECLARATION, commands: ["python", "python3"] } as const;
+  const report = `export default host => ({ main: io => {
+    host.log(JSON.stringify({ args: io.args, invocation: io.invocation, terminals: io.terminals, cwd: io.cwd, mode: io.env.MODE }));
+    return 3;
+  } });`;
+
+  it("passes the arguments after argv[0], the invocation with argv[0], the terminals and the caller's environment and directory to main", async () => {
+    const release = await commandRelease(report, { declaration: python });
+    const running = launch({ release, command: await commandLaunch(release, "python", { stdin: true, stdout: true, stderr: false }), args: ["python", "x.py", "-v"], environment: ["MODE=fast"], cwd: "/tmp" });
+    await expect(running.done).resolves.toBe(3);
+    expect(running.linux.stderrLines.map(line => JSON.parse(line) as unknown)).toEqual([{ args: ["x.py", "-v"], invocation: { kind: "command", name: "python", path: "/usr/local/bin/python", argv0: "python" }, terminals: { stdin: true, stdout: true, stderr: false }, cwd: "/tmp", mode: "fast" }]);
+    expect(running.fetched).toEqual([]);
+    // A caller may run the stub through a link or with any argv[0], or with none at all.
+    const aliased = launch({ release, command: await commandLaunch(release, "python3"), args: ["/opt/py"] });
+    await aliased.done;
+    expect(JSON.parse(aliased.linux.stderrLines[0] ?? "null")).toMatchObject({ args: [], invocation: { kind: "command", name: "python3", path: "/usr/local/bin/python3", argv0: "/opt/py" } });
+    const bare = launch({ release, command: await commandLaunch(release, "python"), args: [] });
+    await bare.done;
+    expect(JSON.parse(bare.linux.stderrLines[0] ?? "null")).toMatchObject({ args: [], invocation: { argv0: "" } });
+  });
+
+  it("tells an application start that the host started it, with no terminals, and passes every argument", async () => {
+    const release = await commandRelease(report, { declaration: python });
+    const running = launch({ release, args: ["in.md"], environment: ["MODE=slow"], cwd: "/workspace" });
+    await expect(running.done).resolves.toBe(3);
+    expect(running.linux.stderrLines.map(line => JSON.parse(line) as unknown)).toEqual([{ args: ["in.md"], invocation: { kind: "host" }, terminals: { stdin: false, stdout: false, stderr: false }, cwd: "/workspace", mode: "slow" }]);
+  });
+
+  it("never fetches or hashes: compile returns the verified module, bytes read the copy, url is a blob: URL revoked at exit", async () => {
+    const release = await commandRelease(`export default async host => {
+      const first = await host.artifacts.compile("tool.wasm"), second = await host.artifacts.compile("tool.wasm");
+      const copy = await host.artifacts.bytes("tool.wasm"); copy.fill(9);
+      const url = host.artifacts.url("tool.wasm");
+      globalThis.mintedUrl = url;
+      host.log(JSON.stringify({ shared: first === second && first === globalThis.verifiedModule, bytes: Array.from(await host.artifacts.bytes("tool.wasm")), blob: url.startsWith("blob:"), stable: url === host.artifacts.url("tool.wasm"), fetched: await (await fetch(url)).arrayBuffer().then(buffer => buffer.byteLength) }));
+      return { main: () => 0 };
+    };`, { declaration: python });
+    const command = await commandLaunch(release, "python");
+    Reflect.set(globalThis, "verifiedModule", command.artifacts["tool.wasm"]?.module);
+    const compile = vi.spyOn(WebAssembly, "compile"), digest = vi.spyOn(crypto.subtle, "digest"), revoke = vi.spyOn(URL, "revokeObjectURL");
+    const running = launch({ release, command, args: ["python"] });
+    await expect(running.done).resolves.toBe(0);
+    expect(JSON.parse(running.linux.stderrLines[0] ?? "null")).toEqual({ shared: true, bytes: [0, 0x61, 0x73, 0x6d, 1, 0, 0, 0], blob: true, stable: true, fetched: 8 });
+    expect(running.fetched).toEqual([]);
+    expect(compile).not.toHaveBeenCalled();
+    expect(digest).not.toHaveBeenCalled();
+    expect(revoke).toHaveBeenCalledWith(Reflect.get(globalThis, "mintedUrl"));
+  });
+
+  it("reports a runner failure as one readable line on standard error, never a JSON record", async () => {
+    const throwing = await commandRelease(`export default () => ({ main: () => { throw new Error("first\\nsecond"); } });`, { declaration: python });
+    const reaching = await commandRelease(`export default host => ({ main: () => host.process.spawn("/bin/true", []) });`, { declaration: python });
+    const needing = await commandRelease("export default () => ({ main: () => 0 });", { declaration: { ...python, requires: { host: ["files.sync"], guest: { executables: ["/usr/bin/python3"] } } } });
+    const service = await buildRelease({ adapter: "export default () => ({ protocols: {} });", declaration: { ...SERVICE_DECLARATION, requires: { host: ["files.sync"] } } });
+    const stale = await commandLaunch(throwing, "python");
+    const cases = [
+      [await commandLaunch(service, "python"), service, 120, /^python: cannot start: db is a service and runs no commands$/u],
+      [{ ...stale, artifacts: {} }, throwing, 120, /^python: cannot start: The verified copies of the module's files do not match its launch description$/u],
+      [await commandLaunch(needing, "python"), needing, 122, /^python: Missing: guest executable \/usr\/bin\/python3$/u],
+      [stale, throwing, 123, /^python: the module failed: first second$/u],
+      [await commandLaunch(reaching, "python"), reaching, 123, /^python: the module used process\.info, process\.spawn, process\.signals, which its manifest does not declare: /u],
+    ] as const;
+    for (const [command, release, status, line] of cases) {
+      const running = launch({ release, command, args: ["python"] });
+      await expect(running.done, String(line)).resolves.toBe(status);
+      expect(running.linux.stderrLines, String(line)).toHaveLength(1);
+      expect(running.linux.stderrLines[0], String(line)).toMatch(line);
+      expect(records(running.linux.stderrLines)).toEqual([]);
+    }
   });
 });

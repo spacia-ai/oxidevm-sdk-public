@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { VMError } from "../../runtime/errors.js";
-import { createArtifacts, IntegrityError, type Fetcher } from "./artifacts.js";
+import { createArtifacts, preverifiedArtifacts } from "./artifacts.js";
+import { IntegrityError, type Fetcher } from "./pinned.js";
+import { commandLaunch } from "./harness.test-support.js";
 import { COMMAND_DECLARATION, buildRelease, type Release } from "./fixtures.test-support.js";
 
 const wasm = Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 0);
@@ -23,7 +25,8 @@ describe("pinned artifacts", () => {
     await artifacts.compile("tool.wasm");
     expect(counter.count).toBe(2);
     expect(artifacts.url("data.bin")).toBe(descriptor.artifacts["data.bin"]?.url);
-    expect([...await artifacts.adapter()].length).toBe(descriptor.adapter.bytes);
+    const adapter = await artifacts.adapter();
+    expect([adapter.size, adapter.type]).toEqual([descriptor.adapter.bytes, "text/javascript"]);
   });
 
   it("rejects a name the manifest does not declare, for bytes, compile and url alike", async () => {
@@ -77,5 +80,52 @@ describe("pinned artifacts", () => {
     controller.abort(new Error("module stopped"));
     await expect(pending).rejects.toThrow("module stopped");
     expect(seen).toHaveBeenCalledWith(true);
+  });
+});
+
+// Engine ADR 0027: a command a program in the VM runs uses the copies the Userspace worker verified when it was turned on.
+describe("pre-verified copies", () => {
+  it("never fetches or hashes: compile returns the verified module, bytes read the copy and url is a blob: URL until close", async () => {
+    const { descriptor, ...rest } = await release(), copies = await commandLaunch({ descriptor, ...rest }, "tool");
+    const compile = vi.spyOn(WebAssembly, "compile"), digest = vi.spyOn(crypto.subtle, "digest");
+    try {
+      const artifacts = preverifiedArtifacts(descriptor, copies);
+      expect(await artifacts.adapter()).toBe(copies.adapter);
+      await artifacts.verifyAll();
+      expect(await artifacts.compile("tool.wasm")).toBe(copies.artifacts["tool.wasm"]?.module);
+      const first = await artifacts.bytes("data.bin");
+      first.fill(9);
+      expect([...await artifacts.bytes("data.bin")]).toEqual([1, 2, 3, 4]);
+      const url = artifacts.url("data.bin");
+      expect(url.startsWith("blob:")).toBe(true);
+      expect(artifacts.url("data.bin")).toBe(url);
+      expect(new Uint8Array(await (await fetch(url)).arrayBuffer())).toEqual(Uint8Array.of(1, 2, 3, 4));
+      expect(compile).not.toHaveBeenCalled();
+      expect(digest).not.toHaveBeenCalled();
+      artifacts.close();
+      await expect(fetch(url)).rejects.toThrow();
+      expect(() => artifacts.url("__proto__")).toThrow(VMError);
+      await expect(artifacts.bytes("other.bin")).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    } finally { compile.mockRestore(); digest.mockRestore(); }
+  });
+
+  it("compiles the verified bytes of a file that did not compile when the commands were turned on", async () => {
+    const { descriptor, ...rest } = await release(), copies = await commandLaunch({ descriptor, ...rest }, "tool");
+    const artifacts = preverifiedArtifacts(descriptor, { ...copies, artifacts: { ...copies.artifacts, "tool.wasm": { blob: new Blob([wasm]), module: null } } });
+    expect(await artifacts.compile("tool.wasm")).toBeInstanceOf(WebAssembly.Module);
+    await expect(artifacts.compile("data.bin")).rejects.toBeInstanceOf(WebAssembly.CompileError);
+  });
+
+  it("refuses copies that are not exactly the description's files with a launch failure", async () => {
+    const { descriptor, ...rest } = await release(), copies = await commandLaunch({ descriptor, ...rest }, "tool");
+    const fewer = Object.fromEntries(Object.entries(copies.artifacts).filter(([name]) => name !== "data.bin"));
+    for (const changed of [
+      { ...copies, artifacts: fewer }, { ...copies, artifacts: { ...copies.artifacts, "extra.bin": { blob: new Blob([]), module: null } } },
+      { ...copies, artifacts: { ...copies.artifacts, "data.bin": { blob: new Blob([Uint8Array.of(1, 2, 3)]), module: null } } }, { ...copies, adapter: new Blob(["export {};"]) },
+    ]) {
+      let refused: unknown;
+      try { preverifiedArtifacts(descriptor, changed); } catch (error: unknown) { refused = error; }
+      expect(refused).toMatchObject({ status: 120, kind: "launch", detail: { reason: "wasm-module-launch" } });
+    }
   });
 });

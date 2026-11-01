@@ -1,11 +1,15 @@
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, isAbsolute, join, relative } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildModule, extractManifest } from "@oxidevm/sdk/image-builder";
 import { registryConfig } from "./templates.js";
 import { ADD_WASM, TEMPLATE_PLAYWRIGHT, ciWorkflow, releaseWorkflow } from "./wasm-template-files.js";
+import { initText } from "./wasm-text.js";
 import { initializeModule, moduleIdFor } from "./wasm-templates.js";
 
 const directories: string[] = [];
@@ -50,9 +54,68 @@ function hook(hooks: unknown, name: string): (...args: unknown[]) => unknown {
 function host(options: { readonly written?: string[]; readonly failures?: string[] } = {}): unknown {
   return {
     artifacts: { compile: () => Promise.resolve(new (webAssembly().Module)(ADD_WASM)) },
-    fs: { write: (_fd: number, bytes: Uint8Array) => { options.written?.push(new TextDecoder().decode(bytes)); return bytes.length; } },
+    // Only writeAll: a command writes its whole output with it, so a pipe that takes part of a write loses nothing.
+    fs: { writeAll: (_fd: number, bytes: Uint8Array) => { options.written?.push(new TextDecoder().decode(bytes)); } },
     fail: (status: number, message: string) => { options.failures?.push(message); return status; },
   };
+}
+/** What the runner hands `main`: started by the application unless `invocation` says a program in the VM ran it. */
+function commandIO(args: readonly string[], invocation: unknown = { kind: "host" }): unknown {
+  return { args, env: {}, cwd: "/workspace", stdin: 0, stdout: 1, stderr: 2, invocation, terminals: { stdin: false, stdout: false, stderr: false } };
+}
+const ranFromShell = (argv0: string): unknown => ({ kind: "command", name: "tool", path: "/usr/local/bin/tool", argv0 });
+
+const execute = promisify(execFile);
+const resolver = createRequire(import.meta.url);
+/** This repository's copy of a package a generated project installs, where Node finds it from here. */
+const installed = (name: string): string => dirname(resolver.resolve(`${name}/package.json`));
+const SDK_PACKAGE = fileURLToPath(new URL("../../sdk", import.meta.url));
+
+/** Gives a generated project the dependencies it declares: this SDK itself, and this repository's pinned tools. */
+async function linkDependencies(project: string): Promise<void> {
+  const links: readonly (readonly [string, string])[] = [
+    ["@oxidevm/sdk", SDK_PACKAGE],
+    ...["vitest", "typescript", "@types/node", "eslint", "@eslint/js", "typescript-eslint"].map(name => [name, installed(name)] as const),
+  ];
+  for (const [name, target] of links) {
+    await mkdir(dirname(join(project, "node_modules", name)), { recursive: true });
+    await symlink(target, join(project, "node_modules", name), "dir");
+  }
+}
+
+/** Runs a tool's Node entry point in the project and returns its standard output; a failure carries everything the tool printed. */
+async function runTool(project: string, entry: string, args: readonly string[]): Promise<string> {
+  // The tools must not mistake this test's Vitest worker variables for their own.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("VITEST")));
+  try {
+    return (await execute(process.execPath, [entry, ...args], { cwd: project, env, timeout: 120_000, maxBuffer: 32 * 1024 ** 2 })).stdout;
+  } catch (error) {
+    const output = (key: string): string => { const value: unknown = typeof error === "object" && error !== null ? Reflect.get(error, key) : undefined; return typeof value === "string" ? value : ""; };
+    throw new Error(`${entry} ${args.join(" ")} failed in ${project}:\n${output("stdout")}\n${output("stderr")}`, { cause: error });
+  }
+}
+
+/** The project's own files among absolute paths a tool reports, relative and sorted; dependencies are left out. */
+function ownFiles(project: string, paths: readonly string[]): string[] {
+  return paths.map(path => relative(project, path)).filter(path => path !== "" && !path.startsWith("..") && !isAbsolute(path) && !path.startsWith("node_modules/")).sort();
+}
+
+/** The generated projects whose own checks run here: the add example, the same with a reserved id, and a --from skeleton. */
+const PROJECTS = [
+  { label: "the add example", id: "my-tool", from: false, sources: ["module.ts", "src/command.ts", "src/operands.ts"], tests: ["test/command.test.ts", "test/module.test.ts", "test/operands.test.ts"] },
+  { label: "the add example with a reserved id", id: "oxidevm-tools", from: false, sources: ["module.ts", "src/command.ts", "src/operands.ts"], tests: ["test/command.test.ts", "test/module.test.ts", "test/operands.test.ts"] },
+  { label: "a --from skeleton", id: "wrapped", from: true, sources: ["module.ts"], tests: ["test/module.test.ts"] },
+] as const;
+
+/** Generates one of PROJECTS, linked to this SDK and this repository's tools. */
+async function generatedProject(entry: (typeof PROJECTS)[number]): Promise<string> {
+  const root = await temporary();
+  if (entry.from) await writeFile(join(root, "mine.wasm"), ADD_WASM);
+  const project = join(root, entry.id);
+  await initializeModule(project, { kind: "command", id: entry.id, ...(entry.from ? { from: join(root, "mine.wasm") } : {}) });
+  await linkDependencies(project);
+  // Tools report the paths they find from their working directory, which is the physical one.
+  return await realpath(project);
 }
 
 describe("moduleIdFor", () => {
@@ -69,8 +132,8 @@ describe("initializeModule", () => {
   it("creates a command module with the whole project around it", async () => {
     const root = await temporary();
     const result = await initializeModule(join(root, "word-tool"), { kind: "command" });
-    expect(result).toMatchObject({ directory: join(root, "word-tool"), id: "word-tool", kind: "command", abi: "raw" });
-    expect(result.files).toEqual(await expectedFiles(["src/operands.ts", "test/operands.test.ts"]));
+    expect(result).toMatchObject({ directory: join(root, "word-tool"), id: "word-tool", kind: "command", abi: "raw", commands: ["word-tool"] });
+    expect(result.files).toEqual(await expectedFiles(["src/command.ts", "src/operands.ts", "test/command.test.ts", "test/operands.test.ts"]));
     const found: string[] = [];
     for (const entry of await readdir(join(root, "word-tool"), { recursive: true, withFileTypes: true })) if (entry.isFile()) found.push(join(entry.parentPath, entry.name).slice(join(root, "word-tool").length + 1));
     expect(found.sort()).toEqual(result.files);
@@ -80,10 +143,15 @@ describe("initializeModule", () => {
     const root = await temporary();
     const result = await initializeModule(join(root, "add-service"), { kind: "service", id: "adder" });
     expect(result).toMatchObject({ id: "adder", kind: "service" });
+    // A service is not a program, so its result and its project say nothing about commands, exactly as before commands existed.
+    expect(Object.keys(result)).toEqual(["directory", "id", "kind", "abi", "files"]);
     expect(result.files).toEqual(await expectedFiles(["src/operands.ts", "test/operands.test.ts"]));
     expect(extractManifest(await readFile(join(root, "add-service", "module.ts"), "utf8"), "module.ts")).toMatchObject({
       id: "adder", process: { kind: "service" }, expose: { add: { kind: "unix", path: "/workspace/_oxidevm/adder.sock", protocol: "adder/1" } },
     });
+    for (const file of ["module.ts", "README.md", "AGENTS.md", "test/module.test.ts"]) {
+      expect(await readFile(join(root, "add-service", file), "utf8"), file).not.toMatch(/commands|invocation|enableModuleCommands|\/usr\/local\/bin/u);
+    }
   });
 
   it.each(["command", "service"] as const)("generates a %s module that builds cleanly, with no findings", async kind => {
@@ -103,12 +171,70 @@ describe("initializeModule", () => {
     const written: string[] = [], failures: string[] = [];
     const hooks = await factory(host({ written, failures }));
     const main = hook(hooks, "main");
-    expect(main({ args: ["2", "-5"], stdout: 1 })).toBe(0);
-    expect(main({ args: ["2147483647", "1"], stdout: 1 })).toBe(0);
+    expect(main(commandIO(["2", "-5"]))).toBe(0);
+    expect(main(commandIO(["2147483647", "1"], ranFromShell("tool")))).toBe(0);
     expect(written).toEqual(["-3\n", "-2147483648\n"]);
-    expect(main({ args: ["2"], stdout: 1 })).toBe(2);
-    expect(main({ args: ["x", "1"], stdout: 1 })).toBe(2);
+    expect(main(commandIO(["2"]))).toBe(2);
+    expect(main(commandIO(["x", "1"]))).toBe(2);
     expect(failures).toEqual(["usage: tool <a> <b>  (two 32-bit integers)", "usage: tool <a> <b>  (two 32-bit integers)"]);
+  });
+
+  it("generates a command whose usage line names the command as the program in the VM typed it", async () => {
+    const root = await temporary();
+    await initializeModule(join(root, "tool"), { kind: "command" });
+    await buildModule(join(root, "tool"));
+    const failures: string[] = [];
+    const main = hook(await (await adapterFactory(join(root, "tool", "dist")))(host({ failures })), "main");
+    // argv[0] is whatever the caller passed: a path, or the name of a link to the stub.
+    expect(main(commandIO(["2"], ranFromShell("/usr/local/bin/tool")))).toBe(2);
+    expect(main(commandIO(["x", "1"], ranFromShell("add-two")))).toBe(2);
+    expect(main(commandIO([]))).toBe(2);
+    expect(failures).toEqual(["usage: /usr/local/bin/tool <a> <b>  (two 32-bit integers)", "usage: add-two <a> <b>  (two 32-bit integers)", "usage: tool <a> <b>  (two 32-bit integers)"]);
+  });
+
+  it("declares the module's id as its command, right after process, and tests that it does", async () => {
+    const root = await temporary();
+    await initializeModule(join(root, "tool"), { kind: "command" });
+    const source = await readFile(join(root, "tool", "module.ts"), "utf8");
+    expect(source).toContain("    process: { kind: \"command\" },\n    commands: [\"tool\"],\n    requires: { host: [\"files.sync\"] },\n");
+    expect(extractManifest(source, "module.ts")).toMatchObject({ id: "tool", commands: ["tool"] });
+    // The adapter keeps the WebAssembly call in module.ts and hands it to the command, which src/command.ts defines.
+    expect(source).toContain("return addCommand(host, add);");
+    expect(await readFile(join(root, "tool", "test", "module.test.ts"), "utf8")).toContain("expect(definition.manifest.commands).toEqual([\"tool\"]);");
+  });
+
+  it("gives a module whose id starts with the reserved oxidevm no command, and says why", async () => {
+    const root = await temporary();
+    const result = await initializeModule(join(root, "tools"), { kind: "command", id: "oxidevm-tools" });
+    expect(result.commands).toEqual([]);
+    const source = await readFile(join(root, "tools", "module.ts"), "utf8");
+    expect(source).not.toContain("commands:");
+    expect(extractManifest(source, "module.ts")).not.toHaveProperty("commands");
+    expect(initText(result)).toContain("It declares no commands: command names that start with \"oxidevm\" are reserved. Add commands: [\"<name>\"] after process in module.ts to let programs in a VM run it by a name of your own.\n");
+    expect(await readFile(join(root, "tools", "README.md"), "utf8")).toContain("The module declares no commands: command names that start with `oxidevm` are reserved.");
+    expect(await readFile(join(root, "tools", "test", "module.test.ts"), "utf8")).toContain("expect(\"commands\" in definition.manifest).toBe(false);");
+    expect(await buildModule(join(root, "tools"))).toMatchObject({ result: "built", findings: [] });
+  });
+
+  it("explains in the README and AGENTS.md how programs in a VM run the command", async () => {
+    const root = await temporary();
+    const result = await initializeModule(join(root, "my-tool"), { kind: "command" });
+    expect(initText(result)).toContain("It declares the command my-tool: once an application turns it on, programs in a VM run it as /usr/local/bin/my-tool (README.md, \"Run it from a shell\").\n");
+    const readme = await readFile(join(root, "my-tool", "README.md"), "utf8");
+    const shell = readme.slice(readme.indexOf("## Run it from a shell"), readme.indexOf("## Develop it"));
+    for (const fragment of [
+      "import { myTool } from \"./oxidevm.modules.generated\";", "const commands = await enableModuleCommands(vm, myTool);",
+      "// A terminal in the VM now runs `my-tool 2 3`, which prints 5.", "await commands.disable();", "a stub at `/usr/local/bin/my-tool`",
+      "lists `/usr/local/bin` before `/usr/bin`", "takes the place of an image program with the same name",
+      "as the guest user, with the caller's arguments, environment, working directory and standard streams",
+      "| 0-119 |", "| 120 |", "| 122 |", "| 123 |", "| 125 |", "| 126 |", "| 127 |", "| 128+n |", "130 for Ctrl+C",
+    ]) expect(shell, fragment).toContain(fragment);
+    const agents = await readFile(join(root, "my-tool", "AGENTS.md"), "utf8");
+    for (const fragment of [
+      "`io.invocation.argv0`", "`io.args` never contains argv[0]", "a terminal, a pipe, a file or empty", "until a read returns no bytes", "`io.terminals`",
+      "2 for a usage error", "status 123", "`process.signals`", "`close()` does not run", "`untrap()`", "`raise()`", "shell loop stops", "atomically",
+      "shadow", "consent again", "`requires.guest.executables`", "never start your own command through PATH", "start-up cheap",
+    ]) expect(agents, fragment).toContain(fragment);
   });
 
   it("generates a service whose handler answers one line per request and closes a runaway line", async () => {
@@ -139,7 +265,8 @@ describe("initializeModule", () => {
     await writeFile(join(root, "mine.wasm"), ADD_WASM);
     const result = await initializeModule(join(root, "wrapped"), { kind: "command", from: join(root, "mine.wasm") });
     expect(result.files).toEqual(await Promise.resolve(expectedFiles([])).then(files => files.filter(file => file !== "upstream/add.wasm").concat("upstream/mine.wasm").sort()));
-    expect(extractManifest(await readFile(join(root, "wrapped", "module.ts"), "utf8"), "module.ts")).toMatchObject({ abi: "raw", artifacts: [{ name: "mine.wasm", from: "upstream/mine.wasm" }], requires: { host: [] } });
+    expect(extractManifest(await readFile(join(root, "wrapped", "module.ts"), "utf8"), "module.ts")).toMatchObject({ abi: "raw", artifacts: [{ name: "mine.wasm", from: "upstream/mine.wasm" }], commands: ["wrapped"], requires: { host: [] } });
+    expect(result.commands).toEqual(["wrapped"]);
     expect([...await readFile(join(root, "wrapped", "upstream", "mine.wasm"))]).toEqual([...ADD_WASM]);
     const built = await buildModule(join(root, "wrapped"));
     expect(built).toMatchObject({ result: "built", findings: [] });
@@ -198,7 +325,7 @@ describe("initializeModule", () => {
     expect(notice).not.toMatch(/esbuild|Go |Archivo|Roboto|JetBrains|Spacia|SIL OFL/u);
     expect(notice).toContain("Replace");
     expect(notice).toContain("Copyright (c) <year> <copyright holder>");
-    for (const file of ["module.ts", "package.json", "README.md", "AGENTS.md", "tsconfig.json", "eslint.config.js"]) expect(await readFile(join(root, "tool", file), "utf8")).not.toContain(root);
+    for (const file of ["module.ts", "src/command.ts", "test/command.test.ts", "package.json", "README.md", "AGENTS.md", "tsconfig.json", "eslint.config.js"]) expect(await readFile(join(root, "tool", file), "utf8")).not.toContain(root);
   });
 
   it("pins the same tool versions this repository tests with, so generated projects do not drift", async () => {
@@ -224,6 +351,39 @@ describe("initializeModule", () => {
     expect(release).toContain("contents: write");
     expect(await readFile(join(root, "tool", ".github", "workflows", "ci.yml"), "utf8")).toContain("contents: read");
   });
+});
+
+/** A field of a report entry a tool printed as JSON, or undefined. */
+const entryField = (entry: unknown, key: string): unknown => typeof entry === "object" && entry !== null ? Reflect.get(entry, key) : undefined;
+
+describe.each(PROJECTS)("$label, checked with its own settings against this SDK", project => {
+  it("passes its own tests (test/*.test.ts) with this repository's Vitest", async () => {
+    const directory = await generatedProject(project);
+    const report: unknown = JSON.parse(await runTool(directory, join(installed("vitest"), "vitest.mjs"), ["run", "--reporter=json"]));
+    const results = entryField(report, "testResults");
+    if (!Array.isArray(results)) throw new Error("the Vitest report has no testResults");
+    const files = Array.from<unknown>(results).map(result => `${relative(directory, String(entryField(result, "name")))}: ${String(entryField(result, "status"))}`);
+    expect(files.sort()).toEqual(project.tests.map(file => `${file}: passed`));
+  }, 120_000);
+
+  it("type-checks with its own tsconfig files, which cover every source and test", async () => {
+    const directory = await generatedProject(project);
+    const tsc = join(installed("typescript"), "bin", "tsc");
+    // The two compiler runs of the project's check script: the module and its sources without Node's types, then the tests with them.
+    expect(ownFiles(directory, (await runTool(directory, tsc, ["--noEmit", "--listFiles", "-p", "tsconfig.json"])).split("\n"))).toEqual([...project.sources]);
+    expect(ownFiles(directory, (await runTool(directory, tsc, ["--noEmit", "--listFiles", "-p", "test"])).split("\n"))).toEqual([...project.sources, ...project.tests].sort());
+  }, 120_000);
+
+  it("passes its own ESLint settings with no warnings, every TypeScript file included", async () => {
+    const directory = await generatedProject(project);
+    const report: unknown = JSON.parse(await runTool(directory, join(installed("eslint"), "bin", "eslint.js"), [".", "--max-warnings", "0", "--format", "json"]));
+    if (!Array.isArray(report)) throw new Error("the ESLint report is not a list");
+    const linted = Array.from<unknown>(report).map(file => {
+      const messages = entryField(file, "messages");
+      return { file: relative(directory, String(entryField(file, "filePath"))), problems: Array.isArray(messages) ? Array.from<unknown>(messages).map(message => `${String(entryField(message, "ruleId"))}: ${String(entryField(message, "message"))}`) : ["no messages"] };
+    });
+    expect(linted.sort((left, right) => left.file < right.file ? -1 : 1)).toEqual([...project.sources, ...project.tests].sort().map(file => ({ file, problems: [] })));
+  }, 120_000);
 });
 
 describe("what the generated workflows let dependency code reach", () => {

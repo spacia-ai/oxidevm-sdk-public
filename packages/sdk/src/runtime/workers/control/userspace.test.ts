@@ -27,15 +27,16 @@ function execution(nativeExecutionPort?: MessagePort) {
   attachUserspaceExecution(channel.port2);
   const worker = ExecutionWorker.instances.at(-1);
   if (worker === undefined) throw new Error("Execution worker was not created");
-  const request = (id: number): Promise<unknown> => {
+  const send = (message: unknown, transfer: Transferable[] = []): Promise<unknown> => {
     const response = Promise.withResolvers<unknown>();
     channel.port1.addEventListener("message", (event: MessageEvent<unknown>) => { response.resolve(event.data); }, { once: true });
     channel.port1.start();
-    channel.port1.postMessage({ id, version: PROTOCOL_VERSION, type: "initialize", wasmUrl: "/core.wasm", memoryMiB: 256,
-      ...(nativeExecutionPort === undefined ? {} : { nativeExecutionPort }) }, nativeExecutionPort === undefined ? [] : [nativeExecutionPort]);
+    channel.port1.postMessage(message, transfer);
     return response.promise;
   };
-  return { worker, request };
+  const request = (id: number): Promise<unknown> => send({ id, version: PROTOCOL_VERSION, type: "initialize", wasmUrl: "/core.wasm", memoryMiB: 256,
+    ...(nativeExecutionPort === undefined ? {} : { nativeExecutionPort }) }, nativeExecutionPort === undefined ? [] : [nativeExecutionPort]);
+  return { worker, request, send };
 }
 
 it("transfers the isolated native capability through the control worker", async () => {
@@ -131,4 +132,17 @@ it("answers a reply it cannot forward with an error instead of stranding the req
   await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
   worker.dispatchEvent(new MessageEvent("message", { data: { id: 1, version: PROTOCOL_VERSION, ok: true, value: () => 1 } }));
   await expect(response).resolves.toMatchObject({ id: 1, ok: false, error: { code: "PROTOCOL_ERROR" } });
+});
+
+// Engine ADR 0027: the page's module-commands request reaches the execution worker as decoded, and its answer comes back unchanged.
+it("relays a module-commands request and its answer, and refuses a malformed one before the execution worker", async () => {
+  const { worker, send } = execution();
+  const enable = { id: 4, version: PROTOCOL_VERSION, type: "module-commands", operation: "enable", descriptor: "{}", commands: ["python"], concurrency: 4 };
+  const response = send(enable);
+  await vi.waitFor(() => expect(worker.posted.filter(message => !isAttentionAttachment(message))).toEqual([enable]));
+  const value = { operation: "enable", registration: 1, commands: ["python"], skipped: [] };
+  worker.dispatchEvent(new MessageEvent("message", { data: { id: 4, version: PROTOCOL_VERSION, ok: true, value } }));
+  await expect(response).resolves.toEqual({ id: 4, version: PROTOCOL_VERSION, ok: true, value });
+  await expect(send({ ...enable, id: 5, concurrency: 33 })).resolves.toMatchObject({ id: 5, ok: false, error: { code: "PROTOCOL_ERROR" } });
+  expect(worker.posted.filter(message => !isAttentionAttachment(message))).toHaveLength(1);
 });

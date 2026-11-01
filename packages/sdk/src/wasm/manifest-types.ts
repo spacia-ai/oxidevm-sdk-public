@@ -85,12 +85,19 @@ export interface CommonDecl {
 /** Runs `main` once, or for as long as the program keeps its stdio open. */
 export interface CommandDecl extends CommonDecl {
   readonly process: { readonly kind: "command" };
+  /**
+   * Names an application can turn on in one VM, each run by any program there as `/usr/local/bin/<name>`
+   * (engine ADR 0027): 1 to 16 unique names, stored sorted.
+   */
+  readonly commands?: readonly string[];
 }
 
 /** Owns listeners declared by `expose`; its adapter implements one handler per endpoint key. */
 export interface ServiceDecl extends CommonDecl {
   readonly process: { readonly kind: "service"; readonly exclusive?: "workspace" };
   readonly expose: Readonly<Record<string, EndpointDecl>>;
+  /** Only a command module runs as a program, so a service declares no `commands`. */
+  readonly commands?: never;
 }
 
 export type ModuleDecl = CommandDecl | ServiceDecl;

@@ -2,13 +2,20 @@ import type { LinuxSignal, PipeJSProcessSpec, ProcessExit, ProcessHandle } from 
 import { VMError, type VMErrorCode } from "../runtime/errors.js";
 import { MODULE_EXIT, MODULE_EXIT_REASONS, type ModuleExitReason } from "./exit-codes.js";
 import type { ModuleHandle, ModuleProcess, SpawnArgs } from "./handle.js";
-import { decodeResolvedManifest, isServiceDecl } from "./manifest.js";
+import { launchDescriptor } from "./launch-descriptor.js";
+import { isServiceDecl } from "./manifest.js";
 import type { ModuleDecl, ResolvedManifest } from "./manifest-types.js";
-import { resolveOptions } from "./options.js";
-import { encodeLaunchArgument, type LaunchDescriptor } from "./runner/descriptor.js";
+import { encodeLaunchArgument } from "./runner/descriptor.js";
 import { settledWithin } from "./runner/failure.js";
+import { ARTIFACT_FETCH_REASON } from "./runner/pinned.js";
+import { spawnOwnedModuleProcess } from "../vm-adapter.js";
 
-/** What `spawnModule` needs of a VM: Userspace's `spawnJS`. A system VM has none, so it does not type-check. */
+/**
+ * What `spawnModule` and `enableModuleCommands` need of a VM: a Userspace VM, which has `spawnJS`; a system VM has
+ * none, so it does not type-check. Both reach the VM through its private owner record (engine ADR 0027): the runner gets
+ * its launch description in its start message, and a VM's module commands live in its Userspace worker, so only a VM
+ * `createVM` returned can run a module.
+ */
 export interface ModuleVM {
   spawnJS(spec: PipeJSProcessSpec): Promise<ProcessHandle>;
 }
@@ -24,8 +31,9 @@ const STDERR_SETTLE_MS = 1000;
 type Info = Readonly<Record<string, string | number | boolean>>;
 interface Failure { readonly code: VMErrorCode; readonly reason: string }
 
-/** How a runner exit status is reported to the consumer. */
-function failureFor(exit: ProcessExit): Failure {
+/** How a runner exit status is reported to the consumer; a file the runner could not fetch is named by its report. */
+function failureFor(exit: ProcessExit, reason: string | undefined): Failure {
+  if (exit.kind === "exited" && exit.code === MODULE_EXIT.launch && reason === ARTIFACT_FETCH_REASON) return { code: "CORE_LOAD_FAILED", reason };
   if (exit.kind === "exited") {
     if (exit.code === MODULE_EXIT.prerequisite) return { code: "FEATURE_NOT_AVAILABLE", reason: MODULE_EXIT_REASONS.prerequisite };
     if (exit.code === MODULE_EXIT.busy) return { code: "QUOTA_EXCEEDED", reason: MODULE_EXIT_REASONS.busy };
@@ -37,21 +45,21 @@ function failureFor(exit: ProcessExit): Failure {
 }
 
 /** The last error record the runner wrote, if any; its message is the best explanation of an early exit. */
-function runnerReport(stderr: string): { readonly message: string; readonly items: readonly string[] } | undefined {
+function runnerReport(stderr: string): { readonly message: string; readonly items: readonly string[]; readonly reason: string | undefined } | undefined {
   for (const line of stderr.split("\n").reverse()) {
     try {
       const parsed: unknown = JSON.parse(line);
       if (typeof parsed !== "object" || parsed === null || Reflect.get(parsed, "oxidevm") !== "error") continue;
-      const message: unknown = Reflect.get(parsed, "message"), items: unknown = Reflect.get(parsed, "items");
-      return { message: typeof message === "string" ? message : "The module failed", items: Array.isArray(items) ? items.filter((item): item is string => typeof item === "string") : [] };
+      const message: unknown = Reflect.get(parsed, "message"), items: unknown = Reflect.get(parsed, "items"), reason: unknown = Reflect.get(parsed, "reason");
+      return { message: typeof message === "string" ? message : "The module failed", items: Array.isArray(items) ? items.filter((item): item is string => typeof item === "string") : [], reason: typeof reason === "string" ? reason : undefined };
     } catch { /* not a runner record */ }
   }
   return undefined;
 }
 
 function startupError(manifest: ResolvedManifest, exit: ProcessExit, stderr: string): VMError {
-  const { code, reason } = failureFor(exit);
   const report = runnerReport(stderr);
+  const { code, reason } = failureFor(exit, report?.reason);
   const status = exit.kind === "exited" ? exit.code : -exit.signalNumber;
   const message = report?.message ?? (stderr.trim().slice(-500) || `exit status ${String(status)}`);
   return new VMError(code, `${manifest.id} did not start: ${message}`, { reason, status, ...(report === undefined || report.items.length === 0 ? {} : { missing: report.items }) });
@@ -152,15 +160,6 @@ async function awaitReady(process: ProcessHandle, manifest: ResolvedManifest, si
   }
 }
 
-function launchDescriptor(handle: ModuleHandle, input: { readonly options: unknown; readonly workspaceId: string | undefined }): LaunchDescriptor {
-  const manifest = decodeResolvedManifest(handle.manifest);
-  const options = resolveOptions(manifest.options, input.options);
-  if (isServiceDecl(manifest) && manifest.process.exclusive === "workspace" && input.workspaceId === undefined) {
-    throw new VMError("INVALID_ARGUMENT", `${manifest.id} is exclusive per workspace: pass workspaceId`, { reason: "wasm-module-options" });
-  }
-  return { v: 1, manifest, release: handle.pins.release, adapter: handle.pins.adapter, artifacts: handle.pins.artifacts, options, ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }) };
-}
-
 /**
  * Starts an installed module in a Userspace VM. A command module returns its process at once; a
  * service module returns once its adapter is listening on every declared endpoint. Every failure to
@@ -177,13 +176,14 @@ export async function spawnModule(vm: ModuleVM, handle: ModuleHandle, ...args: r
   const descriptor = launchDescriptor(handle, { options: request["options"], workspaceId });
   const commandArgs = request["args"], signal = request["signal"];
   if (signal !== undefined && !(signal instanceof AbortSignal)) throw new VMError("INVALID_ARGUMENT", "signal must be an AbortSignal");
-  const process = await vm.spawnJS({
+  // The launch description travels in the runner's start message, never in argv, where /proc/<pid>/cmdline would show it.
+  const process = await spawnOwnedModuleProcess(vm, {
     worker: RUNNER_WORKER,
-    args: [encodeLaunchArgument(descriptor), ...(Array.isArray(commandArgs) ? Array.from<unknown>(commandArgs).map(String) : [])],
+    args: Array.isArray(commandArgs) ? Array.from<unknown>(commandArgs).map(String) : [],
     ...(typeof request["cwd"] === "string" ? { cwd: request["cwd"] } : {}),
     ...(typeof request["env"] === "object" && request["env"] !== null ? { env: Object.fromEntries(Object.entries(request["env"]).map(([key, value]) => [key, String(value)])) } : {}),
     ...(signal instanceof AbortSignal ? { signal } : {}),
-  });
+  }, { kind: "host", descriptor: encodeLaunchArgument(descriptor) });
   const { manifest } = descriptor;
   if (!isServiceDecl(manifest)) return process;
   const started = await awaitReady(process, manifest, signal instanceof AbortSignal ? signal : undefined);

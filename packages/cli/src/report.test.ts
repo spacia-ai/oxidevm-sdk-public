@@ -35,3 +35,15 @@ it("decodes the module authoring reports and rejects every inconsistent shape", 
     expect(() => decodeCliReport(envelope("wasm init", bad))).toThrow();
   }
 });
+
+it("decodes the commands a scaffolded command module declares, none included, and refuses them for a service or out of bounds", () => {
+  const scaffold = { directory: "/tmp/tool", id: "tool", kind: "command", abi: "raw", files: ["module.ts", "src/command.ts"], commands: ["tool"] };
+  expect(decodeCliReport(envelope("wasm init", scaffold))).toEqual(envelope("wasm init", scaffold));
+  // An id that starts with the reserved prefix declares no command.
+  const reserved = { ...scaffold, id: "oxidevm-tools", commands: [] };
+  expect(decodeCliReport(envelope("wasm init", reserved))).toEqual(envelope("wasm init", reserved));
+  for (const bad of [
+    { ...scaffold, kind: "service" }, { ...scaffold, commands: "tool" }, { ...scaffold, commands: [""] }, { ...scaffold, commands: [7] }, { ...scaffold, commands: null },
+    { ...scaffold, commands: Array.from({ length: 17 }, (_, index) => `tool-${String(index)}`) },
+  ]) expect(() => decodeCliReport(envelope("wasm init", bad))).toThrow();
+});

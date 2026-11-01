@@ -16,7 +16,8 @@ const service = {
   options: { dataDir: { type: "string", maxLength: 64, default: "/workspace/pgdata" } },
 };
 const release = buildReleaseFiles({ id: "db", artifacts: { "client.py": new TextEncoder().encode("print()") }, extra: service });
-const resolution = (source: Resolution["source"]): Resolution => ({ release: verifyRelease(release.manifestBytes, release.sumsBytes, [...release.files].filter(([name]) => name !== "module.json" && name !== "SHA256SUMS").map(([name, bytes]) => ({ name, sha256: sha(bytes), bytes: bytes.byteLength }))), source, paths: new Map() });
+const resolutionOf = (built: ReturnType<typeof buildReleaseFiles>, source: Resolution["source"]): Resolution => ({ release: verifyRelease(built.manifestBytes, built.sumsBytes, [...built.files].filter(([name]) => name !== "module.json" && name !== "SHA256SUMS").map(([name, bytes]) => ({ name, sha256: sha(bytes), bytes: bytes.byteLength }))), source, paths: new Map() });
+const resolution = (source: Resolution["source"]): Resolution => resolutionOf(release, source);
 
 describe("what a module asks for", () => {
   it("lists every kind of authority as a sorted, de-duplicated string", () => {
@@ -49,11 +50,33 @@ describe("the consent card", () => {
   });
 
   it("has no GitHub signals for a local directory and classifies a permissive license as such", () => {
-    const plain = buildReleaseFiles();
-    const local: Resolution = { release: verifyRelease(plain.manifestBytes, plain.sumsBytes, [...plain.files].filter(([name]) => name !== "module.json" && name !== "SHA256SUMS").map(([name, bytes]) => ({ name, sha256: sha(bytes), bytes: bytes.byteLength }))), source: { kind: "file", path: "dist" }, paths: new Map() };
-    const card = consentCard(local, { kind: "file", path: "dist" });
+    const card = consentCard(resolutionOf(buildReleaseFiles(), { kind: "file", path: "dist" }), { kind: "file", path: "dist" });
     expect(card.signals).toEqual({});
     expect(card.license.copyleft).toBe(false);
     expect(card.source).toBe("file:dist");
+  });
+});
+
+describe("module commands", () => {
+  const local = { kind: "file", path: "dist" } as const;
+  const pyodide = buildReleaseFiles({ id: "pyodide", host: ["files.sync", "process.info", "process.signals"], extra: { commands: ["python3", "python"] } });
+
+  it("lists each command with the path a program runs it as, and needs the Userspace API that runs commands", () => {
+    const card = consentCard(resolutionOf(pyodide, local), local);
+    expect(card.commands).toEqual([{ name: "python", path: "/usr/local/bin/python" }, { name: "python3", path: "/usr/local/bin/python3" }]);
+    expect(card.minApi).toBe(145);
+    // Commands alone need API 145, even when every capability is served earlier.
+    expect(consentCard(resolutionOf(buildReleaseFiles({ extra: { commands: ["tool"] } }), local), local).minApi).toBe(145);
+    const plain = consentCard(resolutionOf(buildReleaseFiles(), local), local);
+    expect(plain.commands).toEqual([]);
+    expect(plain.minApi).toBe(144);
+  });
+
+  it("counts every command as authority, so a release that adds one asks again", () => {
+    expect(authorityOf(pyodide.manifest)).toEqual(["command:python", "command:python3", "host:files.sync", "host:process.info", "host:process.signals"]);
+    const one = buildReleaseFiles({ extra: { commands: ["tool"] } }).manifest, two = buildReleaseFiles({ extra: { commands: ["tool", "tool-run"] } }).manifest;
+    expect(authorityChange(one, two)).toEqual({ added: ["command:tool-run"], removed: [] });
+    expect(authorityChange(two, one)).toEqual({ added: [], removed: ["command:tool-run"] });
+    expect(authorityChange(buildReleaseFiles().manifest, one)).toEqual({ added: ["command:tool"], removed: [] });
   });
 });

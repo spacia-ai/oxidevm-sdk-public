@@ -74,6 +74,26 @@ describe("buildModule", () => {
     expect((await readReleaseDirectory(join(dir, "build", "release"))).id).toBe(result.release);
   });
 
+  it("writes the declared commands into module.json as a sorted set right after process", async () => {
+    const dir = await project(files({}, moduleSource({ manifest: manifest().replace("requires:", `commands: ["demo-tool", "demo"], requires:`) })));
+    expect((await buildModule(dir)).result).toBe("built");
+    const bytes = await readFile(join(dir, "dist", "module.json"));
+    const written = decodeModuleManifest(bytes);
+    expect(written).toMatchObject({ schemaVersion: 1, adapter: { api: 1 }, commands: ["demo", "demo-tool"] });
+    expect(Object.keys(written)).toEqual(["schemaVersion", "id", "version", "abi", "adapter", "artifacts", "process", "commands", "requires", "license"]);
+    // A module without commands writes no commands key at all.
+    const plain = await project(files());
+    await buildModule(plain);
+    expect(await readFile(join(plain, "dist", "module.json"), "utf8")).not.toContain("commands");
+  });
+
+  it("refuses commands that would make a module require its own command", async () => {
+    const own = manifest().replace("requires: { host: [\"files.sync\"] }", `commands: ["demo"], requires: { host: ["files.sync"], guest: { executables: ["/usr/local/bin/demo"] } }`);
+    const result = await buildModule(await project(files({}, moduleSource({ manifest: own }))), { check: true });
+    expect(result.findings[0]).toMatchObject({ code: "manifest-invalid", file: "module.ts" });
+    expect(result.findings[0]?.message).toMatch(/^commands: .*\/usr\/local\/bin\/demo/u);
+  });
+
   it("reads a module kept in a subdirectory", async () => {
     const dir = await project({ "src/module.ts": moduleSource({ manifest: manifest({ artifacts: `[]`, license: `{ spdx: "MIT" }` }) }) });
     expect((await buildModule(dir, { module: "src/module.ts", check: true })).result).toBe("checked");

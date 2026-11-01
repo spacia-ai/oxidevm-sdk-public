@@ -9,7 +9,10 @@ interface Ports {
 }
 
 /** Independently bounded host operations; an indefinite network receive cannot
- * occupy rootfs or durability slots. The runtime lifecycle owns admission. */
+ * occupy rootfs or durability slots. The runtime lifecycle owns admission.
+ * Commands have no bound here: a JS process holds its command request until it
+ * exits, and Rust's host command table (32 slots) already admits or refuses each
+ * launch, so a lower bound here would hold back processes Rust admitted. */
 export class UserspaceHostService {
   readonly #ports: Ports;
   readonly #requests = new Map<string, { kind: UserspaceHostRequest["kind"]; controller: AbortController; completion: Promise<void> }>();
@@ -17,7 +20,7 @@ export class UserspaceHostService {
 
   pump(): void {
     if (!this.#ports.active()) return;
-    for (const [kind, mask, limit] of [["storage", 1, 4], ["network", 2, 128], ["durability", 4, 128], ["command", 8, 4]] as const) {
+    for (const [kind, mask, limit] of [["storage", 1, 4], ["network", 2, 128], ["durability", 4, 128], ["command", 8, Number.POSITIVE_INFINITY]] as const) {
       let count = [...this.#requests.values()].filter(request => request.kind === kind).length;
       while (count < limit) {
         const request = this.#ports.take(mask); if (request === undefined) break;

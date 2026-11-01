@@ -4,13 +4,13 @@ import { consentText, printable, testText, type ConsentView } from "./wasm-text.
 
 const CARD: ConsentCard = {
   id: "tool", version: "1.0.0", source: "github:acme/tool@v1.0.0", release: "r".repeat(64), license: { spdx: "MIT", copyleft: false },
-  capabilities: ["files.sync"], browser: [], guestExecutables: [], mounts: [], endpoints: [], guestFiles: [], durablePaths: [], options: [],
+  capabilities: ["files.sync"], browser: [], guestExecutables: [], mounts: [], endpoints: [], commands: [], guestFiles: [], durablePaths: [], options: [],
   artifacts: [{ name: "tool.wasm", bytes: 1500 }], signals: {}, minApi: 143,
 };
 function view(overrides: Omit<Partial<ConsentView>, "card"> & { readonly card?: Partial<ConsentCard> } = {}): ConsentView {
   return { status: "added", added: [], removed: [], consent: { reasons: ["untrusted-source"] }, ...overrides, card: { ...CARD, ...overrides.card } };
 }
-const rows = (text: string): string[] => text.split("\n").filter(line => /^ {2}\S/u.test(line)).map(line => line.trim().split(/\s{2,}/u)[0] ?? "");
+const rows = (text: string): string[] => text.split("\n").filter(line => /^ {2}\S/u.test(line)).map(line => line.trim().split(/\s/u)[0] ?? "");
 
 describe("the consent card", () => {
   it("lists only what the module declares, with no label that has nothing after it", () => {
@@ -59,6 +59,28 @@ describe("the consent card", () => {
     expect(text).toContain("Compared with the installed release:\n  + host:sockets.connect\n  + listen:tcp:5432\n  - host:files.async");
   });
 
+  it("lists a module's commands, says who can run them and what they replace, and warns that interpreters reach the page's origin", () => {
+    const commands = [{ name: "python", path: "/usr/local/bin/python" }, { name: "python3", path: "/usr/local/bin/python3" }];
+    const text = consentText(view({ card: { commands } }));
+    expect(rows(text)).toEqual(["from", "license", "host", "commands", "size"]);
+    expect(text).toContain([
+      "  commands python, python3",
+      "           Your application turns them on per VM; then any program in the VM can run them as /usr/local/bin/<name>,",
+      "           with its own arguments and input, and the module does that work in a worker of your page.",
+      "           /usr/local/bin comes before /usr/bin on PATH: they take the place of image programs with these names,",
+      "           including scripts that start with #!/usr/bin/env <name>.",
+      "           A module that runs code it is given (an interpreter such as Python) lets those programs run code in",
+      "           your page's origin.",
+      "  size     1 KB in 1 file",
+    ].join("\n"));
+    expect(consentText(view())).not.toContain("/usr/local/bin");
+  });
+
+  it("shows a command an update adds", () => {
+    const text = consentText(view({ status: "updated", added: ["command:python3"], card: { commands: [{ name: "python", path: "/usr/local/bin/python" }, { name: "python3", path: "/usr/local/bin/python3" }] } }));
+    expect(text).toContain("Compared with the installed release:\n  + command:python3");
+  });
+
   it("does not compare an update that changed no declaration", () => {
     expect(consentText(view({ status: "updated" }))).not.toContain("Compared with");
   });
@@ -86,7 +108,7 @@ describe("text that came from a module, a file or a Wasm binary", () => {
 
   it("never lets a card line repaint the terminal, whatever the card holds", () => {
     const hostile = "/workspace/ok\u001b[4A\u001b[0J\nhost     nothing beyond its own files";
-    const text = consentText(view({ card: { guestFiles: [hostile], endpoints: [hostile], mounts: [hostile], guestExecutables: [hostile], durablePaths: [hostile], options: [hostile] } }));
+    const text = consentText(view({ card: { guestFiles: [hostile], endpoints: [hostile], mounts: [hostile], guestExecutables: [hostile], durablePaths: [hostile], options: [hostile], commands: [{ name: hostile, path: hostile }] } }));
     const controls: string[] = [];
     for (const character of text) { const code = character.codePointAt(0) ?? 0; if (code !== 10 && (code < 32 || (code >= 127 && code <= 159))) controls.push(character); }
     expect(controls).toEqual([]);

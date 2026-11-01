@@ -71,7 +71,7 @@ describe("Userspace Wasm records", () => {
     }
   });
   it("uses the admitted registration API", () => {
-    expect(USERSPACE_API_VERSION).toBe(144);
+    expect(USERSPACE_API_VERSION).toBe(145);
   });
 
   it("distinguishes completed exits from fatal signals without inferring from shell codes", () => {
@@ -87,7 +87,7 @@ describe("Userspace Wasm records", () => {
   });
 
   it("uses the bounded workspace snapshot API", () => {
-    expect(USERSPACE_API_VERSION).toBe(144);
+    expect(USERSPACE_API_VERSION).toBe(145);
   });
 
   it("decodes the closed pending-work bitmask and rejects reserved bits", () => {
@@ -521,17 +521,18 @@ it("decodes accepted stdin prefixes and bounded Linux errors", () => {
 it("decodes versioned JS launches and refuses stale or malformed identity", () => {
   for (const store of [".bun", ".pnpm"]) {
     const entry = `/workspace/node_modules/${store}/typescript@6.0.2/node_modules/typescript/bin/tsc`;
-    const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(17).u64(2n).u64(5n).u32(7).u8(1).path("/workspace").u8(0).path(entry).path("/usr/local/bin/bun").strings(["--noEmit"]).strings(["TERM=dumb"]).finish();
+    const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(18).u64(2n).u64(5n).u32(7).u8(1).path("/workspace").u8(0).path(entry).path("/usr/local/bin/bun").strings(["--noEmit"]).strings(["TERM=dumb"]).finish();
     expect(decodeUserspaceHostRequest(bytes)).toEqual({ kind: "command", generation: 2n, id: 5n, pid: 7, tty: true, cwd: "/workspace", program: { kind: "typescript", entry, executable: "/usr/local/bin/bun" }, args: ["--noEmit"], environment: ["TERM=dumb"] });
     const view = new DataView(bytes.buffer); view.setBigUint64(16, 0n, true); expect(() => decodeUserspaceHostRequest(bytes)).toThrow();
     view.setBigUint64(16, 5n, true); view.setUint32(4, 1, true); expect(() => decodeUserspaceHostRequest(bytes)).toThrow();
+    view.setUint32(4, 17, true); expect(() => decodeUserspaceHostRequest(bytes)).toThrow("version mismatch");
   }
 });
 
 
 it("rejects JS compiler launches outside the two qualified placements", () => {
   for (const entry of ["/tmp/tsc", "/workspace/node_modules/.pnpm/typescript@6.0.3/node_modules/typescript/bin/tsc"]) {
-    const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(17).u64(2n).u64(5n).u32(7).u8(1).path("/workspace").u8(0).path(entry).path("/usr/bin/node").strings(["--noEmit"]).strings([]).finish();
+    const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(18).u64(2n).u64(5n).u32(7).u8(1).path("/workspace").u8(0).path(entry).path("/usr/bin/node").strings(["--noEmit"]).strings([]).finish();
     expect(() => decodeUserspaceHostRequest(bytes)).toThrow("Unqualified TypeScript process");
   }
 });

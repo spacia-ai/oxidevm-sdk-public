@@ -32,6 +32,8 @@ import type { ExecutionTimingMode } from "./protocol/common.js";
 import type { SystemJitInstallMode } from "./protocol/system-trace-background-compile.js";
 import type { UserspaceJitTier } from "./jit-tier-option.js";
 import type { AccelerationNotice } from "./js-process/late-failure.js";
+import type { RunnerHostLaunch } from "./js-process/launch.js";
+import type { ModuleCommandsRequest, ModuleCommandsResult } from "./protocol/userspace-module-commands.js";
 
 const USERSPACE_PROFILE_OPTIONS = Symbol.for("oxidevm.internal.userspace-profile-options");
 const USERSPACE_READ_PROFILE = Symbol.for("oxidevm.internal.userspace-read-profile");
@@ -235,13 +237,19 @@ class BrowserUserspaceVM implements RuntimeVM {
     return this.#backend.watchAccelerationNotices(listener, AbortSignal.any([options.signal, this.#disposing.signal]));
   }
 
-  async spawnJS(spec: Omit<SpawnSpec, "command"> & { readonly worker: string }): Promise<ProcessHandle> {
+  /** ADR 0027: the VM's module commands, owned by its Userspace worker. */
+  async moduleCommands(request: ModuleCommandsRequest, options: { readonly signal?: AbortSignal } = {}): Promise<ModuleCommandsResult> {
+    this.#ensureActive();
+    return this.#backend.moduleCommands(request, options.signal);
+  }
+
+  async spawnJS(spec: Omit<SpawnSpec, "command"> & { readonly worker: string; readonly launch?: RunnerHostLaunch }): Promise<ProcessHandle> {
     this.#ensureActive();
     const rootfs = this.#managed.rootfs;
     if (rootfs === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "Install a Userspace image before spawning a JS process");
-    const { worker, ...native } = spec;
-    const validated = validateSpawnSpec({ ...native, command: "/js-process" }, true);
-    return this.#backend.spawnJS(rootfs, worker, validated.args, validated.env, validated.cwd, validated.terminal, validated.signal);
+    const { worker, launch, ...native } = spec;
+    const { args, env, cwd, terminal, signal } = validateSpawnSpec({ ...native, command: "/js-process" }, true);
+    return this.#backend.spawnJS(rootfs, { worker, args, env, cwd, ...(terminal === undefined ? {} : { terminal }), ...(signal === undefined ? {} : { signal }), ...(launch === undefined ? {} : { launch }) });
   }
 
   async #spawn(spec: SpawnSpec, guestPaths: boolean): Promise<ProcessHandle> {

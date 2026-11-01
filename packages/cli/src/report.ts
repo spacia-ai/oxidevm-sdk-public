@@ -57,9 +57,15 @@ export function decodeCliReport(value: unknown): CliReport {
     }
     case "wasm test": return { schemaVersion: 2, kind: "result", command, result: decodeWasmTestReport(result) };
     case "wasm init": {
-      fields(result, ["directory", "id", "kind", "abi", "files"]);
+      fields(result, ["directory", "id", "kind", "abi", "files"], ["commands"]);
       if (!Array.isArray(result["files"]) || result["files"].length === 0 || result["files"].length > 64) throw new VMError("PROTOCOL_ERROR", "a module scaffold lists its files");
-      return { schemaVersion: 2, kind: "result", command, result: { directory: text(result["directory"]), id: text(result["id"]), kind: choice(result["kind"], ["command", "service"]), abi: text(result["abi"]), files: Array.from<unknown>(result["files"]).map(file => text(file)) } };
+      const kind = choice(result["kind"], ["command", "service"]), commands = result["commands"];
+      // A manifest declares at most sixteen commands, and only a command module declares any.
+      if (commands !== undefined && (kind !== "command" || !Array.isArray(commands) || commands.length > 16)) throw new VMError("PROTOCOL_ERROR", "only a command module's scaffold lists commands, at most sixteen");
+      return { schemaVersion: 2, kind: "result", command, result: {
+        directory: text(result["directory"]), id: text(result["id"]), kind, abi: text(result["abi"]), files: Array.from<unknown>(result["files"]).map(file => text(file)),
+        ...(commands === undefined ? {} : { commands: Array.from<unknown>(commands).map(name => text(name)) }),
+      } };
     }
     case "init": {
       fields(result, ["directory", "mode", "assets"]);

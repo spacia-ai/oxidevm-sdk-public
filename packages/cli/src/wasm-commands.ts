@@ -77,7 +77,9 @@ export async function runWasmCommand(invocation: WasmCLIInvocation, io: CLIEnvir
       const { card } = preview;
       return { schemaVersion: 2, kind: "result", command, result: {
         id: card.id, version: card.version, source: card.source, release: card.release, status: added.status, consent,
-        license: { spdx: card.license.spdx, copyleft: card.license.copyleft }, capabilities: card.capabilities, added: preview.added, removed: preview.removed,
+        license: { spdx: card.license.spdx, copyleft: card.license.copyleft }, capabilities: card.capabilities,
+        // Only a module that declares commands adds the key, so other results keep their shape.
+        ...(card.commands.length === 0 ? {} : { commands: card.commands.map(command => command.name) }), added: preview.added, removed: preview.removed,
         generatedFile: added.stage.generatedFile.replace(`${projectDir}/`, ""),
       } };
     }

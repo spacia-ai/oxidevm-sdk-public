@@ -3,6 +3,7 @@ import { decodeUserspaceJitProfile, type UserspaceJitProfile } from "./protocol/
 import { decodeMessagePort } from "./protocol/request-base.js";
 import { decodeFileMount, decodeFileRequestBytes, decodeFileResponseBytes, decodeChangeCursor, type FileMount } from "./protocol/userspace-files.js";
 import { exactKeys, integer, record, string } from "./decode.js";
+import { decodeRunnerHostLaunch, type RunnerHostLaunch } from "./js-process/launch.js";
 import { decodeUserspaceJitTier, type UserspaceJitTier } from "./jit-tier-option.js";
 import { VMError } from "./errors.js";
 import { decodeAgentSpawnResult, decodeStringArray, type AgentSpawnResult } from "./protocol/agent.js";
@@ -42,6 +43,7 @@ import type { ListeningPortsRead } from "./listening-ports.js";
 import { decodeLinuxSignal, decodeSignalScope, type LinuxSignal, type SignalScope } from "./process-signals.js";
 import type { RuntimeVMOptions } from "./vm-types.js";
 import { decodeAccelerationNotice, type AccelerationNotice } from "./js-process/late-failure.js";
+import { decodeModuleCommandsRequest, decodeModuleCommandsResult, type ModuleCommandsRequest, type ModuleCommandsResult } from "./protocol/userspace-module-commands.js";
 
 const MAX_ARTIFACT_BYTES = 128 * 1024 * 1024;
 
@@ -172,7 +174,10 @@ export interface UserspaceOperations {
   readonly "js-trace": Operation<{ readonly capacity?: number }, Uint8Array>;
   /** ADR 0026: a port that carries each late fast-path failure until the page closes it. */
   readonly "acceleration-notices": Operation<undefined, MessagePort>;
-  readonly "spawn-js": Operation<FileMount & { readonly worker: string; readonly arguments: readonly string[]; readonly environment: readonly string[]; readonly cwd: string; readonly port: MessagePort; readonly terminal?: UserspaceTerminalSize }, NativeSpawnResult>;
+  /** `launch` is the module runner's start input (ADR 0027); the driver hands it only to the worker of this launch. */
+  readonly "spawn-js": Operation<FileMount & { readonly worker: string; readonly arguments: readonly string[]; readonly environment: readonly string[]; readonly cwd: string; readonly port: MessagePort; readonly terminal?: UserspaceTerminalSize; readonly launch?: RunnerHostLaunch }, NativeSpawnResult>;
+  /** ADR 0027: turn a command module's commands on for this VM, turn them off, or read how they stand. */
+  readonly "module-commands": Operation<ModuleCommandsRequest, ModuleCommandsResult>;
   readonly files: Operation<{ readonly request: Uint8Array; readonly mount?: FileMount }, Uint8Array>;
   readonly "file-changes": Operation<{ readonly cursor: bigint }, Uint8Array>;
   readonly initialize: Operation<
@@ -229,6 +234,7 @@ export const userspaceResponseDecoders: OperationDecoders<UserspaceOperations> =
   "js-trace": decodeFileResponseBytes,
   "acceleration-notices": value => decodeMessagePort(value, "acceleration notice port"),
   "spawn-js": decodeNativeSpawnResult,
+  "module-commands": decodeModuleCommandsResult,
   files: decodeFileResponseBytes,
   "file-changes": decodeFileResponseBytes,
   initialize: decodeUndefined,
@@ -257,6 +263,7 @@ interface RequestBase {
 export type UserspaceRequest =
   | (RequestBase & { readonly type: "js-trace"; readonly capacity?: number })
   | (RequestBase & { readonly type: "spawn-js" } & UserspaceOperations["spawn-js"]["request"])
+  | (RequestBase & { readonly type: "module-commands" } & ModuleCommandsRequest)
   | (RequestBase & { readonly type: "signal-named"; readonly pid: number; readonly sessionId: number; readonly signal: LinuxSignal; readonly scope: SignalScope })
   | (RequestBase & { readonly type: "terminal-resize"; readonly pid: number; readonly sessionId: number; readonly terminal: UserspaceTerminalSize })
   | (RequestBase & { readonly type: "terminal-interrupt"; readonly pid: number; readonly sessionId: number })
@@ -301,6 +308,16 @@ export type UserspaceRequest =
   | (RequestBase & { readonly type: "listening-ports"; readonly known: bigint | null })
   | (RequestBase & { readonly type: "network-revoke" | "dispose" | "acceleration-notices" });
 
+/**
+ * A request the Userspace worker answers even after the page cancelled it, because its page waits for the owner's
+ * outcome (`cancellation: "settled"`): a module-commands enable may have registered before its cancellation arrived,
+ * and only that answer lets the page turn the registration off again (ADR 0027). Every other cancelled request goes
+ * unanswered, as the page has already settled it.
+ */
+export function answeredWhenCancelled(request: UserspaceRequest): boolean {
+  return request.type === "module-commands";
+}
+
 export type UserspaceCancelRequest = {
   readonly version: typeof PROTOCOL_VERSION;
   readonly type: "cancel";
@@ -327,12 +344,14 @@ export function decodeUserspaceRequest(value: unknown): UserspaceRequest | Users
       exactKeys(request, ["id", "version", "type"], ["capacity"]);
       return { ...base, type, ...(request["capacity"] === undefined ? {} : { capacity: integer(request["capacity"], "JS trace capacity", 0, 4096) }) };
     case "spawn-js": {
-      exactKeys(request, ["id", "version", "type", "rootTreeSha256", "workspaceBaseSha256", "cpuProfile", "worker", "arguments", "environment", "cwd", "rootfs", "port"], ["terminal"]);
+      exactKeys(request, ["id", "version", "type", "rootTreeSha256", "workspaceBaseSha256", "cpuProfile", "worker", "arguments", "environment", "cwd", "rootfs", "port"], ["terminal", "launch"]);
       const mount = decodeFileMount({ rootTreeSha256: request["rootTreeSha256"], workspaceBaseSha256: request["workspaceBaseSha256"], cpuProfile: request["cpuProfile"], rootfs: request["rootfs"] });
       const worker = string(request["worker"], "JS process worker");
       if (worker.length > 4096 || worker.includes("\0")) throw new VMError("PROTOCOL_ERROR", "JS worker URL is invalid");
-      return { ...base, ...mount, type, worker, arguments: decodeStringArray(request["arguments"], "JS arguments"), environment: decodeStringArray(request["environment"], "JS environment"), cwd: decodeAbsolutePath(request["cwd"], "JS cwd"), port: decodeMessagePort(request["port"], "JS process port"), ...(request["terminal"] === undefined ? {} : { terminal: decodeTerminalSize(request["terminal"]) }) };
+      return { ...base, ...mount, type, worker, arguments: decodeStringArray(request["arguments"], "JS arguments"), environment: decodeStringArray(request["environment"], "JS environment"), cwd: decodeAbsolutePath(request["cwd"], "JS cwd"), port: decodeMessagePort(request["port"], "JS process port"), ...(request["terminal"] === undefined ? {} : { terminal: decodeTerminalSize(request["terminal"]) }), ...(request["launch"] === undefined ? {} : { launch: decodeRunnerHostLaunch(request["launch"]) }) };
     }
+    case "module-commands":
+      return { ...base, type, ...decodeModuleCommandsRequest(request) };
     case "files":
       exactKeys(request, ["id", "version", "type", "request"], ["mount"]);
       return { ...base, type, request: decodeFileRequestBytes(request["request"]), ...(request["mount"] === undefined ? {} : { mount: decodeFileMount(request["mount"]) }) };

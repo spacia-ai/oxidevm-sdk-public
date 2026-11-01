@@ -16,6 +16,8 @@ export const wasmHelp = `
   wasm init <directory> [--kind command|service] [--id <id>] [--from <file.wasm>]
     Creates a module project: module.ts (manifest and adapter), unit tests, strict TypeScript and ESLint settings, CI and
     release workflows, and an example that wraps a tiny WebAssembly function. --from starts from your own .wasm file.
+    A command module declares its id in commands, so programs in a VM can run it from a shell once an application turns
+    it on; an id that starts with oxidevm is reserved and gets none.
   wasm build [--project <directory>] [--out <directory>] [--module <file>] [--check]
     Reads the manifest from module.ts without running it, bundles the adapter into one file, pins every artifact and
     writes module.json, adapter.mjs, the artifacts and SHA256SUMS to dist/. --check verifies and writes nothing. Exits 3

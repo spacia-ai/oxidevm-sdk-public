@@ -108,7 +108,10 @@
  * release R1). */
 /** 175 pairs API143/replay166 with OXAP8 image code roots, OXCR17, OXJT16 and OXAK2. */
 /** 176 pairs API144/replay167 with utimensat (280) and sendto (44) on the JS-process wire; OXJR 4 and the other layouts are unchanged. */
-export const PROTOCOL_VERSION = 176;
+/** 177 pairs API145/replay168 with module commands (ADR 0027): the OXMC/OXMA table, OXCR18 tag 4, OXJT17
+ * placement subjects with reasons 41 and 42, OXCS signal notices (command operations 6 and 7), OXJR 65550
+ * and JS process protocol 4. */
+export const PROTOCOL_VERSION = 177;
 /** Combined architecture, background compilation and code-profile trace layout. */
 export const SYSTEM_TRACE_SCHEMA_VERSION = 54;
 

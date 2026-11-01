@@ -36,9 +36,9 @@ describe("adapter fault reports", () => {
     await expect(running.done).resolves.toBe(123);
     const written = records(running.linux.stderrLines);
     expect(written.filter(line => line["oxidevm"] === "warning")).toEqual([
-      { oxidevm: "warning", v: 1, kind: "undeclared-capability", member: "process", capabilities: ["process.info", "process.spawn"] },
+      { oxidevm: "warning", v: 1, kind: "undeclared-capability", member: "process", capabilities: ["process.info", "process.spawn", "process.signals"] },
     ]);
-    expect(written.at(-1)).toMatchObject({ oxidevm: "error", kind: "adapter", fault: "undeclared-capability", capabilities: ["process.info", "process.spawn"] });
+    expect(written.at(-1)).toMatchObject({ oxidevm: "error", kind: "adapter", fault: "undeclared-capability", capabilities: ["process.info", "process.spawn", "process.signals"] });
     expect(running.linux.stderrLines).toContain("absent=true");
   });
 

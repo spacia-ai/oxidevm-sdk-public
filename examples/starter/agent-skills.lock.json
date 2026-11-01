@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/spacia-ai/oxidevm-skills",
-  "revision": "8c5c6969ea97e431914ab03b231a280675f230df",
+  "revision": "696efdef098ad40c897a5adb63b71c9214f95ada",
   "skillsVersion": "0.0.6",
   "files": [
     {
       "path": "oxidevm-debugging/SKILL.md",
-      "sha256": "1b92dcf4968e6f3fa919c05620115c83d00e2339949a9d292d66430818f33e14"
+      "sha256": "05d44c0798975da71a825a7f5195c6a40c45a5c7da25413212806b73623a7790"
     },
     {
       "path": "oxidevm-debugging/agents/openai.yaml",
@@ -14,7 +14,7 @@
     },
     {
       "path": "oxidevm-module-author/SKILL.md",
-      "sha256": "ecc924579ab1461fbd7163cb6227e362d5145f07a1d949392e6e6220cb4ee9e8"
+      "sha256": "c804e28b4e7b4a29ece5aeb6e25639158119a8961c660901fe1ea182b7779c4c"
     },
     {
       "path": "oxidevm-module-author/agents/openai.yaml",
@@ -22,7 +22,7 @@
     },
     {
       "path": "oxidevm-sdk/SKILL.md",
-      "sha256": "a5dca8045ebd443dc2c809a29ff1eab78bc3b08a95c5b9737a0280b7c747d57f"
+      "sha256": "b7194f3583641e9b09cee19551327034b2d1fc52b3d4a2706a2b6490bfed89c8"
     },
     {
       "path": "oxidevm-sdk/agents/openai.yaml",

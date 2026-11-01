@@ -2,20 +2,16 @@ import { mkdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { VMError } from "@oxidevm/sdk";
 import { WasmBuildFailure, extractManifest, getSDKRelease, inspectWasm } from "@oxidevm/sdk/image-builder";
+import type { WasmInitResult } from "./contracts.js";
 import { file, newDirectory } from "./template-files.js";
 import { registryConfig } from "./templates.js";
-import { ADD_WASM, ESLINT_CONFIG, GITIGNORE, TEMPLATE_PLAYWRIGHT, OPERANDS_SOURCE, OPERANDS_TEST, TEST_TSCONFIG, TSCONFIG, agentsFile, ciWorkflow, moduleTest, noticeFile, readmeFile, releaseWorkflow } from "./wasm-template-files.js";
+import {
+  ADD_WASM, ESLINT_CONFIG, GITIGNORE, TEMPLATE_PLAYWRIGHT, OPERANDS_SOURCE, OPERANDS_TEST, TEST_TSCONFIG, TSCONFIG, addCommandSource, addCommandTest, agentsFile,
+  ciWorkflow, commandFor, moduleTest, noticeFile, readmeFile, releaseWorkflow,
+} from "./wasm-template-files.js";
+import type { TemplateShape } from "./wasm-template-files.js";
 
 export type ModuleKind = "command" | "service";
-
-export interface ModuleInitResult {
-  readonly directory: string;
-  readonly id: string;
-  readonly kind: ModuleKind;
-  readonly abi: string;
-  /** Every file that was created, relative to the directory and sorted. */
-  readonly files: readonly string[];
-}
 
 const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 /** The largest WebAssembly file `--from` copies; it matches what a release pin can describe. */
@@ -48,21 +44,22 @@ async function subjectFor(from: string | undefined, directory: string): Promise<
   return { artifact: name, abi: report.abi, bytes, skeleton: true };
 }
 
-const MANIFEST_HEAD = (id: string, subject: Subject, kind: ModuleKind, host: string): string => `    id: ${JSON.stringify(id)},
+/** The manifest up to its license. `command` is the name a command module declares in `commands`, right after `process`. */
+const MANIFEST_HEAD = (id: string, subject: Subject, kind: ModuleKind, host: string, command?: string): string => `    id: ${JSON.stringify(id)},
     version: "0.1.0",
     abi: ${JSON.stringify(subject.abi)},
     artifacts: [{ name: ${JSON.stringify(subject.artifact)}, from: ${JSON.stringify(`upstream/${subject.artifact}`)} }],
     process: { kind: ${JSON.stringify(kind)} },
-${kind === "service" ? `    expose: { main: { kind: "unix", path: ${JSON.stringify(`/workspace/_oxidevm/${id}.sock`)}, protocol: ${JSON.stringify(`${id}/1`)} } },\n` : ""}    requires: { host: [${host}] },
+${command === undefined ? "" : `    commands: [${JSON.stringify(command)}],\n`}${kind === "service" ? `    expose: { main: { kind: "unix", path: ${JSON.stringify(`/workspace/_oxidevm/${id}.sock`)}, protocol: ${JSON.stringify(`${id}/1`)} } },\n` : ""}    requires: { host: [${host}] },
     license: { spdx: "Apache-2.0" },`;
 
-function commandSource(id: string, subject: Subject): string {
+function commandSource(id: string, subject: Subject, command: string | undefined): string {
   if (subject.skeleton) {
     return `import { defineModule } from "@oxidevm/sdk/wasm";
 
 export default defineModule({
   manifest: {
-${MANIFEST_HEAD(id, subject, "command", "")}
+${MANIFEST_HEAD(id, subject, "command", "", command)}
   },
   adapter: async host => {
     // Compile the artifact once, at start. Instantiate it here with the imports its ABI needs;
@@ -74,25 +71,19 @@ ${MANIFEST_HEAD(id, subject, "command", "")}
 `;
   }
   return `import { defineModule } from "@oxidevm/sdk/wasm";
-import { parseOperands } from "./src/operands.ts";
+import { addCommand } from "./src/command.ts";
 
 export default defineModule({
   manifest: {
-${MANIFEST_HEAD(id, subject, "command", "\"files.sync\"")}
+${MANIFEST_HEAD(id, subject, "command", "\"files.sync\"", command)}
   },
   adapter: async host => {
     const instance = await WebAssembly.instantiate(await host.artifacts.compile("add.wasm"));
-    const add = instance.exports["add"];
-    if (typeof add !== "function") throw new Error("add.wasm does not export add");
-    return {
-      main(io) {
-        const operands = parseOperands(io.args);
-        if (operands === undefined) return host.fail(2, ${JSON.stringify(`usage: ${id} <a> <b>  (two 32-bit integers)`)});
-        const sum: unknown = Reflect.apply(add, undefined, operands);
-        host.fs.write(io.stdout, new TextEncoder().encode(\`\${String(sum)}\\n\`));
-        return 0;
-      },
-    };
+    const exported = instance.exports["add"];
+    if (typeof exported !== "function") throw new Error("add.wasm does not export add");
+    // WebAssembly hands back an untyped function; the command calls it with two 32-bit integers.
+    const add = (left: number, right: number): unknown => Reflect.apply(exported, undefined, [left, right]);
+    return addCommand(host, add);
   },
 });
 `;
@@ -173,10 +164,12 @@ function packageJson(id: string, kind: "command" | "service"): string {
  * through the same extractor the build uses before anything is written, so an id or file name that would make an
  * invalid manifest fails here, not later.
  */
-export async function initializeModule(directory: string, options: { readonly kind: ModuleKind; readonly id?: string; readonly from?: string }): Promise<ModuleInitResult> {
+export async function initializeModule(directory: string, options: { readonly kind: ModuleKind; readonly id?: string; readonly from?: string }): Promise<WasmInitResult> {
   const id = options.id ?? moduleIdFor(directory);
   const subject = await subjectFor(options.from, directory);
-  const source = options.kind === "command" ? commandSource(id, subject) : serviceSource(id, subject);
+  // A command module declares its id as its command, so programs in a VM run it by the module's name.
+  const shape: TemplateShape = options.kind === "command" ? { kind: "command", command: commandFor(id), skeleton: subject.skeleton } : { kind: "service" };
+  const source = shape.kind === "command" ? commandSource(id, subject, shape.command) : serviceSource(id, subject);
   try { extractManifest(source, "module.ts"); } catch (error) {
     if (error instanceof WasmBuildFailure) throw new VMError("INVALID_ARGUMENT", `the module cannot be created: ${error.findings[0]?.message ?? "invalid manifest"}`);
     throw error;
@@ -187,13 +180,15 @@ export async function initializeModule(directory: string, options: { readonly ki
   const files = new Map<string, string | Uint8Array>([
     ["module.ts", source],
     [`upstream/${subject.artifact}`, subject.bytes],
-    ["package.json", packageJson(id, options.kind)], ["tsconfig.json", TSCONFIG], ["test/tsconfig.json", TEST_TSCONFIG], ["test/module.test.ts", moduleTest(id, options.kind)], ["eslint.config.js", ESLINT_CONFIG], [".gitignore", GITIGNORE],
-    ["README.md", readmeFile(id, options.kind)], ["AGENTS.md", agentsFile(id)],
+    ["package.json", packageJson(id, options.kind)], ["tsconfig.json", TSCONFIG], ["test/tsconfig.json", TEST_TSCONFIG], ["test/module.test.ts", moduleTest(id, shape)], ["eslint.config.js", ESLINT_CONFIG], [".gitignore", GITIGNORE],
+    ["README.md", readmeFile(id, shape)], ["AGENTS.md", agentsFile(id, shape)],
     ["LICENSE", await readFile(new URL("../LICENSE", import.meta.url), "utf8")], ["NOTICE", noticeFile(id)],
     [".github/workflows/ci.yml", ciWorkflow(npmrc !== undefined)], [".github/workflows/release.yml", releaseWorkflow(npmrc !== undefined)],
   ]);
   if (!subject.skeleton) { files.set("src/operands.ts", OPERANDS_SOURCE); files.set("test/operands.test.ts", OPERANDS_TEST); }
+  if (!subject.skeleton && shape.kind === "command") { files.set("src/command.ts", addCommandSource(id, shape.command)); files.set("test/command.test.ts", addCommandTest(id, shape.command)); }
   if (npmrc !== undefined) files.set(".npmrc", npmrc);
   for (const [path, content] of files) await file(directory, path, content);
-  return { directory, id, kind: options.kind, abi: subject.abi, files: [...files.keys()].sort() };
+  // Only a command module reports commands, so a service's result keeps its keys; an id with the reserved prefix declares none.
+  return { directory, id, kind: options.kind, abi: subject.abi, files: [...files.keys()].sort(), ...(shape.kind === "command" ? { commands: shape.command === undefined ? [] : [shape.command] } : {}) };
 }

@@ -361,13 +361,16 @@ JavaScript process that shares the VM's files, process ids and sockets. See
 manifest, an adapter that receives only the host operations the manifest
 declares, and pinned artifacts. `defineModule` types a module for its author;
 `spawnModule(vm, handle, options)` and `stopModule(process)` run one on a
-Userspace VM, with options and endpoints typed from the manifest. Modules start
-JS processes, so they need a self-hosted runtime.
+Userspace VM, with options and endpoints typed from the manifest, and
+`enableModuleCommands(vm, handle, options)` lets every program in the VM run a
+command module's declared commands. Modules start JS processes, so they need a
+self-hosted runtime.
 
 | Operation | Purpose |
 | --- | --- |
 | `defineModule({ manifest, adapter })` | Type a module definition; the adapter's `host` holds exactly the declared capabilities |
 | `spawnModule`, `stopModule` | Start a command or service and stop it by closing its input |
+| `enableModuleCommands` | Turn a command module's commands on for one Userspace VM, as `/usr/local/bin/<name>`; the result reports on them and turns them off |
 | `moduleHandle` | The typed handle `oxidevm wasm add` generates |
 | `decodeModuleManifest`, `encodeModuleManifest`, `classifyLicense` | Strict `module.json` and SPDX handling for tooling |
 | `oxidevm wasm add / stage / doctor / inspect / init / build / release` | The command line for installing and authoring modules |

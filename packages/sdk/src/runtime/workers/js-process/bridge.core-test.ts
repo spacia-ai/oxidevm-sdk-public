@@ -1,28 +1,58 @@
 import { readFile } from "node:fs/promises";
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { engineModulePath } from "../engine-wasm.test-support.js";
 import { instantiateRuntime } from "../userspace-runtime.js";
 import { callUserspaceU32 as call } from "../userspace-exports.js";
 import { readFileRecord } from "../userspace-files.js";
 import { admitJSProcess } from "./admission.js";
-import { decodeUserspaceHostRequest, decodeUserspacePendingWork } from "../../userspace-abi.js";
+import { UserspaceHostService } from "../userspace-host-service.js";
+import { decodeUserspaceHostRequest, decodeUserspacePendingWork, decodeUserspaceWaitStatus } from "../../userspace-abi.js";
 import { decodeJSCompletion, encodeJSRequest, type JSProcessIdentity } from "../../js-process/native-abi.js";
 import { VMError } from "../../errors.js";
-import { LinuxError, Writer, decodeJSIdentity, descriptor, noValue, operation, value, type LinuxOperation } from "../../js-process/codec.js";
+import { JS_PROCESS_PROTOCOL_VERSION, LinuxError, Writer, decodeJSIdentity, descriptor, noValue, operation, value, type LinuxOperation } from "../../js-process/codec.js";
 import { files } from "../../js-process/file-operations.js";
 import { encodeAddress } from "../../js-process/sockets.js";
 import type { FileDescriptor } from "../../../js-process-types.js";
-import { encodeCommandExit } from "../../userspace-command-abi.js";
+import { decodeCommandNotice, encodeCommandExit, encodeCommandNoticeRequest, encodeCommandSignalExit } from "../../userspace-command-abi.js";
+import { dispositionOperation } from "../../js-process/signals.js";
 import { decodeSpawn, spawnPayload } from "../../js-process/process.js";
 import { traceRingElf } from "../userspace-tier2.test-support.js";
+import { record } from "../../decode.js";
+import type { PipeJSProcessSpec, ProcessHandle } from "../../../contracts.js";
+import { decodeProcessId } from "../../../values.js";
+import type { RunnerHostLaunch } from "../../js-process/launch.js";
+import { JsProcessWorkers } from "./driver.js";
+import { moduleHandle } from "../../../wasm/handle.js";
+import { spawnModule } from "../../../wasm/spawn.js";
+import { parseLaunchArgument } from "../../../wasm/runner/descriptor.js";
+import { buildRelease, COMMAND_DECLARATION } from "../../../wasm/runner/fixtures.test-support.js";
 
-async function fixture() {
+/** spawnModule's start as the VM's owner record receives it: the process spec and the runner's launch. */
+const owner = vi.hoisted(() => ({ start: vi.fn<(vm: object, spec: PipeJSProcessSpec, launch: RunnerHostLaunch) => Promise<ProcessHandle>>() }));
+vi.mock("../../../vm-adapter.js", () => ({ spawnOwnedModuleProcess: owner.start }));
+afterEach(() => { vi.unstubAllGlobals(); owner.start.mockReset(); });
+
+/** A dedicated worker that records the start message the driver sends it. */
+class StartedWorker {
+  static latest: StartedWorker | undefined;
+  onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  onmessageerror: (() => void) | null = null;
+  terminated = false;
+  bootstrap: Readonly<Record<string, unknown>> = {};
+  port: MessagePort | undefined;
+  constructor() { StartedWorker.latest = this; }
+  postMessage(value: unknown): void { this.bootstrap = record(value, "start message"); const port = this.bootstrap["port"]; if (port instanceof MessagePort) this.port = port; }
+  terminate(): void { this.terminated = true; this.port?.close(); }
+}
+
+async function fixture(args: readonly string[] = []) {
   const bytes = new Uint8Array(await readFile(engineModulePath("oxidevm_userspace.wasm")));
   const module = await WebAssembly.compile(bytes.buffer);
   const runtime = await instantiateRuntime(module, "js-bridge-core-test", { kind: "disabled" });
   const stage = (bytes: Uint8Array) => { expect(call(runtime.instance, "oxidevm_userspace_staging_resize", bytes.byteLength)).toBe(0); new Uint8Array(runtime.memory.buffer, call(runtime.instance, "oxidevm_userspace_staging_ptr"), bytes.byteLength).set(bytes); };
   stage(new Uint8Array()); expect(call(runtime.instance, "oxidevm_userspace_mount_rootfs", 0, 1, 128)).toBe(0);
-  const pid = admitJSProcess(runtime, 1, [], [], "/workspace");
+  const pid = admitJSProcess(runtime, 1, args, [], "/workspace");
   expect(call(runtime.instance, "oxidevm_userspace_host_request_next", 8)).toBe(0);
   const length = call(runtime.instance, "oxidevm_userspace_host_request_len"), pointer = call(runtime.instance, "oxidevm_userspace_host_request_ptr");
   const request = decodeUserspaceHostRequest(new Uint8Array(runtime.memory.buffer, pointer, length).slice());
@@ -33,7 +63,10 @@ async function fixture() {
     const result = readFileRecord(runtime); expect(result.byteLength).toBe(4); return new DataView(result.buffer).getUint32(0, true);
   };
   const completion = () => { expect(call(runtime.instance, "oxidevm_userspace_js_next")).toBe(0); const bytes = readFileRecord(runtime); return bytes.byteLength === 0 ? undefined : decodeJSCompletion(bytes); };
-  return { runtime, request, pid, stage, submit, completion };
+  /** Command operation 6: the next caught-signal notice (OXCS 1), or null. */
+  const notice = () => { const take = encodeCommandNoticeRequest(); stage(take); expect(call(runtime.instance, "oxidevm_userspace_command", take.byteLength)).toBe(0); return decodeCommandNotice(readFileRecord(runtime)); };
+  const waitStatus = () => decodeUserspaceWaitStatus(call(runtime.instance, "oxidevm_userspace_process_wait_status", pid));
+  return { runtime, request, pid, stage, submit, completion, notice, waitStatus };
 }
 
 /** Runs requests through the production builders and decoders, so a wrong byte or a wrong reply shape fails here. */
@@ -294,4 +327,128 @@ it("admits 32 JS processes at once and refuses the 33rd as a quota error, becaus
     try { admitJSProcess(runtime, 33, [], [], "/workspace"); } catch (error: unknown) { refusal = error; }
     expect(refusal).toMatchObject({ code: "QUOTA_EXCEEDED" });
   } finally { await runtime.jitRuntime.dispose(); }
+});
+
+it("starts every JS process Rust admitted instead of holding them behind an SDK lane", async () => {
+  const bytes = new Uint8Array(await readFile(engineModulePath("oxidevm_userspace.wasm")));
+  const runtime = await instantiateRuntime(await WebAssembly.compile(bytes.buffer), "js-lane-start-core-test", { kind: "disabled" });
+  const running = Promise.withResolvers<undefined>();
+  try {
+    expect(call(runtime.instance, "oxidevm_userspace_staging_resize", 0)).toBe(0);
+    expect(call(runtime.instance, "oxidevm_userspace_mount_rootfs", 0, 1, 128)).toBe(0);
+    for (let token = 1; token <= 8; token += 1) admitJSProcess(runtime, token, [], [], "/workspace");
+    const started: bigint[] = [];
+    const host = new UserspaceHostService({
+      active: () => true,
+      take: mask => {
+        expect(call(runtime.instance, "oxidevm_userspace_host_request_next", mask)).toBe(0);
+        const length = call(runtime.instance, "oxidevm_userspace_host_request_len");
+        if (length === 0) return undefined;
+        const pointer = call(runtime.instance, "oxidevm_userspace_host_request_ptr");
+        return decodeUserspaceHostRequest(new Uint8Array(runtime.memory.buffer, pointer, length).slice());
+      },
+      // Each process stays running: its request is held until the test ends, as a live JS process holds it until exit.
+      service: request => {
+        if (request.kind !== "command" || request.program.kind !== "worker") throw new Error("Expected a JS process launch");
+        started.push(request.program.token);
+        return running.promise;
+      },
+      settled() {}, failed(error) { throw error; },
+    });
+    host.pump();
+    expect(started).toEqual([1n, 2n, 3n, 4n, 5n, 6n, 7n, 8n]);
+    host.cancel();
+  } finally { running.resolve(undefined); await runtime.jitRuntime.dispose(); }
+});
+
+// Engine ADR 0027: a caught signal reaches the worker as a notice instead of its default action.
+it("turns a caught SIGINT into one OXCS notice for its worker and interrupts a pending read with EINTR instead of killing the process", async () => {
+  const f = await fixture();
+  try {
+    // OXJR 65550: SIGINT caught with the interrupt flag and without restart; the previous disposition was the default.
+    expect(f.submit(1, 65550, Uint8Array.of(2, 2, 0b10))).toBe(0);
+    expect(f.completion()).toMatchObject({ sequence: 1, errno: 0, value: 0n });
+    expect(f.submit(2, 0, new Writer().u64(0).u64(1).finish())).toBe(0);
+    expect(f.completion()).toBeUndefined();
+    expect(call(f.runtime.instance, "oxidevm_userspace_process_signal", f.pid, 2)).toBe(0);
+    expect(call(f.runtime.instance, "oxidevm_userspace_run", 10_000, 0)).toBe(0);
+    expect(decodeUserspacePendingWork(call(f.runtime.instance, "oxidevm_userspace_pending_work")).hostRequest).toBe(true);
+    expect(f.notice()).toEqual({ generation: f.request.generation, id: f.request.id, pid: f.pid, signal: 2, restart: false, interrupt: true });
+    expect(f.notice()).toBeNull();
+    expect(f.completion()).toMatchObject({ sequence: 2, errno: 4 });
+    expect(f.waitStatus()).toBeUndefined();
+    // Restoring the default answers the caught disposition it replaces.
+    expect(f.submit(3, 65550, Uint8Array.of(2, 0, 0))).toBe(0);
+    expect(f.completion()).toMatchObject({ sequence: 3, errno: 0, value: 2n });
+  } finally { await f.runtime.jitRuntime.dispose(); }
+});
+
+it("answers the runner's OXJR 65550 with the previous disposition, and interrupts a pending read of a trapped signal with EINTR", async () => {
+  const f = await fixture();
+  try {
+    const { send, complete } = operations(f);
+    // What host.process.signals sends: caught with the interrupt flag and no restart, ignore, and the default.
+    expect(send(dispositionOperation(2, "caught"))).toBe("default");
+    expect(send(dispositionOperation(2, "ignore"))).toBe("caught");
+    expect(send(dispositionOperation(2, "caught"))).toBe("ignore");
+    expect(complete(files.read(0, 16))).toBeUndefined();
+    expect(call(f.runtime.instance, "oxidevm_userspace_process_signal", f.pid, 2)).toBe(0);
+    expect(call(f.runtime.instance, "oxidevm_userspace_run", 10_000, 0)).toBe(0);
+    expect(f.notice()).toMatchObject({ pid: f.pid, signal: 2, restart: false, interrupt: true });
+    expect(f.completion()).toMatchObject({ errno: 4 });
+    expect(send(dispositionOperation(2, "default"))).toBe("caught");
+    expect(f.waitStatus()).toBeUndefined();
+  } finally { await f.runtime.jitRuntime.dispose(); }
+});
+
+it("reaps a JS process its worker ended by a signal (operation 7 through the driver) as signaled, with no exit after it", async () => {
+  vi.stubGlobal("self", { location: new URL("https://app.test/"), crossOriginIsolated: true });
+  vi.stubGlobal("Worker", StartedWorker);
+  const f = await fixture();
+  const workers = new JsProcessWorkers({ runtime: f.runtime, active: () => true, wake: () => { call(f.runtime.instance, "oxidevm_userspace_run", 10_000, 0); } });
+  try {
+    // The fixture admitted the process for launch token 1, the first token a fresh driver registers.
+    expect(workers.register("https://app.test/process.worker.js")).toBe(1);
+    const running = workers.run(f.request, new AbortController().signal), worker = StartedWorker.latest, port = worker?.port;
+    if (worker === undefined || port === undefined) throw new Error("The driver started no worker");
+    const words = worker.bootstrap["signals"];
+    expect(words instanceof SharedArrayBuffer ? words.byteLength : 0).toBe(8);
+    port.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "signaled", signal: 15 });
+    await vi.waitFor(() => expect(f.waitStatus()).toEqual({ kind: "signal", signal: 15 }));
+    // A late exit from the worker changes nothing: the process ended killed by SIGTERM.
+    worker.onmessage?.(new MessageEvent("message", { data: { version: JS_PROCESS_PROTOCOL_VERSION, type: "exit", code: 0 } }));
+    workers.reconcile(); await running;
+    expect(worker.terminated).toBe(true);
+    expect(f.waitStatus()).toEqual({ kind: "signal", signal: 15 });
+    const again = encodeCommandSignalExit(f.request, 15); f.stage(again);
+    expect(call(f.runtime.instance, "oxidevm_userspace_command", again.byteLength)).not.toBe(0);
+  } finally { workers.dispose(); await f.runtime.jitRuntime.dispose(); }
+});
+
+it("starts spawnModule's runner with its launch description in the start message and leaves none of it in /proc/<pid>/cmdline", async () => {
+  const release = await buildRelease({ adapter: "export default () => ({ main: () => 0 });", declaration: { ...COMMAND_DECLARATION, options: { mode: { type: "enum", values: ["fast", "private-choice"], default: "fast" } } } });
+  const process: ProcessHandle = { kind: "process", pid: decodeProcessId(1), stdin: new WritableStream(), stdout: new ReadableStream(), stderr: new ReadableStream(), exit: new Promise(() => undefined), kill: () => Promise.resolve() };
+  const starts: { readonly spec: PipeJSProcessSpec; readonly launch: RunnerHostLaunch }[] = [];
+  owner.start.mockImplementation((_vm, spec, launch) => { starts.push({ spec, launch }); return Promise.resolve(process); });
+  await spawnModule({ spawnJS: () => Promise.reject(new Error("spawnModule must not use the public spawnJS")) }, moduleHandle(release.manifest, { release: release.descriptor.release, adapter: release.descriptor.adapter, artifacts: release.descriptor.artifacts }), { args: ["in.md", "out.html"], options: { mode: "private-choice" } });
+  const start = starts[0];
+  if (start === undefined) throw new Error("spawnModule started nothing");
+  // The real engine admits the process with the arguments spawnModule gave it, and the driver starts the runner.
+  const f = await fixture(start.spec.args ?? []);
+  vi.stubGlobal("self", { location: new URL("https://app.test/"), crossOriginIsolated: true });
+  vi.stubGlobal("Worker", StartedWorker);
+  const workers = new JsProcessWorkers({ runtime: f.runtime, active: () => true, wake: () => {} });
+  try {
+    if (f.request.program.kind !== "worker") throw new Error("Expected a worker launch");
+    expect(workers.register("https://app.test/assets/module-runner/runner.worker.js", start.launch)).toBe(Number(f.request.program.token));
+    const running = workers.run(f.request, new AbortController().signal);
+    expect(StartedWorker.latest?.bootstrap["launch"]).toEqual(start.launch);
+    expect(parseLaunchArgument(start.launch.descriptor).options).toEqual({ mode: "private-choice" });
+    // What any guest program reads: the launcher and the caller's arguments, nothing of the description or its options.
+    const { send } = operations(f);
+    const cmdline = new TextDecoder().decode(send(files.read(send(files.open(`/proc/${String(f.pid)}/cmdline`, 0, 0)), 4096)));
+    expect(cmdline.split("\0")).toEqual(["js-process", "in.md", "out.html", ""]);
+    for (const secret of ["private-choice", release.descriptor.adapter.sha256, "manifest"]) expect(cmdline).not.toContain(secret);
+    workers.dispose(); await running;
+  } finally { workers.dispose(); await f.runtime.jitRuntime.dispose(); }
 });

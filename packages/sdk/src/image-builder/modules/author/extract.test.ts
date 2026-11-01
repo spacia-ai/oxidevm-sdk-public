@@ -119,6 +119,45 @@ describe("extractManifest", () => {
     expect(one(module(BASE.replace("license:", "surprise: true, license:"))).code).toBe("manifest-invalid");
   });
 
+  describe("commands", () => {
+    const withCommands = (list: string): string => BASE.replace("requires:", `commands: ${list}, requires:`);
+
+    it("reads a literal list of names into a sorted set right after process", () => {
+      const declaration = extractManifest(module(withCommands(`["python3", "python"]`)), "module.ts");
+      expect(declaration).toMatchObject({ commands: ["python", "python3"] });
+      expect(Object.keys(declaration)).toEqual(["id", "version", "abi", "artifacts", "process", "commands", "requires", "license"]);
+      expect(extractManifest(module(withCommands(`["demo"] as const`)), "module.ts")).toMatchObject({ commands: ["demo"] });
+    });
+
+    it.each([
+      ["a reference", "NAMES", "manifest.commands", "a reference to NAMES"],
+      ["a spread", "[...NAMES]", "manifest.commands[0]", "a spread"],
+      ["a call", "names()", "manifest.commands", "a call"],
+      ["a mapped list", `["demo"].map(name => name)`, "manifest.commands", "a call"],
+      ["a computed name", "[`demo${SUFFIX}`]", "manifest.commands[0]", "template with substitutions"],
+      ["a referenced name", `["demo", NAME]`, "manifest.commands[1]", "a reference to NAME"],
+    ])("refuses %s, because the build reads commands without running code", (_label, list, path, fragment) => {
+      const found = one(module(withCommands(list)));
+      expect(found.code).toBe("manifest-literal");
+      expect(found.message).toContain(path);
+      expect(found.message).toContain(fragment);
+    });
+
+    it("reports commands on a service or an invalid list with the decoder's reason", () => {
+      const service = `{ id: "demo", version: "1.0.0", abi: "raw", artifacts: [], process: { kind: "service" }, expose: { sql: { kind: "unix", path: "/tmp/demo.sock", protocol: "demo/1" } }, commands: ["demo"], requires: { host: [] }, license: { spdx: "MIT" } }`;
+      const cases: readonly (readonly [string, RegExp])[] = [
+        [module(service), /^commands: a service cannot declare commands/u],
+        [module(withCommands(`["Demo"]`)), /^commands: "Demo" is not a command name/u],
+        [module(withCommands("[]")), /^commands: must name at least one command/u],
+      ];
+      for (const [source, message] of cases) {
+        const found = one(source);
+        expect(found.code).toBe("manifest-invalid");
+        expect(found.message).toMatch(message);
+      }
+    });
+  });
+
   it("refuses a source larger than the limit before parsing it", () => {
     const found = one(`// ${"x".repeat(MAX_MODULE_SOURCE_BYTES)}\n`);
     expect(found.code).toBe("module-source");

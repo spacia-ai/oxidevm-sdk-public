@@ -19,6 +19,16 @@ it("round-trips a descriptor through its argument form", async () => {
   expect(parseLaunchArgument(encodeLaunchArgument(service.descriptor)).workspaceId).toBe("ws-1");
 });
 
+it("accepts a manifest that declares commands and keeps them through the argument form, but not on a service", async () => {
+  const { descriptor } = await release();
+  const decoded = decodeLaunchDescriptor({ ...descriptor, manifest: { ...descriptor.manifest, commands: ["tool-b", "tool"] } });
+  expect(decoded.manifest).toMatchObject({ commands: ["tool", "tool-b"] });
+  expect(parseLaunchArgument(encodeLaunchArgument(decoded))).toEqual(decoded);
+  const service = await buildRelease({ adapter: "export default () => ({ protocols: {} });", declaration: SERVICE_DECLARATION, options: {}, workspaceId: "ws-1" });
+  const refused = thrown(() => decodeLaunchDescriptor({ ...service.descriptor, manifest: { ...service.descriptor.manifest, commands: ["db"] } }));
+  expect(refused).toMatchObject({ code: "INVALID_ARGUMENT", detail: { reason: "wasm-manifest-invalid" }, message: expect.stringMatching(/commands: a service cannot declare commands/u) as unknown });
+});
+
 it("rejects a pin that disagrees with module.json, a missing pin and an unknown artifact", async () => {
   const { descriptor } = await release();
   const wrongHash = { ...descriptor, artifacts: { "tool.wasm": { ...descriptor.artifacts["tool.wasm"], sha256: "0".repeat(64) } } };

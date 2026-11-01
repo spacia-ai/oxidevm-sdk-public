@@ -3,6 +3,7 @@ import { VMError } from "../../runtime/errors.js";
 import { decodeSHA256 } from "../../values.js";
 import { decoding, invalid } from "../../wasm/decode-support.js";
 import type { WasmReport } from "../../wasm/inspect-types.js";
+import { decodeCommands } from "../../wasm/manifest-parts.js";
 import { DOCTOR_CHECKS, type WasmDoctorEntry, type WasmDoctorReport } from "./doctor.js";
 
 /** How the person's agreement was obtained for a `wasm add`. */
@@ -18,6 +19,8 @@ export interface WasmAddResult {
   readonly license: { readonly spdx: string; readonly copyleft: boolean };
   /** Host capabilities the module is granted. */
   readonly capabilities: readonly string[];
+  /** The commands the module declares, run as `/usr/local/bin/<name>` once an application turns them on; absent when it declares none. */
+  readonly commands?: readonly string[];
   /** Authority this release asks for that the installed one did not, and the reverse. */
   readonly added: readonly string[];
   readonly removed: readonly string[];
@@ -48,14 +51,15 @@ function choice<T extends string>(value: unknown, label: string, allowed: readon
 export function decodeWasmAddResult(value: unknown): WasmAddResult {
   return decoding("wasm add result", () => {
     const input = record(value, "wasm add result");
-    exactKeys(input, ["id", "version", "source", "release", "status", "consent", "license", "capabilities", "added", "removed", "generatedFile"]);
+    exactKeys(input, ["id", "version", "source", "release", "status", "consent", "license", "capabilities", "added", "removed", "generatedFile"], ["commands"]);
     const license = record(input["license"], "license");
     exactKeys(license, ["spdx", "copyleft"]);
     return {
       id: string(input["id"], "id"), version: string(input["version"], "version"), source: string(input["source"], "source"), release: decodeSHA256(input["release"], "release"),
       status: choice(input["status"], "status", ["added", "updated", "unchanged"]), consent: choice(input["consent"], "consent", ["none-needed", "trusted-source", "approved"]),
       license: { spdx: string(license["spdx"], "license"), copyleft: boolean(license["copyleft"], "copyleft") },
-      capabilities: strings(input["capabilities"], "capabilities", 64), added: strings(input["added"], "added", 256), removed: strings(input["removed"], "removed", 256), generatedFile: string(input["generatedFile"], "generatedFile"),
+      capabilities: strings(input["capabilities"], "capabilities", 64), ...(input["commands"] === undefined ? {} : { commands: decodeCommands(input["commands"]) }),
+      added: strings(input["added"], "added", 256), removed: strings(input["removed"], "removed", 256), generatedFile: string(input["generatedFile"], "generatedFile"),
     };
   });
 }
