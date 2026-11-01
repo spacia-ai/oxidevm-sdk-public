@@ -283,6 +283,38 @@ something is wrong, and writes nothing. Warnings (a dependency that mentions
 `window`, `import.meta` or `eval`; a bundled package your `license.spdx` does not
 name) do not stop the build, but read them. `--check` verifies without writing.
 
+Then test the build in a real browser:
+
+```sh
+oxidevm wasm test
+oxidevm wasm test --arg 2 --arg 3
+oxidevm wasm test --image image/dist --image-trust image/author.public.json
+```
+
+`oxidevm wasm test` starts the module in a Userspace VM with the pinned engine and
+checks the runner's contract, not the module's own behaviour (keep that in your
+tests). Every property is `passed`, `failed` or `not-applicable`, with a reason:
+
+| Property | Holds when |
+| --- | --- |
+| `integrity` | a served copy with one altered adapter byte is refused with status `121` |
+| `exit-range` | a command exits with a status from 0 to 119 (`--arg` passes its arguments) |
+| `ready` | a service writes its ready line and its endpoints match `expose` |
+| `endpoints` | every endpoint accepts a connection |
+| `duplicate-start` | a second start beside the first is refused with status `124` |
+| `snapshot-refused` | a restore point is refused while the module runs and works after it stops |
+| `eof-stop` | the service exits `0` within 20 seconds of the end of its input |
+| `restart` | the service starts and serves again after a stop |
+| `kill-recover` | the service starts and serves again after a kill, replacing its stale socket |
+| `declared-host` | the adapter reached for no host member its `requires.host` did not declare |
+
+The runner reports an undeclared member once, as a `{"oxidevm":"warning",...}`
+line on standard error, and still hands the adapter `undefined` for it. Without
+`--image` the test boots the public starter image; name another with `--image`
+when the module needs programs the starter does not have. `--option name=value`
+sets an option (a JSON number, boolean or array stays typed). A failed property
+exits `3`.
+
 Release by tag. `oxidevm wasm release` builds and prints the steps; it runs none:
 
 1. tag the commit `v<version>` and push the tag;
@@ -318,8 +350,9 @@ they came from; do not edit them.
 | `oxidevm wasm inspect <file.wasm>` | imports, exports, memory and the ABI a binary appears to use |
 | `oxidevm wasm init <directory>` | create a module project |
 | `oxidevm wasm build` | build `dist/` from `module.ts`; `--check` writes nothing |
+| `oxidevm wasm test` | run the runner-contract properties against `dist/` in a real browser |
 | `oxidevm wasm release` | build, then print the steps that publish it |
 
 Every command accepts `--json`. Exit status `0` is success, `2` an invalid
-argument or unavailable feature, `3` a failed report (doctor, build, release), `130`
+argument or unavailable feature, `3` a failed report (doctor, build, release, test), `130`
 and `143` an interrupt.

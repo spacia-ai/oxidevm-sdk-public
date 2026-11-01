@@ -24,9 +24,9 @@ Modules start Userspace JS processes, so an application runs them only on a self
 
 ## Verify before claiming anything
 
-Run, in order, and report each result: `pnpm run check` (types, lint, and `oxidevm wasm build --check`), `pnpm test`, then `oxidevm wasm build`. A failed build exits 3 and lists findings with file and line; fix errors, and read warnings (dependency code that mentions `window`, `import.meta` or `eval`; imports replaced with empty modules; a bundled package the license does not name).
+Run, in order, and report each result: `pnpm run check` (types, lint, and `oxidevm wasm build --check`), `pnpm test`, `oxidevm wasm build`, then `oxidevm wasm test` (the runner's rules checked in a real browser; give a command's arguments with `--arg`). A failed build exits 3 and lists findings with file and line; fix errors, and read warnings (dependency code that mentions `window`, `import.meta` or `eval`; imports replaced with empty modules; a bundled package the license does not name). A failed `wasm test` property also exits 3 and says why; `declared-host` failing means the adapter reached for a host member `requires.host` does not declare. If `oxidevm wasm --help` does not list `wasm test`, the installed CLI predates it: skip it and say so.
 
-Unit tests and a successful build do not prove a module works. Only running it through `spawnModule` on a self-hosted runtime in a browser does. If that was not run, say the module is unverified at run time.
+Unit tests, a successful build and `oxidevm wasm test` do not prove a module does its job. Only running it through `spawnModule` on a self-hosted runtime in a browser does. If that was not run, say the module is unverified at run time.
 
 ## Upstream code and licenses
 

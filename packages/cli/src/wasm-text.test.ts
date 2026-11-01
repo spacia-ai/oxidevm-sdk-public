@@ -1,6 +1,6 @@
 import type { ConsentCard } from "@oxidevm/sdk/image-builder";
 import { describe, expect, it } from "vitest";
-import { consentText, printable, type ConsentView } from "./wasm-text.js";
+import { consentText, printable, testText, type ConsentView } from "./wasm-text.js";
 
 const CARD: ConsentCard = {
   id: "tool", version: "1.0.0", source: "github:acme/tool@v1.0.0", release: "r".repeat(64), license: { spdx: "MIT", copyleft: false },
@@ -93,5 +93,20 @@ describe("text that came from a module, a file or a Wasm binary", () => {
     expect(text).toContain("\\u{1b}[4A");
     // A line break inside one value is shown as such, so it cannot start a row of its own.
     expect(text.split("\n").some(line => line.startsWith("host "))).toBe(false);
+  });
+});
+
+describe("the wasm test report", () => {
+  it("lists every property with its status and message and sums up the failures", () => {
+    const text = testText({
+      schemaVersion: 1, result: "failed", module: { id: "kv", version: "1.0.0", kind: "service", release: "0123456789abcdef" }, sdkVersion: "0.0.8", engineRelease: "sha256:e",
+      browser: { name: "chromium", version: "140.0" }, image: { manifestSHA256: "d" },
+      properties: [
+        { property: "integrity", status: "passed", elapsedMs: 3 },
+        { property: "exit-range", status: "not-applicable", message: "a service is stopped, not run to completion", elapsedMs: 0 },
+        { property: "eof-stop", status: "failed", message: "it did not exit within 20 s of end of input and was killed", elapsedMs: 20_000 },
+      ],
+    });
+    expect(text).toBe("kv 1.0.0 (service, release 0123456789ab) in chromium 140.0\nok    integrity\nn/a   exit-range: a service is stopped, not run to completion\nFAIL  eof-stop: it did not exit within 20 s of end of input and was killed\n1 property failed.\n");
   });
 });

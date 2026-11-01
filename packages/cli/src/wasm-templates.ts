@@ -4,7 +4,7 @@ import { VMError } from "@oxidevm/sdk";
 import { WasmBuildFailure, extractManifest, getSDKRelease, inspectWasm } from "@oxidevm/sdk/image-builder";
 import { file, newDirectory } from "./template-files.js";
 import { registryConfig } from "./templates.js";
-import { ADD_WASM, ESLINT_CONFIG, GITIGNORE, OPERANDS_SOURCE, OPERANDS_TEST, TEST_TSCONFIG, TSCONFIG, agentsFile, ciWorkflow, moduleTest, noticeFile, readmeFile, releaseWorkflow } from "./wasm-template-files.js";
+import { ADD_WASM, ESLINT_CONFIG, GITIGNORE, TEMPLATE_PLAYWRIGHT, OPERANDS_SOURCE, OPERANDS_TEST, TEST_TSCONFIG, TSCONFIG, agentsFile, ciWorkflow, moduleTest, noticeFile, readmeFile, releaseWorkflow } from "./wasm-template-files.js";
 
 export type ModuleKind = "command" | "service";
 
@@ -157,12 +157,14 @@ ${MANIFEST_HEAD(id, subject, "service", "").replace("expose: { main:", "expose: 
 `;
 }
 
-function packageJson(id: string): string {
+function packageJson(id: string, kind: "command" | "service"): string {
   const version = getSDKRelease().sdkVersion;
+  // The command template adds two numbers; without them its main stops at the usage error before the interesting path.
+  const conformance = kind === "command" ? "oxidevm wasm build && oxidevm wasm test --arg 2 --arg 3" : "oxidevm wasm build && oxidevm wasm test";
   return `${JSON.stringify({
     name: id, private: true, license: "Apache-2.0", type: "module",
-    scripts: { build: "oxidevm wasm build", check: "tsc --noEmit && tsc --noEmit -p test && eslint . --max-warnings 0 && oxidevm wasm build --check", release: "oxidevm wasm release", test: "vitest run" },
-    devDependencies: { "@eslint/js": "10.0.1", "@oxidevm/cli": version, "@oxidevm/sdk": version, "@types/node": "24.13.3", eslint: "10.7.0", typescript: "6.0.3", "typescript-eslint": "8.65.0", vitest: "3.2.4" },
+    scripts: { build: "oxidevm wasm build", check: "tsc --noEmit && tsc --noEmit -p test && eslint . --max-warnings 0 && oxidevm wasm build --check", release: "oxidevm wasm release", test: "vitest run", "test:conformance": conformance },
+    devDependencies: { "@eslint/js": "10.0.1", "@oxidevm/cli": version, "@oxidevm/sdk": version, "@types/node": "24.13.3", eslint: "10.7.0", playwright: TEMPLATE_PLAYWRIGHT, typescript: "6.0.3", "typescript-eslint": "8.65.0", vitest: "3.2.4" },
   }, null, 2)}\n`;
 }
 
@@ -185,7 +187,7 @@ export async function initializeModule(directory: string, options: { readonly ki
   const files = new Map<string, string | Uint8Array>([
     ["module.ts", source],
     [`upstream/${subject.artifact}`, subject.bytes],
-    ["package.json", packageJson(id)], ["tsconfig.json", TSCONFIG], ["test/tsconfig.json", TEST_TSCONFIG], ["test/module.test.ts", moduleTest(id, options.kind)], ["eslint.config.js", ESLINT_CONFIG], [".gitignore", GITIGNORE],
+    ["package.json", packageJson(id, options.kind)], ["tsconfig.json", TSCONFIG], ["test/tsconfig.json", TEST_TSCONFIG], ["test/module.test.ts", moduleTest(id, options.kind)], ["eslint.config.js", ESLINT_CONFIG], [".gitignore", GITIGNORE],
     ["README.md", readmeFile(id, options.kind)], ["AGENTS.md", agentsFile(id)],
     ["LICENSE", await readFile(new URL("../LICENSE", import.meta.url), "utf8")], ["NOTICE", noticeFile(id)],
     [".github/workflows/ci.yml", ciWorkflow(npmrc !== undefined)], [".github/workflows/release.yml", releaseWorkflow(npmrc !== undefined)],

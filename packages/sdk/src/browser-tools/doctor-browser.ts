@@ -7,16 +7,21 @@ import { decodeDoctorReport, DOCTOR_CHECKS } from "../contracts/doctor.js";
 import { record } from "../runtime/decode.js";
 import { abortIfRequested } from "../image-builder/tools.js";
 import { hash } from "../image-builder/files.js";
-import { VMError } from "../runtime/errors.js";
+import { browserStartFailure, navigationFailure } from "../image-builder/doctor-failures.js";
 
 export async function runDoctorBrowser(url: string, options: DoctorOptions, profile: string, assets: readonly { readonly relative: string; readonly sha256: string }[], release: string): Promise<unknown> {
   const browserType = { chromium, firefox, webkit }[options.browser]; let context: BrowserContext | undefined;
   const interrupt = () => { void context?.close().catch(() => undefined); };
   options.signal?.addEventListener("abort", interrupt, { once: true });
   try {
-    abortIfRequested(options.signal); context = await browserType.launchPersistentContext(profile, { headless: true });
-    const page = await context.newPage(); const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    if (response === null || !response.ok()) throw new VMError("STORAGE_ERROR", "doctor could not load the application URL");
+    abortIfRequested(options.signal);
+    try { context = await browserType.launchPersistentContext(profile, { headless: true }); }
+    catch { abortIfRequested(options.signal); throw browserStartFailure(options.browser); }
+    const page = await context.newPage();
+    let response: Awaited<ReturnType<typeof page.goto>>;
+    try { response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 }); }
+    catch (error) { abortIfRequested(options.signal); throw navigationFailure(url, error); }
+    if (response === null || !response.ok()) throw navigationFailure(url, response?.status());
     const baseValue = await page.locator('meta[name="oxidevm-assets"]').getAttribute("content").catch(() => null);
     const base = new URL(baseValue ?? "/oxidevm/", url); let integrity = true;
     // Hash actual deployed scripts against this installed SDK's immutable asset set.

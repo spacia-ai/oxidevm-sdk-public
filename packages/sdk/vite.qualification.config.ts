@@ -5,7 +5,7 @@ export default defineConfig({ plugins: [productionJavaScript()],
   root: import.meta.dirname,
   base: "./",
   build: { outDir: "assets/qualification", emptyOutDir: true, sourcemap: false, assetsInlineLimit: 0,
-    rollupOptions: { preserveEntrySignatures: "strict", input: { client: resolve(import.meta.dirname, "src/browser-test/client.ts") },
+    rollupOptions: { preserveEntrySignatures: "strict", input: { client: resolve(import.meta.dirname, "src/browser-test/client.ts"), "wasm-client": resolve(import.meta.dirname, "src/browser-test/wasm/client.ts") },
       output: { entryFileNames: "[name].js" } } },
   worker: { format: "es", plugins: () => [productionJavaScript()] },
 });

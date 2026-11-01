@@ -20,7 +20,7 @@ it("accepts the exact oxidevm wasm commands in the module guide", async () => {
     expect(invocation.kind).toBe("command");
     return invocation.kind === "command" ? invocation.command : "help";
   });
-  expect(commands).toEqual(["wasm add", "wasm init", "wasm init", "wasm init", "wasm build"]);
+  expect(commands).toEqual(["wasm add", "wasm init", "wasm init", "wasm init", "wasm build", "wasm test", "wasm test", "wasm test"]);
 });
 
 it("creates the prebuilt starter with the short npx or bunx command", () => {
@@ -104,4 +104,22 @@ it("rejects module commands that are missing input, repeat a flag or use another
   ];
   for (const words of bad) expect(() => parseArguments(words, {}), words.join(" ")).toThrow();
   expect(() => parseArguments(["add", "x"], {})).toThrow();
+});
+
+it("parses wasm test with repeated arguments and typed options", () => {
+  expect(parseArguments(["wasm", "test"], {})).toMatchObject({ command: "wasm test", project: ".", args: [], options: {}, browser: "chromium" });
+  expect(parseArguments(["wasm", "test", "--project", "mod", "--module", "out", "--arg", "/workspace/in.txt", "--arg", "", "--option", "greeting=hi", "--option", "count=3", "--option", "fast=true", "--option", "packages=[\"pandas\"]", "--browser", "firefox", "--engine-dir", "engine", "--timeout-ms", "5000"], {}))
+    .toMatchObject({ project: "mod", module: "out", args: ["/workspace/in.txt", ""], options: { greeting: "hi", count: 3, fast: true, packages: ["pandas"] }, browser: "firefox", engineDir: "engine", timeoutMs: 5000 });
+  expect(parseArguments(["wasm", "test", "--image", "dist", "--image-trust", "author.public.json"], {})).toMatchObject({ image: { bundle: "dist", trust: "author.public.json" } });
+  expect(parseArguments(["wasm", "test", "--option", "note={\"a\":1}"], {})).toMatchObject({ options: { note: "{\"a\":1}" } });
+  expect(parseArguments(["wasm", "test", "--help"], {})).toMatchObject({ kind: "help", command: "wasm test" });
+});
+
+it("rejects wasm test with an image but no trust, malformed options, positionals or another command's flag", () => {
+  const bad: readonly (readonly string[])[] = [
+    ["wasm", "test", "--image", "dist"], ["wasm", "test", "--image-trust", "a.json"], ["wasm", "test", "extra"], ["wasm", "test", "--option", "novalue"],
+    ["wasm", "test", "--option", "=x"], ["wasm", "test", "--option", "1bad=x"], ["wasm", "test", "--option", "a=1", "--option", "a=2"], ["wasm", "test", "--yes"],
+    ["wasm", "test", "--browser", "lynx"], ["wasm", "test", "--timeout-ms", "soon"], ["wasm", "test", "--project", "a", "--project", "b"],
+  ];
+  for (const words of bad) expect(() => parseArguments(words, {}), words.join(" ")).toThrow();
 });

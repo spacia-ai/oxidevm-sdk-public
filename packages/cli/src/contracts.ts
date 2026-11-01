@@ -1,5 +1,5 @@
 import type { RuntimeMode, SHA256, VMErrorCode } from "@oxidevm/sdk";
-import type { ImageDistribution, ImageInspection, ImagePackReport, ImageTestReport,SnapshotBuildResult,SnapshotTestReport,SnapshotInspectResult, WasmAddResult, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult } from "@oxidevm/sdk/image-builder";
+import type { ImageDistribution, ImageInspection, ImagePackReport, ImageTestReport,SnapshotBuildResult,SnapshotTestReport,SnapshotInspectResult, WasmAddResult, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult, WasmTestReport } from "@oxidevm/sdk/image-builder";
 
 export type DoctorCheck =
   | "secure-context" | "cross-origin-isolation" | "wasm-features" | "worker-load"
@@ -41,6 +41,7 @@ export interface CliResultMap {
   readonly "wasm build": WasmBuildResult;
   readonly "wasm release": WasmReleaseResult;
   readonly "wasm init": WasmInitResult;
+  readonly "wasm test": WasmTestReport;
   readonly "snapshot init":{readonly directory:string;readonly recipePath:string;readonly mode:RuntimeMode;readonly name:string;readonly files:readonly string[]};
   readonly "snapshot build":SnapshotBuildResult;
   readonly "snapshot pack":SnapshotBuildResult;

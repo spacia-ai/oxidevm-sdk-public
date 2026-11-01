@@ -1,4 +1,4 @@
-import type { AddPreview, ConsentCard, WasmAddResult, WasmBuildFinding, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult } from "@oxidevm/sdk/image-builder";
+import type { AddPreview, ConsentCard, WasmAddResult, WasmBuildFinding, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult, WasmTestReport } from "@oxidevm/sdk/image-builder";
 import type { WasmInitResult, WasmReleaseResult } from "./contracts.js";
 
 const megabytes = (bytes: number): string => bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -106,4 +106,10 @@ export function releaseText(result: WasmReleaseResult): string {
 
 export function initText(result: WasmInitResult): string {
   return `Created ${result.directory}: a ${result.kind} module named ${result.id} (abi ${result.abi}), ${String(result.files.length)} files.\n\nNext:\n  cd ${result.directory}\n  pnpm install\n  pnpm run check && pnpm test\n  pnpm run build\n`;
+}
+
+export function testText(report: WasmTestReport): string {
+  const lines = report.properties.map(entry => `${entry.status === "passed" ? "ok    " : entry.status === "failed" ? "FAIL  " : "n/a   "}${entry.property}${entry.message === undefined ? "" : `: ${entry.message}`}`);
+  const failed = report.properties.filter(entry => entry.status === "failed").length;
+  return `${report.module.id} ${report.module.version} (${report.module.kind}, release ${report.module.release.slice(0, 12)}) in ${report.browser.name} ${report.browser.version}\n${lines.join("\n")}\n${failed === 0 ? "All applicable properties passed." : `${String(failed)} propert${failed === 1 ? "y" : "ies"} failed.`}\n`;
 }

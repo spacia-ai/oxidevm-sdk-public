@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/spacia-ai/oxidevm-skills",
-  "revision": "136b4d227f31825497a211f6d95424077a9e0c2c",
+  "revision": "8c5c6969ea97e431914ab03b231a280675f230df",
   "skillsVersion": "0.0.6",
   "files": [
     {
@@ -14,7 +14,7 @@
     },
     {
       "path": "oxidevm-module-author/SKILL.md",
-      "sha256": "5af73cb41251198ef26996b4ca79983c12477c8c3bdba0abf07a0a4f20a912f1"
+      "sha256": "ecc924579ab1461fbd7163cb6227e362d5145f07a1d949392e6e6220cb4ee9e8"
     },
     {
       "path": "oxidevm-module-author/agents/openai.yaml",

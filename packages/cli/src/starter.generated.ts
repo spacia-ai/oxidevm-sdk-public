@@ -1,12 +1,12 @@
 // Generated from immutable, independently authenticated release inputs.
 export const starterRelease: unknown = {
   "schemaVersion": 2,
-  "sdkVersion": "0.0.7",
-  "engineRelease": "dd947f303eadafab05b4bc542aba3cdd879e330310cfa1aee8e8db32ef019c1d",
+  "sdkVersion": "0.0.8",
+  "engineRelease": "38288e4b44dbc46cbaceb623291df267029e4b03462ee47b926add687a4131ac",
   "engineCompliance": {
-    "url": "https://cdn.oxidevm.dev/engine/dd947f303eadafab05b4bc542aba3cdd879e330310cfa1aee8e8db32ef019c1d/compliance/a7c2741b1cea6b9a9f5412f945414046ed74744cd35ee67430cf7c8ee84c0cad/compliance.json",
+    "url": "https://cdn.oxidevm.dev/engine/38288e4b44dbc46cbaceb623291df267029e4b03462ee47b926add687a4131ac/compliance/780494f3bab493908dd18a13dbc5cde552e0c2b413dffb4c376a70d9633cdf20/compliance.json",
     "bytes": 746,
-    "sha256": "a7c2741b1cea6b9a9f5412f945414046ed74744cd35ee67430cf7c8ee84c0cad"
+    "sha256": "780494f3bab493908dd18a13dbc5cde552e0c2b413dffb4c376a70d9633cdf20"
   },
   "image": {
     "mode": "userspace",
