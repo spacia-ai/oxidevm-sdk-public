@@ -20,6 +20,11 @@ export const wasmHelp = `
     Reads the manifest from module.ts without running it, bundles the adapter into one file, pins every artifact and
     writes module.json, adapter.mjs, the artifacts and SHA256SUMS to dist/. --check verifies and writes nothing. Exits 3
     when it finds errors.
+  wasm test [--project <directory>] [--module <dist>] [--image <bundle> --image-trust <A.public.json>] [--arg <value>]...
+            [--option <name=value>]... [--browser chromium|firefox|webkit] [--engine-dir <release>] [--timeout-ms <ms>]
+    Runs the runner-contract properties against the built module (dist/ by default) in a real browser: integrity, exit
+    status, readiness, endpoints, duplicate start, snapshots, stop on end of input, restart, recovery after a kill and
+    declared capabilities. Uses the public starter image unless --image names another. Exits 3 when a property fails.
   wasm release [--project <directory>] [--out <directory>] [--module <file>] [--repo <owner/name>]
     Builds, then prints the steps that publish the build as a GitHub release: tag, draft, verify, publish. It runs none of them.
 

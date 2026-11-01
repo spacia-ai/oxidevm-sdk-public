@@ -131,6 +131,12 @@ const MANUAL_NOTE = `# This workflow starts on request only. The @oxidevm packag
 `;
 const MANUAL_TRIGGER = "on:\n  workflow_dispatch:\n";
 
+/**
+ * The Playwright version \`oxidevm wasm test\` drives, which is the SDK's own dependency. The template declares the same
+ * version so \`pnpm exec playwright install\` fetches the browser build that version expects; a test keeps them equal.
+ */
+export const TEMPLATE_PLAYWRIGHT = "1.61.1";
+
 export function ciWorkflow(manual: boolean): string {
   const trigger = manual ? MANUAL_TRIGGER : "on:\n  push:\n    branches: [main]\n  pull_request:\n";
   return `${manual ? MANUAL_NOTE : ""}name: ci
@@ -150,6 +156,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
       - run: pnpm test
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run test:conformance
 `;
 }
 
@@ -230,7 +238,7 @@ This repository is an OxideVM WebAssembly module. \`module.ts\` holds the whole 
 - Import types from \`@oxidevm/sdk/wasm\` with \`import type\`; the only value import is \`defineModule\`. The adapter ships as one self-contained file.
 - No \`any\`, no \`@ts-ignore\`, no non-null assertions. Treat everything from outside (arguments, bytes, WebAssembly exports) as \`unknown\` and check it.
 - Artifacts are files in this repository named by \`from\`. Pin upstream binaries by hash where they come from, and keep their licenses and notices in this repository.
-- Verify with \`pnpm run check\` (types, lint, and \`oxidevm wasm build --check\`), then \`pnpm test\`.
+- Verify with \`pnpm run check\` (types, lint, and \`oxidevm wasm build --check\`), then \`pnpm test\`, then \`pnpm run test:conformance\` (\`oxidevm wasm test\` in a real browser).
 - Release by tag: \`pnpm run release\` prints the steps.
 `;
 }
@@ -259,6 +267,7 @@ The command shows what the module declares and asks before installing it.
 pnpm install
 pnpm run check   # types, lint, and the same checks the build makes
 pnpm test        # unit tests of your own code
+pnpm run test:conformance   # oxidevm wasm test: the runner's contract, in Chromium
 pnpm run build   # writes dist/: module.json, adapter.mjs, your artifacts and SHA256SUMS
 \`\`\`
 

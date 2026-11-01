@@ -14,8 +14,9 @@ import {snapshotHelp,snapshotCommandHelp} from "./snapshot-help.js";
 import {snapshotFailureDetail,snapshotFailureText,cancellationExit} from "./snapshot-errors.js";
 import { runWasmCommand } from "./wasm-commands.js";
 import { wasmCommandHelp, wasmHelp } from "./wasm-help.js";
-import { addText, buildText, doctorText, initText, inspectText, printable, releaseText, stageText } from "./wasm-text.js";
+import { addText, buildText, doctorText, initText, inspectText, printable, releaseText, stageText, testText } from "./wasm-text.js";
 import { wasmFailureDetail } from "./wasm-errors.js";
+import { failureMessage } from "./failure.js";
 
 export interface CLIEnvironment {
   readonly directory: string;
@@ -26,13 +27,13 @@ export interface CLIEnvironment {
   /** Asks a yes-or-no question of a person at a terminal; absent when nobody can answer. */
   confirm?(question: string): Promise<boolean>;
 }
-const help = `oxidevm — Linux in your browser\n\nCommands:\n  init <directory> [--start] [--use-bun]\n    Creates the Python + pandas starter using the hosted runtime and signed image.\n    Advanced: [--mode system|userspace] [--image <bundle> --image-trust <file>]\n              [--skip-assets | --engine-dir <release>] [--sdk-archive <sdk.tgz> --cli-archive <cli.tgz>]\n  assets install [--config oxidevm.config.ts] [--image <bundle> --trust <file>] [--reference <file>] [--engine-dir <release>]\n  doctor [url] [--browser chromium|firefox|webkit] [--preview-origin <origin>]\n  image init <directory> --mode system|userspace\n  image keygen --out <author.pem>\n  image build <recipe.ts> --signing-key <author.pem> [--distribution]\n  image test <bundle> --trust <author.public.json> [--browser chromium|firefox|webkit] [--engine-dir <release>]\n  image inspect <bundle> [--trust <author.public.json>]\n  image pack <bundle> --trust <author.public.json>\n\nEvery command accepts --json; --start runs interactively and cannot use --json. Paths resolve from the current directory.\nNormal init installs no local engine files. Development and production use run.oxidevm.dev.\nSelf-hosting is an explicit commercial option: --engine-dir selects a local pinned release.\nExplicit assets/image test commands can use OXIDEVM_ENGINE_DIR or the verified engine cache.\nExample: oxidevm init app --start\n`;
+const help = `oxidevm — Linux in your browser\n\nCommands:\n  init <directory> [--start] [--use-bun]\n    Creates the Python + pandas starter using the hosted runtime and signed image.\n    Advanced: [--mode system|userspace] [--image <bundle> --image-trust <file>]\n              [--skip-assets | --engine-dir <release>] [--sdk-archive <sdk.tgz> --cli-archive <cli.tgz>]\n  assets install [--config oxidevm.config.ts] [--image <bundle> --trust <file>] [--reference <file>] [--engine-dir <release>]\n  doctor [url] [--browser chromium|firefox|webkit] [--preview-origin <origin>]\n    Checks a running application in a real browser (default http://localhost:5173/); start it first.\n  image init <directory> --mode system|userspace\n  image keygen --out <author.pem>\n  image build <recipe.ts> --signing-key <author.pem> [--distribution]\n  image test <bundle> --trust <author.public.json> [--browser chromium|firefox|webkit] [--engine-dir <release>]\n  image inspect <bundle> [--trust <author.public.json>]\n  image pack <bundle> --trust <author.public.json>\n\nEvery command accepts --json; --start runs interactively and cannot use --json. Paths resolve from the current directory.\nNormal init installs no local engine files. Development and production use run.oxidevm.dev.\nSelf-hosting is an explicit commercial option: --engine-dir selects a local pinned release.\nExplicit assets/image test commands can use OXIDEVM_ENGINE_DIR or the verified engine cache.\nExample: oxidevm init app --start\n`;
 
 async function execute(invocation: CLIInvocation, io: CLIEnvironment): Promise<CliReport> {
   const path = (value: string) => resolve(io.directory, value); const command = invocation.command;
   switch (command) {
     case "snapshot init":case "snapshot build":case "snapshot pack":case "snapshot test":case "snapshot inspect":return runSnapshotCommand(invocation,io);
-    case "wasm add":case "wasm stage":case "wasm doctor":case "wasm inspect":case "wasm build":case "wasm release":case "wasm init":return runWasmCommand(invocation,io);
+    case "wasm add":case "wasm stage":case "wasm doctor":case "wasm inspect":case "wasm build":case "wasm release":case "wasm init":case "wasm test":return runWasmCommand(invocation,io);
     case "init": {
       const starter = invocation.mode === "userspace" && invocation.image === undefined ? await readStarterInputs(io.directory, getSDKRelease().sdkVersion) : undefined;
       const release = invocation.mode === "userspace" && invocation.image === undefined ? pinnedStarterRelease() : undefined;
@@ -87,14 +88,14 @@ export async function runCLI(arguments_: readonly string[], io: CLIEnvironment):
     const report = decodeCliReport(await execute(invocation, io));
     io.stdout(json ? `${JSON.stringify(report)}\n` : command.startsWith("wasm ") ? printable(successText(report)) : successText(report));
     if (invocation.command === "init" && invocation.start && report.command === "init" && report.kind === "result") await startApplication(report.result.directory, invocation.packageManager, io);
-    const failed = report.kind === "result" && ((report.command === "doctor" || report.command === "image test" || report.command === "snapshot test" || report.command === "wasm doctor" || report.command === "wasm build") && report.result.result === "failed" || report.command === "wasm release" && report.result.build.result === "failed");
+    const failed = report.kind === "result" && ((report.command === "doctor" || report.command === "image test" || report.command === "snapshot test" || report.command === "wasm doctor" || report.command === "wasm build" || report.command === "wasm test") && report.result.result === "failed" || report.command === "wasm release" && report.result.build.result === "failed");
     return failed ? 3 : 0;
   } catch (error) {
     const interrupted = io.signal.aborted;
     const code = interrupted ? "ABORTED" : error instanceof VMError ? error.code : "STORAGE_ERROR";
     // Raw filesystem/tool errors can include author secrets. Emit only normalized SDK context.
     const snapshot=command?.startsWith("snapshot ")===true,wasm=command?.startsWith("wasm ")===true;
-    const message = interrupted ? "command interrupted; owned resources have been cleaned up" : snapshot?"Snapshot command failed; check its phase and reason":error instanceof VMError ? error.message : "operation failed; check the selected files and installed tools";
+    const message = interrupted ? "command interrupted; owned resources have been cleaned up" : snapshot?"Snapshot command failed; check its phase and reason":failureMessage(error);
     const detail=snapshot?snapshotFailureDetail(error):wasm?wasmFailureDetail(error):undefined;
     const report = decodeCliReport({ schemaVersion: 2, kind: "error", command, error: { code, message,...(detail===undefined?{}:{detail}) } });
     io.stdout(json ? `${JSON.stringify(report)}\n` : snapshot&&!interrupted ? snapshotFailureText(code,detail) : `${code}: ${wasm ? printable(message) : message}\n`);
@@ -116,6 +117,7 @@ function successText(report:CliReport):string {
     if(report.command==="wasm build")return buildText(report.result);
     if(report.command==="wasm release")return releaseText(report.result);
     if(report.command==="wasm init")return initText(report.result);
+    if(report.command==="wasm test")return testText(report.result);
   }
   return `${JSON.stringify(report,null,2)}\n`;
 }

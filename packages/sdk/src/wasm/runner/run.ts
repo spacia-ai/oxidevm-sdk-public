@@ -9,7 +9,7 @@ import { parseLaunchArgument, type LaunchDescriptor } from "./descriptor.js";
 import { ModuleFailure } from "./failure.js";
 import { writeGuestFiles } from "./guest-files.js";
 import { AdapterShapeError, commandRun, serviceRun } from "./hooks.js";
-import { buildHost, type LinuxParts } from "./host.js";
+import { buildHost, type LinuxParts, type UndeclaredAccess } from "./host.js";
 import { missingPrerequisites, type BrowserProbe } from "./prerequisites.js";
 import { DEFAULT_CLIENTS, runService } from "./service.js";
 
@@ -57,12 +57,12 @@ async function runCommand(context: RunnerContext, manifest: ResolvedManifest, ho
     await run.close();
   }
   if (typeof status !== "number" || !Number.isInteger(status) || status < 0 || status > MODULE_EXIT.adapterMax) {
-    throw new AdapterShapeError(`${manifest.id}: main must return an integer exit status from 0 to ${String(MODULE_EXIT.adapterMax)}`);
+    throw new AdapterShapeError(`${manifest.id}: main must return an integer exit status from 0 to ${String(MODULE_EXIT.adapterMax)}`, "exit-status");
   }
   return status;
 }
 
-async function start(context: RunnerContext, descriptor: LaunchDescriptor, args: readonly string[], lifecycle: AbortController): Promise<number> {
+async function start(context: RunnerContext, descriptor: LaunchDescriptor, args: readonly string[], lifecycle: AbortController, undeclared: Map<string, UndeclaredAccess>): Promise<number> {
   const { manifest } = descriptor;
   let options;
   try { options = resolveOptions(manifest.options, descriptor.options); }
@@ -75,7 +75,15 @@ async function start(context: RunnerContext, descriptor: LaunchDescriptor, args:
   await artifacts.verifyAll();
   await writeGuestFiles(context.files, manifest, artifacts);
   const factory = adapterFactory(await context.importAdapter(adapter));
-  const { host, log } = buildHost({ linux: context, capabilities: manifest.requires.host, options, artifacts, signal: lifecycle.signal });
+  const { host, log } = buildHost({
+    linux: context, capabilities: manifest.requires.host, options, artifacts, signal: lifecycle.signal,
+    // Reaching for an undeclared member is reported once per member and remembered for the fault report.
+    undeclared: access => {
+      if (undeclared.has(access.member)) return;
+      undeclared.set(access.member, access);
+      void writeLine(context, context.stderr, { oxidevm: "warning", v: 1, kind: "undeclared-capability", ...access }).catch(() => undefined);
+    },
+  });
   const hooks: unknown = await factory(host);
   if (!isServiceDecl(manifest)) return runCommand(context, manifest, hooks, args);
   const run = serviceRun(hooks, Object.keys(manifest.expose));
@@ -102,12 +110,14 @@ async function withExclusiveLock(context: RunnerContext, descriptor: LaunchDescr
 }
 
 /** Turns anything thrown into the exit status and error report the consumer sees. */
-function classify(error: unknown): { readonly status: number; readonly report: Readonly<Record<string, unknown>> } {
+function classify(error: unknown, undeclared: ReadonlyMap<string, UndeclaredAccess>): { readonly status: number; readonly report: Readonly<Record<string, unknown>> } {
   if (error instanceof ModuleFailure) return { status: error.status, report: { kind: error.kind, message: error.message, ...(error.items.length === 0 ? {} : { items: error.items }) } };
   if (error instanceof IntegrityError) return { status: MODULE_EXIT.integrity, report: { kind: "integrity", message: error.message } };
   const message = error instanceof Error ? error.message : "The module failed";
   const stack = error instanceof Error && error.stack !== undefined ? error.stack.slice(0, MAX_STACK) : undefined;
-  return { status: MODULE_EXIT.adapter, report: { kind: "adapter", message, ...(stack === undefined ? {} : { stack }) } };
+  const reached = [...new Set([...undeclared.values()].flatMap(access => access.capabilities))];
+  const fault = error instanceof AdapterShapeError ? error.fault : reached.length > 0 ? "undeclared-capability" : "thrown";
+  return { status: MODULE_EXIT.adapter, report: { kind: "adapter", fault, message, ...(fault === "undeclared-capability" ? { capabilities: reached } : {}), ...(stack === undefined ? {} : { stack }) } };
 }
 
 /**
@@ -116,15 +126,15 @@ function classify(error: unknown): { readonly status: number; readonly report: R
  * uncaught error would reach the consumer as the engine's reserved status 125.
  */
 export async function runModule(context: RunnerContext): Promise<number> {
-  const lifecycle = new AbortController();
+  const lifecycle = new AbortController(), undeclared = new Map<string, UndeclaredAccess>();
   try {
     const info = await context.process.info();
     let descriptor: LaunchDescriptor;
     try { descriptor = parseLaunchArgument(info.args[0]); }
     catch (error: unknown) { throw new ModuleFailure("launch", error instanceof VMError ? error.message : "The launch descriptor is invalid"); }
-    return await withExclusiveLock(context, descriptor, () => start(context, descriptor, info.args.slice(1), lifecycle));
+    return await withExclusiveLock(context, descriptor, () => start(context, descriptor, info.args.slice(1), lifecycle, undeclared));
   } catch (error: unknown) {
-    const { status, report } = classify(error);
+    const { status, report } = classify(error, undeclared);
     await writeLine(context, context.stderr, { oxidevm: "error", v: 1, ...report }).catch(() => undefined);
     return status;
   } finally {

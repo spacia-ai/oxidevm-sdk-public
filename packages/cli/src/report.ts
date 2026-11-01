@@ -1,9 +1,9 @@
 import { VMError } from "@oxidevm/sdk";
-import { decodeBuilderError, decodeImageDigest, decodeImageDistribution, decodeImageInspection, decodeImageTestReport,decodeSnapshotBuildResult,decodeSnapshotTestReport,decodeSnapshotInspectResult, decodeWasmAddResult, decodeWasmBuildResult, decodeWasmDoctorReport, decodeWasmInspectResult, decodeWasmStageResult } from "@oxidevm/sdk/image-builder";
+import { decodeBuilderError, decodeImageDigest, decodeImageDistribution, decodeImageInspection, decodeImageTestReport,decodeSnapshotBuildResult,decodeSnapshotTestReport,decodeSnapshotInspectResult, decodeWasmAddResult, decodeWasmBuildResult, decodeWasmDoctorReport, decodeWasmInspectResult, decodeWasmStageResult, decodeWasmTestReport } from "@oxidevm/sdk/image-builder";
 import type { CliCommand, CliReport, DoctorCheck, DoctorReport } from "./contracts.js";
 import { choice, fields, number, object, text } from "./validation.js";
 
-const commands: readonly CliCommand[] = ["init", "assets install", "doctor", "image init", "image keygen", "image build", "image test", "image inspect", "image pack","snapshot init","snapshot build","snapshot pack","snapshot test","snapshot inspect","wasm add","wasm stage","wasm doctor","wasm inspect","wasm build","wasm release","wasm init"];
+const commands: readonly CliCommand[] = ["init", "assets install", "doctor", "image init", "image keygen", "image build", "image test", "image inspect", "image pack","snapshot init","snapshot build","snapshot pack","snapshot test","snapshot inspect","wasm add","wasm stage","wasm doctor","wasm inspect","wasm build","wasm release","wasm init","wasm test"];
 const doctorChecks: readonly DoctorCheck[] = ["secure-context", "cross-origin-isolation", "wasm-features", "worker-load", "asset-integrity", "wasm-mime", "content-security-policy", "storage", "preview-origin"];
 
 export function decodeDoctorReport(value: unknown): DoctorReport {
@@ -55,6 +55,7 @@ export function decodeCliReport(value: unknown): CliReport {
       if (!Array.isArray(result["steps"]) || result["steps"].length > 32 || (build.result === "failed") !== (tag === null) || (tag === null) !== (result["steps"].length === 0)) throw new VMError("PROTOCOL_ERROR", "a release plan has a tag and steps exactly when the build succeeded");
       return { schemaVersion: 2, kind: "result", command, result: { build, tag, steps: Array.from<unknown>(result["steps"]).map(step => text(step)) } };
     }
+    case "wasm test": return { schemaVersion: 2, kind: "result", command, result: decodeWasmTestReport(result) };
     case "wasm init": {
       fields(result, ["directory", "id", "kind", "abi", "files"]);
       if (!Array.isArray(result["files"]) || result["files"].length === 0 || result["files"].length > 64) throw new VMError("PROTOCOL_ERROR", "a module scaffold lists its files");

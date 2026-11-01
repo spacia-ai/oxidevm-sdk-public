@@ -4,11 +4,16 @@ import type { Connection, CommandIO } from "../define.js";
 /** Stable `detail.reason` for an adapter that does not have the shape its manifest requires. */
 export const ADAPTER_REASON = "wasm-module-adapter";
 
+/** Which rule an adapter fault (exit status 123) broke; tools read this instead of the message. */
+export type AdapterFault = "shape" | "exit-status" | "thrown" | "undeclared-capability";
+
 /** The adapter's factory result did not match the module kind; the runner reports exit status 123. */
 export class AdapterShapeError extends VMError {
-  constructor(message: string) {
+  readonly fault: Extract<AdapterFault, "shape" | "exit-status">;
+  constructor(message: string, fault: Extract<AdapterFault, "shape" | "exit-status"> = "shape") {
     super("GUEST_CRASH", message, { reason: ADAPTER_REASON });
     this.name = "AdapterShapeError";
+    this.fault = fault;
   }
 }
 

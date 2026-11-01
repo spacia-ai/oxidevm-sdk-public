@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildModule, extractManifest } from "@oxidevm/sdk/image-builder";
 import { registryConfig } from "./templates.js";
-import { ADD_WASM, ciWorkflow, releaseWorkflow } from "./wasm-template-files.js";
+import { ADD_WASM, TEMPLATE_PLAYWRIGHT, ciWorkflow, releaseWorkflow } from "./wasm-template-files.js";
 import { initializeModule, moduleIdFor } from "./wasm-templates.js";
 
 const directories: string[] = [];
@@ -208,7 +208,8 @@ describe("initializeModule", () => {
     const repository = jsonObject(await readFile(new URL("../../../package.json", import.meta.url), "utf8"));
     const wanted = stringsOf(generated["devDependencies"]), have = stringsOf(repository["devDependencies"]), scripts = stringsOf(generated["scripts"]);
     for (const name of ["@eslint/js", "@types/node", "eslint", "typescript", "typescript-eslint", "vitest"]) expect(wanted[name], name).toBe(have[name]);
-    expect(Object.keys(scripts).sort()).toEqual(["build", "check", "release", "test"]);
+    expect(Object.keys(scripts).sort()).toEqual(["build", "check", "release", "test", "test:conformance"]);
+    expect(scripts["test:conformance"]).toBe("oxidevm wasm build && oxidevm wasm test --arg 2 --arg 3");
     expect(scripts["check"]).toContain("oxidevm wasm build --check");
     expect(scripts["check"]).toContain("tsc --noEmit -p test");
   });
@@ -285,6 +286,23 @@ describe("workflow triggers", () => {
     const manual = await registryConfig() !== undefined;
     for (const name of ["ci", "release"]) {
       expect((await readFile(join(root, "tool", ".github", "workflows", `${name}.yml`), "utf8")).includes("workflow_dispatch"), name).toBe(manual);
+    }
+  });
+});
+
+describe("the conformance step of generated projects", () => {
+  it("pins the Playwright version the SDK drives, so CI installs the browser build that version expects", async () => {
+    const sdk: unknown = JSON.parse(await readFile(new URL("../../sdk/package.json", import.meta.url), "utf8"));
+    const dependencies = typeof sdk === "object" && sdk !== null && "dependencies" in sdk ? sdk.dependencies : undefined;
+    const pinned = typeof dependencies === "object" && dependencies !== null && "playwright" in dependencies ? dependencies.playwright : undefined;
+    expect(pinned).toBe(TEMPLATE_PLAYWRIGHT);
+  });
+
+  it("installs Chromium and runs oxidevm wasm test after the unit tests", () => {
+    for (const manual of [false, true]) {
+      const workflow = ciWorkflow(manual);
+      expect(workflow.indexOf("pnpm test")).toBeLessThan(workflow.indexOf("pnpm exec playwright install --with-deps chromium"));
+      expect(workflow.indexOf("pnpm exec playwright install --with-deps chromium")).toBeLessThan(workflow.indexOf("pnpm run test:conformance"));
     }
   });
 });

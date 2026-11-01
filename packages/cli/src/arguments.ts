@@ -19,6 +19,7 @@ export type CLIInvocation = Common & (
   | {readonly command:"wasm build";readonly project:string;readonly check:boolean;readonly out?:string;readonly module?:string}
   | {readonly command:"wasm release";readonly project:string;readonly out?:string;readonly module?:string;readonly repo?:string}
   | {readonly command:"wasm init";readonly directory:string;readonly moduleKind:"command"|"service";readonly id?:string;readonly from?:string}
+  | {readonly command:"wasm test";readonly project:string;readonly module?:string;readonly image?:{readonly bundle:string;readonly trust:string};readonly args:readonly string[];readonly options:Readonly<Record<string,unknown>>;readonly browser:"chromium"|"firefox"|"webkit";readonly engineDir?:string;readonly timeoutMs?:number}
   | { readonly command: "init"; readonly directory: string; readonly mode: RuntimeMode; readonly skipAssets: boolean; readonly start: boolean; readonly packageManager: "npm" | "bun"; readonly archives?: { readonly sdk: string; readonly cli: string }; readonly engineDir?: string; readonly image?: { readonly bundle: string; readonly trust: string } }
   | { readonly command: "assets install"; readonly config: string; readonly image?: string;readonly snapshot?:string;readonly trust?:string; readonly reference?: string; readonly engineDir?: string }
   | { readonly command: "doctor"; readonly url: string; readonly browser: "chromium" | "firefox" | "webkit"; readonly previewOrigin?: string }
@@ -32,6 +33,19 @@ export type CLIInvocation = Common & (
 export type ParsedArguments = CLIInvocation | { readonly kind: "help" | "version"; readonly json: boolean;readonly command?:CliCommand };
 
 function invalid(message: string): never { throw new VMError("INVALID_ARGUMENT", message); }
+/** `--option name=value`: a JSON number, boolean or array when the value parses as one, otherwise the text itself. */
+function moduleOptions(entries: readonly string[]): Readonly<Record<string, unknown>> {
+  const options: Record<string, unknown> = {};
+  for (const entry of entries) {
+    const cut = entry.indexOf("="), name = entry.slice(0, cut), text = entry.slice(cut + 1);
+    if (cut < 1 || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/u.test(name) || text.length > 8192) return invalid("--option must be name=value");
+    if (Object.hasOwn(options, name)) return invalid(`--option ${name} was given twice`);
+    let value: unknown = text;
+    try { const parsed: unknown = JSON.parse(text); if (typeof parsed === "number" || typeof parsed === "boolean" || Array.isArray(parsed)) value = parsed; } catch { /* plain text */ }
+    options[name] = value;
+  }
+  return options;
+}
 function nonempty(value: unknown, label: string): string {
   if (typeof value !== "string" || value.length === 0 || value.length > 8192 || value.includes("\0")) return invalid(`${label} is required and must be bounded text`);
   return value;
@@ -43,6 +57,7 @@ const allowed: Readonly<Record<CliCommand, readonly string[]>> = {
   "snapshot init":["name","mode","image","image-trust"],"snapshot build":["signing-key","image-trust","out","base-url","browser","timeout-ms","engine-dir"],
   "wasm add":["project","yes","offline"],"wasm stage":["project","offline"],"wasm doctor":["project"],"wasm inspect":[],
   "wasm build":["project","out","module","check"],"wasm release":["project","out","module","repo"],"wasm init":["kind","id","from"],
+  "wasm test":["project","module","image","image-trust","arg","option","browser","engine-dir","timeout-ms"],
 };
 
 /** Node parses the fixed CLI grammar; validate correlations before acquiring any resource. */
@@ -58,7 +73,7 @@ export function parseArguments(arguments_: readonly string[], environment: Reado
       name:{type:"string"},
       snapshot:{type:"string"},
       project:{type:"string"},yes:{type:"boolean"},offline:{type:"boolean"},
-      module:{type:"string"},check:{type:"boolean"},kind:{type:"string"},id:{type:"string"},from:{type:"string"},repo:{type:"string"},
+      module:{type:"string"},check:{type:"boolean"},arg:{type:"string",multiple:true},option:{type:"string",multiple:true},kind:{type:"string"},id:{type:"string"},from:{type:"string"},repo:{type:"string"},
       start: { type: "boolean" }, "use-bun": { type: "boolean" }, "sdk-archive": { type: "string" }, "cli-archive": { type: "string" },
     } });
   } catch { return invalid("unknown flag or missing flag value; use --help"); }
@@ -80,11 +95,11 @@ export function parseArguments(arguments_: readonly string[], environment: Reado
   for (const token of parsed.tokens) {
     if (token.kind !== "option") continue;
     if (token.name !== "json" && !allowed[command].includes(token.name)) return invalid(`--${token.name} is not supported by ${command}`);
-    if (seen.has(token.name) && token.name !== "secret") return invalid(`--${token.name} was repeated`);
+    if (seen.has(token.name) && !["secret", "arg", "option"].includes(token.name)) return invalid(`--${token.name} was repeated`);
     seen.add(token.name);
   }
   const positional = parsed.positionals.slice(grouped ? 2 : 1);
-  const count = command === "assets install" || command === "image keygen" || command === "wasm stage" || command === "wasm doctor" || command === "wasm build" || command === "wasm release" ? 0 : 1;
+  const count = command === "assets install" || command === "image keygen" || command === "wasm stage" || command === "wasm doctor" || command === "wasm build" || command === "wasm release" || command === "wasm test" ? 0 : 1;
   if (positional.length > count || command !== "doctor"&&command!=="snapshot init"&&command!=="snapshot build" && positional.length !== count) return invalid("unexpected or missing positional arguments");
   const argument = () => nonempty(positional[0], "command path");
   const mode = (): RuntimeMode => {
@@ -119,6 +134,15 @@ export function parseArguments(arguments_: readonly string[], environment: Reado
       const repo=parsed.values.repo;
       if(repo!==undefined&&!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/u.test(repo))return invalid("--repo must be owner/name");
       return {...common,command,project:parsed.values.project??".",...(parsed.values.out===undefined?{}:{out:nonempty(parsed.values.out,"--out")}),...(parsed.values.module===undefined?{}:{module:nonempty(parsed.values.module,"--module")}),...(repo===undefined?{}:{repo})};
+    }
+    case "wasm test": {
+      const bundle = parsed.values.image, trust = parsed.values["image-trust"];
+      if ((bundle === undefined) !== (trust === undefined)) return invalid("--image and --image-trust must be supplied together");
+      const options = moduleOptions(parsed.values.option ?? []);
+      const args = (parsed.values.arg ?? []).map(value => { if (value.length > 8192 || value.includes("\0")) return invalid("--arg must be bounded text"); return value; });
+      return { ...common, command, project: parsed.values.project ?? ".", ...(parsed.values.module === undefined ? {} : { module: nonempty(parsed.values.module, "--module") }),
+        ...(bundle === undefined ? {} : { image: { bundle: nonempty(bundle, "--image"), trust: nonempty(trust, "--image-trust") } }),
+        args, options, browser: browser(), ...engineDir, ...(timeoutMs === undefined ? {} : { timeoutMs }) };
     }
     case "wasm init": {
       const moduleKind=parsed.values.kind??"command";

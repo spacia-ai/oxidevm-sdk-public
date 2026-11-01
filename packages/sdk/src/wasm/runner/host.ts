@@ -16,12 +16,45 @@ export interface LinuxParts {
   readonly process: LinuxProcesses;
 }
 
+/** An adapter reached for a host member that only an undeclared capability provides. */
+export interface UndeclaredAccess {
+  /** `process` for the whole member, `process.spawn` for one function of it. */
+  readonly member: string;
+  /** The capabilities that provide the member. */
+  readonly capabilities: readonly Capability[];
+}
+
 export interface HostInputs {
   readonly linux: LinuxParts;
   readonly capabilities: readonly Capability[];
   readonly options: ResolvedOptionValues;
   readonly artifacts: HostArtifacts;
   readonly signal: AbortSignal;
+  /** Told about each read of an undeclared member; the member itself stays absent. */
+  readonly undeclared?: (access: UndeclaredAccess) => void;
+}
+
+/** Which capabilities provide each host member, and each function of `process`. */
+const MEMBER_CAPABILITIES: Readonly<Record<string, readonly Capability[]>> = {
+  fs: ["files.sync"], files: ["files.async"], sockets: ["sockets.connect"], process: ["process.info", "process.spawn"],
+};
+const PROCESS_CAPABILITIES: Readonly<Record<string, Capability>> = {
+  info: "process.info", cwd: "process.info", spawn: "process.spawn", wait: "process.spawn", signal: "process.spawn",
+};
+
+/**
+ * Reports reads of members the capabilities would provide but the manifest did not declare. Reads
+ * still return what the frozen object holds (undefined for an undeclared member), so behaviour is
+ * unchanged; `in`, freezing and enumeration go to the object itself.
+ */
+function reporting<T extends object>(target: T, table: Readonly<Record<string, readonly Capability[]>>, prefix: string, report: (access: UndeclaredAccess) => void): T {
+  return new Proxy(target, {
+    get(object, key, receiver) {
+      if (typeof key === "string" && Object.hasOwn(table, key) && !Object.hasOwn(object, key)) report({ member: `${prefix}${key}`, capabilities: table[key] ?? [] });
+      const value: unknown = Reflect.get(object, key, receiver);
+      return value;
+    },
+  });
 }
 
 const MAX_LOG_BYTES = 8192;
@@ -79,5 +112,12 @@ export function buildHost(inputs: HostInputs): { readonly host: Readonly<Record<
     },
     ...members(inputs.capabilities, linux),
   });
-  return { host, log };
+  const report = inputs.undeclared;
+  if (report === undefined) return { host, log };
+  const processMember: unknown = Reflect.get(host, "process");
+  const processTable = Object.fromEntries(Object.entries(PROCESS_CAPABILITIES).map(([key, capability]) => [key, [capability]]));
+  const guarded = typeof processMember === "object" && processMember !== null
+    ? Object.freeze({ ...host, process: reporting(processMember, processTable, "process.", report) })
+    : host;
+  return { host: reporting(guarded, MEMBER_CAPABILITIES, "", report), log };
 }

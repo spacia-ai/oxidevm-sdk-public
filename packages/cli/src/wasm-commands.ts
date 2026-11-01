@@ -1,7 +1,7 @@
 import { relative, resolve, sep } from "node:path";
 import { readFile } from "node:fs/promises";
 import { VMError } from "@oxidevm/sdk";
-import { BlobCache, buildModule, commitAdd, defaultModuleCacheDir, doctorModules, githubToken, inspectWasm, previewAdd, stageProject } from "@oxidevm/sdk/image-builder";
+import { BlobCache, buildModule, commitAdd, defaultModuleCacheDir, doctorModules, githubToken, inspectWasm, previewAdd, readImageTrust, stageProject, testModule } from "@oxidevm/sdk/image-builder";
 import type { AddConsent, ResolveContext, WasmBuildResult } from "@oxidevm/sdk/image-builder";
 import type { CLIInvocation } from "./arguments.js";
 import type { CliReport } from "./contracts.js";
@@ -9,8 +9,9 @@ import type { CLIEnvironment } from "./run.js";
 import { releasePlan } from "./wasm-release.js";
 import { consentText } from "./wasm-text.js";
 import { initializeModule } from "./wasm-templates.js";
+import { pinnedStarterRelease } from "./starter-release.js";
 
-export type WasmCLIInvocation = Extract<CLIInvocation, { command: "wasm add" | "wasm stage" | "wasm doctor" | "wasm inspect" | "wasm build" | "wasm release" | "wasm init" }>;
+export type WasmCLIInvocation = Extract<CLIInvocation, { command: "wasm add" | "wasm stage" | "wasm doctor" | "wasm inspect" | "wasm build" | "wasm release" | "wasm init" | "wasm test" }>;
 
 /** A path as the person would type it: relative to where they ran the command when it is inside, absolute otherwise. */
 function shown(base: string, path: string): string {
@@ -51,6 +52,17 @@ export async function runWasmCommand(invocation: WasmCLIInvocation, io: CLIEnvir
       return { schemaVersion: 2, kind: "result", command, result: { build, ...releasePlan(build, { directory: build.directory ?? "dist", ...(invocation.repo === undefined ? {} : { repo: invocation.repo }) }) } };
     }
     case "wasm init": return { schemaVersion: 2, kind: "result", command, result: await initializeModule(resolve(io.directory, invocation.directory), { kind: invocation.moduleKind, ...(invocation.id === undefined ? {} : { id: invocation.id }), ...(invocation.from === undefined ? {} : { from: resolve(io.directory, invocation.from) }) }) };
+    case "wasm test": {
+      const projectDir = resolve(io.directory, invocation.project);
+      const module = resolve(projectDir, invocation.module ?? "dist");
+      // Without --image: the public starter image `oxidevm init` uses, which the page loads from the CDN.
+      const image = invocation.image === undefined ? pinnedStarterRelease()?.image
+        : { bundle: resolve(io.directory, invocation.image.bundle), trust: await readImageTrust(resolve(io.directory, invocation.image.trust)) };
+      if (image === undefined) throw new VMError("INVALID_ARGUMENT", "this CLI pins no public starter image; pass --image <bundle> --image-trust <A.public.json>", { reason: "wasm-test-image" });
+      const report = await testModule(module, { image, args: invocation.args, options: invocation.options, browser: invocation.browser, signal: io.signal,
+        ...(invocation.engineDir === undefined ? {} : { engineDir: resolve(io.directory, invocation.engineDir) }), ...(invocation.timeoutMs === undefined ? {} : { commandMs: invocation.timeoutMs }) });
+      return { schemaVersion: 2, kind: "result", command, result: report };
+    }
     case "wasm doctor": return { schemaVersion: 2, kind: "result", command, result: await doctorModules(resolve(io.directory, invocation.project), { signal: io.signal }) };
     case "wasm stage": {
       const projectDir = resolve(io.directory, invocation.project);
