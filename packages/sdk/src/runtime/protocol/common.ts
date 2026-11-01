@@ -107,7 +107,8 @@
  * native bootstrap 17, remembered late failures and the acceleration-notices port (ADR 0026
  * release R1). */
 /** 175 pairs API143/replay166 with OXAP8 image code roots, OXCR17, OXJT16 and OXAK2. */
-export const PROTOCOL_VERSION = 175;
+/** 176 pairs API144/replay167 with utimensat (280) and sendto (44) on the JS-process wire; OXJR 4 and the other layouts are unchanged. */
+export const PROTOCOL_VERSION = 176;
 /** Combined architecture, background compilation and code-profile trace layout. */
 export const SYSTEM_TRACE_SCHEMA_VERSION = 54;
 

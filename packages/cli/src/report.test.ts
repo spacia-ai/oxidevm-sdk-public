@@ -10,3 +10,28 @@ it("decodes correlated commands, bounded results and exact error envelopes", () 
   expect(decodeCliReport(error)).toEqual(error);
   expect(() => decodeCliReport({ ...error, error: { code: "PRIVATE_KEY", message: "bad" } })).toThrow();
 });
+
+const SHA = "c".repeat(64);
+const BUILT = { result: "built", id: "tool", version: "1.0.0", release: SHA, directory: "dist", files: [{ name: "module.json", sha256: SHA, bytes: 5 }], bundled: [], findings: [] };
+const FAILED = { result: "failed", id: null, version: null, release: null, directory: null, files: [], bundled: [], findings: [{ severity: "error", code: "module-source", message: "x" }] };
+const envelope = (command: string, result: unknown): unknown => ({ schemaVersion: 2, kind: "result", command, result });
+
+it("decodes the module authoring reports and rejects every inconsistent shape", () => {
+  expect(decodeCliReport(envelope("wasm build", BUILT))).toEqual(envelope("wasm build", BUILT));
+  expect(decodeCliReport(envelope("wasm build", FAILED))).toEqual(envelope("wasm build", FAILED));
+  expect(() => decodeCliReport(envelope("wasm build", { ...BUILT, release: null }))).toThrow();
+
+  const plan = { build: BUILT, tag: "v1.0.0", steps: ["1. tag it"] };
+  expect(decodeCliReport(envelope("wasm release", plan))).toEqual(envelope("wasm release", plan));
+  expect(decodeCliReport(envelope("wasm release", { build: FAILED, tag: null, steps: [] }))).toMatchObject({ command: "wasm release" });
+  for (const bad of [
+    { ...plan, extra: true }, { ...plan, tag: null }, { ...plan, steps: [] }, { build: FAILED, tag: "v1.0.0", steps: ["x"] }, { build: FAILED, tag: null, steps: ["x"] },
+    { build: BUILT, tag: "v1.0.0", steps: Array.from({ length: 33 }, () => "x") }, { ...plan, steps: "none" }, { ...plan, build: { ...BUILT, extra: 1 } },
+  ]) expect(() => decodeCliReport(envelope("wasm release", bad))).toThrow();
+
+  const init = { directory: "/tmp/tool", id: "tool", kind: "service", abi: "raw", files: ["module.ts", "package.json"] };
+  expect(decodeCliReport(envelope("wasm init", init))).toEqual(envelope("wasm init", init));
+  for (const bad of [{ ...init, extra: 1 }, { ...init, kind: "daemon" }, { ...init, files: [] }, { ...init, files: Array.from({ length: 65 }, (_, index) => `f${String(index)}`) }, { ...init, files: "module.ts" }, { ...init, id: "" }]) {
+    expect(() => decodeCliReport(envelope("wasm init", bad))).toThrow();
+  }
+});

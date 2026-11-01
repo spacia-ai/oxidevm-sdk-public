@@ -10,3 +10,11 @@ condition = "AND"
 regexTarget = "match"
 paths = ['''packages/sdk/src/image-builder/docker-context\.test\.ts$''']
 regexes = ['''BEGIN PRIVATE KEY-----\\nprivate''']
+
+[[allowlists]]
+description = "Minified module resolver code passes its token option on as an identifier (token:a.token), not a literal secret"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''dist/image-builder/modules/resolve\.js$''']
+regexes = ['''^[A-Za-z_$][A-Za-z0-9_$]*\.token,''']

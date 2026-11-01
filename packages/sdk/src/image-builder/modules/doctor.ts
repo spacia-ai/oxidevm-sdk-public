@@ -1,0 +1,152 @@
+import { join } from "node:path";
+import { classifyLicense } from "../../wasm/license.js";
+import { getSDKRelease } from "../project.js";
+import { readReleaseDirectory } from "./release.js";
+import { renderHandles, type HandleSpec } from "./generate.js";
+import { DECLARATION_FILE, LOCK_FILE, loadModulesProject, readVendoredRelease, type ModulesProject } from "./project.js";
+import { parseModuleSource, type ModuleSource } from "../../wasm/declaration.js";
+import { lockedEntry, type LockedSource } from "../../wasm/lock.js";
+import { DEFAULT_GENERATED_FILE, STAGE_ROOT } from "./stage.js";
+import { CAPABILITY_MIN_API } from "../../wasm/capabilities.js";
+import { readProjectFile } from "./project-files.js";
+import { VMError } from "../../runtime/errors.js";
+import { posix, relative, dirname, sep, resolve } from "node:path";
+
+function sameSource(declared: ModuleSource, locked: LockedSource): boolean {
+  if (declared.kind === "file") return locked.kind === "file" && locked.path === declared.path;
+  return locked.kind === "github" && locked.repository.toLowerCase() === `${declared.owner}/${declared.repo}`.toLowerCase() && locked.tag === declared.tag;
+}
+
+/**
+ * The three records of an installed module - the declaration, the lock and the committed module.json - must say the same
+ * thing. Each is edited by people or by tools, and a pull request could change one to hide what another says.
+ */
+function lockInconsistencies(project: ModulesProject, committed: Committed): string[] {
+  const problems: string[] = [];
+  for (const declaration of project.declaration.modules) {
+    const entry = lockedEntry(project.lock, declaration.id);
+    if (entry === undefined) continue;
+    if (!sameSource(parseModuleSource(declaration.from), entry.source)) problems.push(`${declaration.id}: the declaration names ${declaration.from} but the lock pins ${formatLockedSource(entry.source)}`);
+    const vendored = committed.get(declaration.id);
+    // Only the committed copy the lock pins can vouch for the lock; another file is reported as such by the vendored check.
+    if (vendored === undefined || vendored.sha256 !== entry.manifestSha256) continue;
+    if (vendored.manifest.version !== entry.version) problems.push(`${declaration.id}: the lock says version ${entry.version} but module.json says ${vendored.manifest.version}`);
+    if ([...vendored.manifest.requires.host].sort().join(",") !== [...entry.capabilities].sort().join(",")) problems.push(`${declaration.id}: the lock records capabilities (${entry.capabilities.join(", ")}) that differ from module.json (${vendored.manifest.requires.host.join(", ")})`);
+  }
+  return problems;
+}
+
+/** What the project commits as `modules/<id>/module.json`, read once so that every check judges the same bytes; absent when missing or invalid. */
+type Committed = ReadonlyMap<string, Awaited<ReturnType<typeof readVendoredRelease>>>;
+
+async function readCommitted(projectDir: string, ids: readonly string[]): Promise<Committed> {
+  return new Map(await Promise.all(ids.map(async (id): Promise<[string, Awaited<ReturnType<typeof readVendoredRelease>>]> => [id, await readVendoredRelease(projectDir, id).catch(() => undefined)])));
+}
+
+/** The "hosting" note: what every module needs from the page, plus what the modules cost the runtime. */
+function hostingNote(ids: readonly string[], committed: Committed): string {
+  const needs: string[] = [];
+  for (const id of ids) {
+    const manifest = committed.get(id)?.manifest;
+    if (manifest === undefined) continue;
+    const browser = manifest.requires.browser ?? [], guest = manifest.requires.guest?.executables ?? [];
+    const parts = [...browser.length === 0 ? [] : [`the browser features ${browser.join(", ")}`], ...guest.length === 0 ? [] : [`the programs ${guest.join(", ")} in the image`]];
+    if (parts.length > 0) needs.push(`${id} needs ${parts.join(" and ")}`);
+  }
+  return `Modules start Userspace JS processes, so they need a self-hosted runtime and a cross-origin isolated page. JS processes, worker threads, esbuild runs and native commands share one lane of at most 32 host commands.${needs.length === 0 ? "" : ` ${needs.join("; ")}. The doctor cannot see the browser or the image: a start that finds one missing exits with code 122 and names it.`}`;
+}
+
+function formatLockedSource(source: LockedSource): string {
+  return source.kind === "file" ? `file:${source.path}` : `github:${source.repository}@${source.tag}`;
+}
+
+export const DOCTOR_CHECKS = ["declaration", "lock", "vendored", "staged", "generated", "engine-api", "license", "hosting"] as const;
+export type WasmDoctorCheck = (typeof DOCTOR_CHECKS)[number];
+
+export type WasmDoctorEntry =
+  | { readonly check: WasmDoctorCheck; readonly status: "passed" }
+  | { readonly check: WasmDoctorCheck; readonly status: "failed" | "note"; readonly message: string };
+
+export interface WasmDoctorReport {
+  readonly result: "passed" | "failed";
+  readonly modules: readonly string[];
+  readonly checks: readonly WasmDoctorEntry[];
+}
+
+export interface DoctorOptions {
+  readonly generatedFile?: string;
+  /** The Userspace API version to compare against; defaults to the engine release this SDK pins. */
+  readonly engineApi?: number;
+  readonly signal?: AbortSignal;
+}
+
+/**
+ * Checks that a project's modules are consistent from intent to generated code, and says what the installed SDK and
+ * browser must provide. Nothing is fetched or changed.
+ */
+export async function doctorModules(projectDir: string, options: DoctorOptions = {}): Promise<WasmDoctorReport> {
+  const checks: WasmDoctorEntry[] = [];
+  const pass = (check: WasmDoctorCheck): void => { checks.push({ check, status: "passed" }); };
+  const fail = (check: WasmDoctorCheck, message: string): void => { checks.push({ check, status: "failed", message }); };
+  const note = (check: WasmDoctorCheck, message: string): void => { checks.push({ check, status: "note", message }); };
+
+  let project;
+  try { project = await loadModulesProject(projectDir); } catch (error: unknown) {
+    fail("declaration", `${DECLARATION_FILE} or ${LOCK_FILE} cannot be read: ${error instanceof Error ? error.message : "invalid"}`);
+    return { result: "failed", modules: [], checks };
+  }
+  const ids = project.declaration.modules.map(entry => entry.id);
+  pass("declaration");
+  const declared = new Set(ids), locked = Object.keys(project.lock.modules);
+  const missing = ids.filter(id => lockedEntry(project.lock, id) === undefined), extra = locked.filter(id => !declared.has(id));
+  const committed = await readCommitted(projectDir, ids);
+  const inconsistent = lockInconsistencies(project, committed);
+  if (missing.length === 0 && extra.length === 0 && inconsistent.length > 0) fail("lock", `${inconsistent.join("; ")}; run "oxidevm wasm add" for the module again`);
+  else if (missing.length > 0 || extra.length > 0) fail("lock", `${[...missing.map(id => `${id} is not locked`), ...extra.map(id => `${id} is locked but not declared`)].join("; ")}; run "oxidevm wasm add"`);
+  else pass("lock");
+
+  const problems: string[] = [];
+  const specs: HandleSpec[] = [];
+  let apiNeeded = 0;
+  for (const id of ids) {
+    const entry = lockedEntry(project.lock, id);
+    if (entry === undefined) continue;
+    const vendored = committed.get(id);
+    if (vendored === undefined) problems.push(`modules/${id}/module.json is missing or invalid`);
+    else if (vendored.sha256 !== entry.manifestSha256) problems.push(`modules/${id}/module.json differs from the lock`);
+    apiNeeded = Math.max(apiNeeded, ...entry.capabilities.map(capability => CAPABILITY_MIN_API[capability]));
+    const staged = join(projectDir, STAGE_ROOT, id, entry.release);
+    try {
+      const read = await readReleaseDirectory(staged, options.signal, { servedCopies: true });
+      if (read.id !== entry.release) problems.push(`${id} is staged with a different release`);
+      else specs.push({ manifest: read.manifest, release: read.id, files: read.files, directory: relative(dirname(resolve(projectDir, options.generatedFile ?? DEFAULT_GENERATED_FILE)), staged).split(sep).join(posix.sep) });
+    } catch (error: unknown) { problems.push(`${id} is not staged${error instanceof VMError ? ` (${error.message})` : ""}: run "oxidevm wasm stage"`); }
+  }
+  if (problems.some(problem => problem.startsWith("modules/"))) fail("vendored", problems.filter(problem => problem.startsWith("modules/")).join("; ")); else pass("vendored");
+  const stagedProblems = problems.filter(problem => !problem.startsWith("modules/"));
+  if (stagedProblems.length > 0) fail("staged", stagedProblems.join("; ")); else pass("staged");
+
+  const generatedPath = resolve(projectDir, options.generatedFile ?? DEFAULT_GENERATED_FILE);
+  const generated = await readProjectFile(generatedPath, 4 * 1024 ** 2).then(bytes => bytes === undefined ? undefined : new TextDecoder().decode(bytes)).catch(() => undefined);
+  if (specs.length === ids.length && ids.length > 0) {
+    if (generated === undefined) fail("generated", `${relative(projectDir, generatedPath)} is missing: run "oxidevm wasm stage"`);
+    else if (generated !== renderHandles(specs)) fail("generated", `${relative(projectDir, generatedPath)} is out of date: run "oxidevm wasm stage"`);
+    else pass("generated");
+  } else if (ids.length === 0) pass("generated"); else fail("generated", "cannot be checked until every module is staged");
+
+  const provided = options.engineApi ?? getSDKRelease().engine.identities.userspaceApi;
+  if (apiNeeded > provided) fail("engine-api", `the modules need Userspace API ${String(apiNeeded)}; this SDK provides ${String(provided)}. Update @oxidevm/sdk.`);
+  else pass("engine-api");
+
+  const copyleft: string[] = [];
+  for (const id of ids) {
+    const vendored = committed.get(id)?.manifest;
+    if (vendored !== undefined && classifyLicense(vendored.license.spdx).copyleft) copyleft.push(`${id} (${vendored.license.spdx})${vendored.license.source === undefined ? " without a source link" : ""}`);
+  }
+  if (copyleft.length === 0) pass("license");
+  else if (copyleft.some(item => item.endsWith("without a source link"))) fail("license", `copyleft without a source link: ${copyleft.join(", ")}`);
+  else note("license", `copyleft modules: ${copyleft.join(", ")}. Ship their notices and offer their source with your application.`);
+
+  note("hosting", hostingNote(ids, committed));
+  return { result: checks.some(entry => entry.status === "failed") ? "failed" : "passed", modules: ids, checks };
+}

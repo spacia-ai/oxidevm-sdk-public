@@ -1,5 +1,5 @@
 import type { RuntimeMode, SHA256, VMErrorCode } from "@oxidevm/sdk";
-import type { ImageDistribution, ImageInspection, ImagePackReport, ImageTestReport,SnapshotBuildResult,SnapshotTestReport,SnapshotInspectResult } from "@oxidevm/sdk/image-builder";
+import type { ImageDistribution, ImageInspection, ImagePackReport, ImageTestReport,SnapshotBuildResult,SnapshotTestReport,SnapshotInspectResult, WasmAddResult, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult } from "@oxidevm/sdk/image-builder";
 
 export type DoctorCheck =
   | "secure-context" | "cross-origin-isolation" | "wasm-features" | "worker-load"
@@ -16,7 +16,31 @@ export interface DoctorReport {
   )[];
 }
 
+export interface WasmInitResult {
+  readonly directory: string;
+  readonly id: string;
+  readonly kind: "command" | "service";
+  readonly abi: string;
+  /** Every file created, relative to the directory and sorted. */
+  readonly files: readonly string[];
+}
+
+/** A finished build plus the commands that publish it. Nothing here has been run. */
+export interface WasmReleaseResult {
+  readonly build: WasmBuildResult;
+  /** The git tag the release must carry, `v` plus the version; null when the build failed. */
+  readonly tag: string | null;
+  readonly steps: readonly string[];
+}
+
 export interface CliResultMap {
+  readonly "wasm add": WasmAddResult;
+  readonly "wasm stage": WasmStageResult;
+  readonly "wasm doctor": WasmDoctorReport;
+  readonly "wasm inspect": WasmInspectResult;
+  readonly "wasm build": WasmBuildResult;
+  readonly "wasm release": WasmReleaseResult;
+  readonly "wasm init": WasmInitResult;
   readonly "snapshot init":{readonly directory:string;readonly recipePath:string;readonly mode:RuntimeMode;readonly name:string;readonly files:readonly string[]};
   readonly "snapshot build":SnapshotBuildResult;
   readonly "snapshot pack":SnapshotBuildResult;

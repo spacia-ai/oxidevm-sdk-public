@@ -91,3 +91,54 @@ it("keeps missing read requests and Wasm failures separate from Linux errno", as
   await expect(admitInitialUserspaceProcess(boundary, { kind: "file", filename: "/file" }, input, () => {}, () => Promise.reject(new Error("unexpected read"))))
     .rejects.toMatchObject({ code: "GUEST_CRASH", message: "Userspace Wasm file process admission failed with status 2" });
 });
+
+// The staging buffer and the queue of host reads belong to the runtime, so two admissions that overlap would write over each
+// other's program and take each other's reads ("native executable read has no host request" for the second native process).
+function sharedRuntime() {
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  const sources: string[] = [];
+  const attempts = new Map<string, number>();
+  let pid = 100;
+  const decoder = new TextDecoder();
+  const instance: WebAssembly.Instance = { exports: {
+    oxidevm_userspace_staging_resize: () => 0,
+    oxidevm_userspace_staging_ptr: () => 64,
+    oxidevm_userspace_file_record_len: () => 8,
+    oxidevm_userspace_spawn_top_level_executable: (length: number) => {
+      const name = decoder.decode(new Uint8Array(memory.buffer, 64, length).slice()).replace(/\0.*$/u, "");
+      sources.push(name);
+      const seen = attempts.get(name) ?? 0;
+      attempts.set(name, seen + 1);
+      if (seen === 0) return 3;
+      pid += 1;
+      new Uint8Array(memory.buffer, 64, 8).set(result(pid, 0));
+      return 0;
+    },
+  } };
+  return { memory, instance, sources };
+}
+const yieldOnce = (): Promise<void> => new Promise(resolve => { queueMicrotask(resolve); });
+
+it("admits overlapping programs one at a time, in the order they asked", async () => {
+  const target = sharedRuntime();
+  const read = async (): Promise<boolean> => { await yieldOnce(); await yieldOnce(); return true; };
+  const [first, second] = await Promise.all([
+    admitInitialUserspaceProcess(target, { kind: "file", filename: "/bin/a" }, input, () => {}, read),
+    admitInitialUserspaceProcess(target, { kind: "file", filename: "/bin/b" }, input, () => {}, read),
+  ]);
+  expect([first, second]).toEqual([101, 102]);
+  expect(target.sources.map(name => name.split("\0")[0])).toEqual(["/bin/a", "/bin/a", "/bin/b", "/bin/b"]);
+});
+
+it("lets the next admission run after one failed, and checks for cancellation only when its turn comes", async () => {
+  const target = sharedRuntime();
+  const failing = admitInitialUserspaceProcess(target, { kind: "file", filename: "/bin/a" }, input, () => {}, () => Promise.reject(new Error("storage went away")));
+  let canceled = false;
+  const waiting = admitInitialUserspaceProcess(target, { kind: "file", filename: "/bin/b" }, input, () => { if (canceled) throw new Error("cancelled admission"); }, () => Promise.resolve(true));
+  const later = admitInitialUserspaceProcess(target, { kind: "file", filename: "/bin/c" }, input, () => {}, () => Promise.resolve(true));
+  canceled = true; // after the others were queued, before the second one's turn
+  await expect(failing).rejects.toThrow("storage went away");
+  await expect(waiting).rejects.toThrow("cancelled admission");
+  expect(await later).toBe(101);
+  expect(target.sources.map(name => name.split("\0")[0])).toEqual(["/bin/a", "/bin/c", "/bin/c"]);
+});

@@ -9,7 +9,7 @@ import { object, text } from "./validation.js";
 import { archiveDependencies, writeStarter } from "./starter-template.js";
 
 const alpine = "alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659";
-async function registryConfig(): Promise<string | undefined> {
+export async function registryConfig(): Promise<string | undefined> {
   const value: unknown = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const manifest = object(value, "CLI manifest");
   if (manifest["publishConfig"] === undefined) return undefined;

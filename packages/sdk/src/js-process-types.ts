@@ -5,6 +5,17 @@ declare const descriptorBrand: unique symbol;
 /** A descriptor in this worker's Rust-owned Linux process. */
 export type FileDescriptor = number & { readonly [descriptorBrand]: "LinuxDescriptor" };
 export interface LinuxOperationOptions { readonly signal?: AbortSignal }
+/** A time for `utimes`: an instant (to the millisecond), `"now"` for the current time, or `"omit"` to leave that time unchanged. */
+export type LinuxTimestamp = Date | "now" | "omit";
+export interface LinuxTimeOptions {
+  /** Whether a final symbolic link is followed. Defaults to true; false changes the link itself. */
+  readonly followLinks?: boolean;
+}
+export interface LinuxSyncWriteOptions {
+  /** For a socket: answer a closed peer with EPIPE instead of ending this worker with SIGPIPE. Anything else is ENOTSOCK. */
+  readonly noSignal?: boolean;
+}
+export interface LinuxWriteOptions extends LinuxOperationOptions, LinuxSyncWriteOptions {}
 export interface LinuxFileStat {
   readonly device: bigint; readonly inode: bigint; readonly links: bigint;
   readonly mode: number; readonly uid: number; readonly gid: number; readonly size: bigint;
@@ -16,7 +27,7 @@ export type SeekOrigin = "start" | "current" | "end";
 export interface LinuxSyncFiles {
   open(path: LinuxPath, flags?: number, mode?: number): FileDescriptor;
   read(fd: FileDescriptor, count: number): Uint8Array;
-  write(fd: FileDescriptor, bytes: Uint8Array): number;
+  write(fd: FileDescriptor, bytes: Uint8Array, options?: LinuxSyncWriteOptions): number;
   seek(fd: FileDescriptor, offset: bigint, origin?: SeekOrigin): bigint;
   close(fd: FileDescriptor): void;
   dup(fd: FileDescriptor, target?: FileDescriptor): FileDescriptor;
@@ -30,14 +41,28 @@ export interface LinuxSyncFiles {
   rename(from: LinuxPath, to: LinuxPath): void;
   unlink(path: LinuxPath, directory?: boolean): void;
   fsync(fd: FileDescriptor): void;
+  /** Sets the permission bits (`mode & 0o7777`); the file-type bits of a `stat()` mode are ignored, as in chmod(2). */
+  chmod(path: LinuxPath, mode: number): void;
+  fchmod(fd: FileDescriptor, mode: number): void;
+  /** Sets a file's length, zero-filling when it grows. The length must fit a signed 64-bit offset. */
+  truncate(path: LinuxPath, length: bigint | number): void;
+  ftruncate(fd: FileDescriptor, length: bigint | number): void;
+  /** Sets a file's access and modification times, as utimensat(2): a `Date`, `"now"`, or `"omit"` to leave one unchanged. */
+  utimes(path: LinuxPath, access: LinuxTimestamp, modification: LinuxTimestamp, options?: LinuxTimeOptions): void;
+  /** Adds the name `to` for the existing file `from` (a hard link). */
+  link(from: LinuxPath, to: LinuxPath): void;
+  /** Creates `path` as a symbolic link that stores `target` verbatim; a relative target resolves against the link's directory. */
+  symlink(target: LinuxPath, path: LinuxPath): void;
+  /** Returns the text a symbolic link stores, decoded as UTF-8. */
+  readlink(path: LinuxPath): string;
   readFile(path: LinuxPath, maxBytes?: number): Uint8Array;
   writeFile(path: LinuxPath, bytes: Uint8Array): void;
-  writeAll(fd: FileDescriptor, bytes: Uint8Array): void;
+  writeAll(fd: FileDescriptor, bytes: Uint8Array, options?: LinuxSyncWriteOptions): void;
 }
 export interface LinuxFiles {
   open(path: LinuxPath, flags?: number, mode?: number, options?: LinuxOperationOptions): Promise<FileDescriptor>;
   read(fd: FileDescriptor, count: number, options?: LinuxOperationOptions): Promise<Uint8Array>;
-  write(fd: FileDescriptor, bytes: Uint8Array, options?: LinuxOperationOptions): Promise<number>;
+  write(fd: FileDescriptor, bytes: Uint8Array, options?: LinuxWriteOptions): Promise<number>;
   seek(fd: FileDescriptor, offset: bigint, origin?: SeekOrigin): Promise<bigint>;
   close(fd: FileDescriptor): Promise<void>;
   dup(fd: FileDescriptor, target?: FileDescriptor): Promise<FileDescriptor>;
@@ -51,9 +76,22 @@ export interface LinuxFiles {
   rename(from: LinuxPath, to: LinuxPath): Promise<void>;
   unlink(path: LinuxPath, directory?: boolean): Promise<void>;
   fsync(fd: FileDescriptor): Promise<void>;
+  /** Sets the permission bits (`mode & 0o7777`); the file-type bits of a `stat()` mode are ignored, as in chmod(2). */
+  chmod(path: LinuxPath, mode: number): Promise<void>;
+  fchmod(fd: FileDescriptor, mode: number): Promise<void>;
+  /** Sets a file's length, zero-filling when it grows. The length must fit a signed 64-bit offset. */
+  truncate(path: LinuxPath, length: bigint | number): Promise<void>;
+  ftruncate(fd: FileDescriptor, length: bigint | number): Promise<void>;
+  utimes(path: LinuxPath, access: LinuxTimestamp, modification: LinuxTimestamp, options?: LinuxTimeOptions): Promise<void>;
+  /** Adds the name `to` for the existing file `from` (a hard link). */
+  link(from: LinuxPath, to: LinuxPath): Promise<void>;
+  /** Creates `path` as a symbolic link that stores `target` verbatim; a relative target resolves against the link's directory. */
+  symlink(target: LinuxPath, path: LinuxPath): Promise<void>;
+  /** Returns the text a symbolic link stores, decoded as UTF-8. */
+  readlink(path: LinuxPath): Promise<string>;
   readFile(path: LinuxPath, maxBytes?: number): Promise<Uint8Array>;
   writeFile(path: LinuxPath, bytes: Uint8Array): Promise<void>;
-  writeAll(fd: FileDescriptor, bytes: Uint8Array, options?: LinuxOperationOptions): Promise<void>;
+  writeAll(fd: FileDescriptor, bytes: Uint8Array, options?: LinuxWriteOptions): Promise<void>;
 }
 export type LinuxSocketAddress = { readonly family: "ipv4" | "ipv6"; readonly address: string; readonly port: number } | { readonly family: "unix"; readonly path: string };
 export interface LinuxSockets {

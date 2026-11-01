@@ -350,6 +350,27 @@ permits; original files and checkpoint identities remain intact.
 
 ## Experimental JS processes
 
-The paired command-interceptors worktrees add `UserspaceVM.spawnJS` and the
-`@oxidevm/sdk/js-process` worker export. See [the API and ownership notes](./js-process.md)
-and [the native-child example](../examples/js-process/README.md).
+`UserspaceVM.spawnJS` and the `@oxidevm/sdk/js-process` worker export start a
+JavaScript process that shares the VM's files, process ids and sockets. See
+[the API and ownership notes](./js-process.md) and
+[the native-child example](../examples/js-process/README.md).
+
+## WebAssembly modules
+
+`@oxidevm/sdk/wasm` packages a WebAssembly program as a module: a literal
+manifest, an adapter that receives only the host operations the manifest
+declares, and pinned artifacts. `defineModule` types a module for its author;
+`spawnModule(vm, handle, options)` and `stopModule(process)` run one on a
+Userspace VM, with options and endpoints typed from the manifest. Modules start
+JS processes, so they need a self-hosted runtime.
+
+| Operation | Purpose |
+| --- | --- |
+| `defineModule({ manifest, adapter })` | Type a module definition; the adapter's `host` holds exactly the declared capabilities |
+| `spawnModule`, `stopModule` | Start a command or service and stop it by closing its input |
+| `moduleHandle` | The typed handle `oxidevm wasm add` generates |
+| `decodeModuleManifest`, `encodeModuleManifest`, `classifyLicense` | Strict `module.json` and SPDX handling for tooling |
+| `oxidevm wasm add / stage / doctor / inspect / init / build / release` | The command line for installing and authoring modules |
+
+See [WebAssembly modules](./wasm-modules.md) for installing, writing and
+releasing one.

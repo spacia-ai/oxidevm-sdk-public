@@ -80,7 +80,7 @@ describe("rootfs network channel", () => {
     } finally { client.close(); }
   });
 
-  it("retries a disconnected immutable response, but caps unsuccessful acquisition at three attempts", async () => {
+  it("retries a disconnected immutable response, but caps unsuccessful acquisition at five attempts", async () => {
     const bytes = new TextEncoder().encode("complete immutable bytes");
     const fetcher = vi.fn<typeof fetch>().mockRejectedValueOnce(new TypeError("network unavailable")).mockResolvedValue(new Response(bytes));
     vi.stubGlobal("fetch", fetcher);
@@ -91,7 +91,30 @@ describe("rootfs network channel", () => {
       const offline = vi.fn(() => Promise.reject(new TypeError("offline")));
       vi.stubGlobal("fetch", offline);
       await expect(client.fetchBlob(new URL("https://profiles.example/blob"), bytes.length, await digest(bytes))).rejects.toThrow();
-      expect(offline).toHaveBeenCalledTimes(3);
+      expect(offline).toHaveBeenCalledTimes(5);
+    } finally { client.close(); }
+  });
+
+  it("retries a cleanly truncated immutable body as a transport failure", async () => {
+    // A compressed CDN stream has no Content-Length, so an early clean end looks like a complete response.
+    const bytes = new TextEncoder().encode("complete immutable rootfs pack");
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(bytes.slice(0, 9))).mockResolvedValue(new Response(bytes));
+    vi.stubGlobal("fetch", fetcher);
+    const client = connected();
+    try {
+      expect(await client.fetchBlob(new URL("https://profiles.example/pack"), bytes.length, await digest(bytes))).toEqual(bytes);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(fetcher.mock.calls[1]?.[1]).toMatchObject({ cache: "reload", credentials: "omit" });
+      const truncated = vi.fn(() => Promise.resolve(new Response(bytes.slice(0, 9))));
+      vi.stubGlobal("fetch", truncated);
+      const exhausted = client.fetchBlob(new URL("https://profiles.example/pack"), bytes.length, await digest(bytes));
+      await expect(exhausted).rejects.toMatchObject({ code: "STORAGE_ERROR" });
+      await expect(exhausted).rejects.toThrow(/length is invalid/u);
+      expect(truncated).toHaveBeenCalledTimes(5);
+      const oversized = vi.fn(() => Promise.resolve(new Response(Uint8Array.of(...bytes, 0))));
+      vi.stubGlobal("fetch", oversized);
+      await expect(client.fetchBlob(new URL("https://profiles.example/pack"), bytes.length, await digest(bytes))).rejects.toThrow(/exceeds/u);
+      expect(oversized).toHaveBeenCalledOnce();
     } finally { client.close(); }
   });
 

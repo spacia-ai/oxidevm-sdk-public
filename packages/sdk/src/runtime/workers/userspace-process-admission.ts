@@ -26,8 +26,27 @@ function spawnError(errno: number): VMError {
   return new VMError(code, "Userspace executable admission failed", { errno });
 }
 
+/**
+ * The runtime has one staging buffer and one queue of host reads, and an admission may wait on a read in between writing the
+ * first and the second. Two overlapping admissions would write over each other's program and take each other's reads, so
+ * each runtime admits one program at a time, in the order they asked. A failed admission does not stop the ones behind it.
+ */
+const admissionTails = new WeakMap<AdmissionRuntime, Promise<unknown>>();
+
 /** Only immutable rootfs reads may suspend admission before Rust publishes a PID. */
-export async function admitInitialUserspaceProcess(
+export function admitInitialUserspaceProcess(
+  runtime: AdmissionRuntime,
+  program: InitialUserspaceProgram,
+  input: InitialProcessInput,
+  checkCanceled: () => void,
+  serviceNextRead: () => Promise<boolean>,
+): Promise<number> {
+  const turn = (admissionTails.get(runtime) ?? Promise.resolve()).catch(() => undefined).then(() => admit(runtime, program, input, checkCanceled, serviceNextRead));
+  admissionTails.set(runtime, turn);
+  return turn;
+}
+
+async function admit(
   runtime: AdmissionRuntime,
   program: InitialUserspaceProgram,
   input: InitialProcessInput,

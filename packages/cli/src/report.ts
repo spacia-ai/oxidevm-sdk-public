@@ -1,9 +1,9 @@
 import { VMError } from "@oxidevm/sdk";
-import { decodeBuilderError, decodeImageDigest, decodeImageDistribution, decodeImageInspection, decodeImageTestReport,decodeSnapshotBuildResult,decodeSnapshotTestReport,decodeSnapshotInspectResult } from "@oxidevm/sdk/image-builder";
+import { decodeBuilderError, decodeImageDigest, decodeImageDistribution, decodeImageInspection, decodeImageTestReport,decodeSnapshotBuildResult,decodeSnapshotTestReport,decodeSnapshotInspectResult, decodeWasmAddResult, decodeWasmBuildResult, decodeWasmDoctorReport, decodeWasmInspectResult, decodeWasmStageResult } from "@oxidevm/sdk/image-builder";
 import type { CliCommand, CliReport, DoctorCheck, DoctorReport } from "./contracts.js";
 import { choice, fields, number, object, text } from "./validation.js";
 
-const commands: readonly CliCommand[] = ["init", "assets install", "doctor", "image init", "image keygen", "image build", "image test", "image inspect", "image pack","snapshot init","snapshot build","snapshot pack","snapshot test","snapshot inspect"];
+const commands: readonly CliCommand[] = ["init", "assets install", "doctor", "image init", "image keygen", "image build", "image test", "image inspect", "image pack","snapshot init","snapshot build","snapshot pack","snapshot test","snapshot inspect","wasm add","wasm stage","wasm doctor","wasm inspect","wasm build","wasm release","wasm init"];
 const doctorChecks: readonly DoctorCheck[] = ["secure-context", "cross-origin-isolation", "wasm-features", "worker-load", "asset-integrity", "wasm-mime", "content-security-policy", "storage", "preview-origin"];
 
 export function decodeDoctorReport(value: unknown): DoctorReport {
@@ -44,6 +44,22 @@ export function decodeCliReport(value: unknown): CliReport {
     case "snapshot build":case "snapshot pack":return {schemaVersion:2,kind:"result",command,result:decodeSnapshotBuildResult(result)};
     case "snapshot test":return {schemaVersion:2,kind:"result",command,result:decodeSnapshotTestReport(result)};
     case "snapshot inspect":return {schemaVersion:2,kind:"result",command,result:decodeSnapshotInspectResult(result)};
+    case "wasm add": return { schemaVersion: 2, kind: "result", command, result: decodeWasmAddResult(result) };
+    case "wasm stage": return { schemaVersion: 2, kind: "result", command, result: decodeWasmStageResult(result) };
+    case "wasm doctor": return { schemaVersion: 2, kind: "result", command, result: decodeWasmDoctorReport(result) };
+    case "wasm inspect": return { schemaVersion: 2, kind: "result", command, result: decodeWasmInspectResult(result) };
+    case "wasm build": return { schemaVersion: 2, kind: "result", command, result: decodeWasmBuildResult(result) };
+    case "wasm release": {
+      fields(result, ["build", "tag", "steps"]);
+      const build = decodeWasmBuildResult(result["build"]), tag = result["tag"] === null ? null : text(result["tag"]);
+      if (!Array.isArray(result["steps"]) || result["steps"].length > 32 || (build.result === "failed") !== (tag === null) || (tag === null) !== (result["steps"].length === 0)) throw new VMError("PROTOCOL_ERROR", "a release plan has a tag and steps exactly when the build succeeded");
+      return { schemaVersion: 2, kind: "result", command, result: { build, tag, steps: Array.from<unknown>(result["steps"]).map(step => text(step)) } };
+    }
+    case "wasm init": {
+      fields(result, ["directory", "id", "kind", "abi", "files"]);
+      if (!Array.isArray(result["files"]) || result["files"].length === 0 || result["files"].length > 64) throw new VMError("PROTOCOL_ERROR", "a module scaffold lists its files");
+      return { schemaVersion: 2, kind: "result", command, result: { directory: text(result["directory"]), id: text(result["id"]), kind: choice(result["kind"], ["command", "service"]), abi: text(result["abi"]), files: Array.from<unknown>(result["files"]).map(file => text(file)) } };
+    }
     case "init": {
       fields(result, ["directory", "mode", "assets"]);
       return { schemaVersion: 2, kind: "result", command, result: { directory: text(result["directory"]), mode: choice(result["mode"], ["system", "userspace"]), assets: choice(result["assets"], ["installed", "skipped"]) } };

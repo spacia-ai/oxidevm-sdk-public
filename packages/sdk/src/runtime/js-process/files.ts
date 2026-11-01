@@ -13,12 +13,16 @@ export function syncFiles(client: LinuxClient): LinuxSyncFiles {
   const call = client.sync.bind(client);
   const api: LinuxSyncFiles = {
     open: (path, flags, mode) => call(files.open(path, flags, mode)),
-    read: (fd, count) => call(files.read(fd, count)), write: (fd, bytes) => call(files.write(fd, bytes)),
+    read: (fd, count) => call(files.read(fd, count)), write: (fd, bytes, options) => call(files.write(fd, bytes, options?.noSignal === true)),
     seek: (fd, offset, origin) => call(files.seek(fd, offset, origin)), close: fd => call(files.close(fd)),
     dup: (fd, target) => call(files.dup(fd, target)), pipe: () => call(files.pipe()),
     stat: path => call(files.stat(path)), lstat: path => call(files.stat(path, false)), fstat: fd => call(files.fstat(fd)),
     realpath: path => call(files.realpath(path)), mkdir: (path, mode) => call(files.mkdir(path, mode)),
     rename: (from, to) => call(files.rename(from, to)), unlink: (path, directory) => call(files.unlink(path, directory)), fsync: fd => call(files.fsync(fd)),
+    chmod: (path, mode) => call(files.chmod(path, mode)), fchmod: (fd, mode) => call(files.fchmod(fd, mode)),
+    truncate: (path, length) => call(files.truncate(path, length)), ftruncate: (fd, length) => call(files.ftruncate(fd, length)),
+    utimes: (path, access, modification, options) => call(files.utimes(path, access, modification, options?.followLinks !== false)),
+    link: (from, to) => call(files.link(from, to)), symlink: (target, path) => call(files.symlink(target, path)), readlink: path => call(files.readlink(path)),
     readdir(path) {
       const fd = api.open(path, 0x1_0000), entries: LinuxDirectoryEntry[] = [];
       try { for (;;) { const next = call(files.getdents(fd)); if (next.length === 0) return entries; entries.push(...next.filter(visible)); } }
@@ -30,7 +34,7 @@ export function syncFiles(client: LinuxClient): LinuxSyncFiles {
       finally { api.close(fd); }
     },
     writeFile(path, bytes) { const fd = api.open(path, 0o1101); try { api.writeAll(fd, bytes); } finally { api.close(fd); } },
-    writeAll(fd, bytes) { let offset = 0; while (offset < bytes.byteLength) { const count = api.write(fd, viewBytes(bytes, offset, offset + 64 * 1024)); if (count === 0) throw new LinuxError(5); offset += count; } },
+    writeAll(fd, bytes, options) { let offset = 0; while (offset < bytes.byteLength) { const count = api.write(fd, viewBytes(bytes, offset, offset + 64 * 1024), options); if (count === 0) throw new LinuxError(5); offset += count; } },
   };
   return api;
 }
@@ -39,12 +43,16 @@ export function asyncFiles(client: LinuxClient): LinuxFiles {
   const call = client.call.bind(client);
   const api: LinuxFiles = {
     open: (path, flags, mode, options) => call(files.open(path, flags, mode), options?.signal),
-    read: (fd, count, options) => call(files.read(fd, count), options?.signal), write: (fd, bytes, options) => call(files.write(fd, bytes), options?.signal),
+    read: (fd, count, options) => call(files.read(fd, count), options?.signal), write: (fd, bytes, options) => call(files.write(fd, bytes, options?.noSignal === true), options?.signal),
     seek: (fd, offset, origin) => call(files.seek(fd, offset, origin)), close: fd => call(files.close(fd)),
     dup: (fd, target) => call(files.dup(fd, target)), pipe: () => call(files.pipe()),
     stat: path => call(files.stat(path)), lstat: path => call(files.stat(path, false)), fstat: fd => call(files.fstat(fd)),
     realpath: path => call(files.realpath(path)), mkdir: (path, mode) => call(files.mkdir(path, mode)),
     rename: (from, to) => call(files.rename(from, to)), unlink: (path, directory) => call(files.unlink(path, directory)), fsync: fd => call(files.fsync(fd)),
+    chmod: (path, mode) => call(files.chmod(path, mode)), fchmod: (fd, mode) => call(files.fchmod(fd, mode)),
+    truncate: (path, length) => call(files.truncate(path, length)), ftruncate: (fd, length) => call(files.ftruncate(fd, length)),
+    utimes: (path, access, modification, options) => call(files.utimes(path, access, modification, options?.followLinks !== false)),
+    link: (from, to) => call(files.link(from, to)), symlink: (target, path) => call(files.symlink(target, path)), readlink: path => call(files.readlink(path)),
     async readdir(path) {
       const fd = await api.open(path, 0x1_0000), entries: LinuxDirectoryEntry[] = [];
       try { for (;;) { const next = await call(files.getdents(fd)); if (next.length === 0) return entries; entries.push(...next.filter(visible)); } }
