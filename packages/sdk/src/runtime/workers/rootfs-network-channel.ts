@@ -147,10 +147,14 @@ export function serveRootfsNetwork(port: MessagePort): void {
   port.start();
 }
 
+/** Immutable GETs get this many requests; backoff between them totals 3 s (200, 400, 800, 1600 ms). */
+const IMMUTABLE_ATTEMPTS = 5;
+
 async function fetchRequest(request: Exclude<ReturnType<typeof decodeRequest>, { readonly type: "cancel" }>, signal: AbortSignal, progress?: (value:RootfsNetworkProgress)=>void): Promise<Uint8Array<ArrayBuffer>> {
   let downloadedBytes = 0, requestCount = 0;
   for (let attempt = 0;; attempt++) {
     signal.throwIfAborted();
+    const final = attempt >= IMMUTABLE_ATTEMPTS - 1;
     try {
       requestCount++; progress?.({ downloadedBytes, requestCount });
       const response = await fetch(request.url, {
@@ -158,15 +162,20 @@ async function fetchRequest(request: Exclude<ReturnType<typeof decodeRequest>, {
         credentials: "omit", signal,
         ...(request.type==="blob"?{priority:request.priority??"high"}:{}),
       });
-      if (request.type !== "manifest" && attempt < 2 && (response.status === 408 || response.status === 429 || response.status >= 500 && response.status < 600)) {
+      if (request.type !== "manifest" && !final && (response.status === 408 || response.status === 429 || response.status >= 500 && response.status < 600)) {
         await response.body?.cancel();
         await retryDelay(attempt, signal);
         continue;
       }
-      return await readResponse(request, response, bytes => { downloadedBytes += bytes; progress?.({ downloadedBytes, requestCount }); });
+      const bytes = await readResponse(request, response, value => { downloadedBytes += value; progress?.({ downloadedBytes, requestCount }); });
+      if (bytes !== undefined) return bytes;
+      // Edge compression drops Content-Length, so a cut stream can end cleanly before the declared
+      // length. That is a transport failure, not an integrity failure, and the immutable GET is replayed.
+      if (final) throw new VMError("STORAGE_ERROR", "rootfs blob length is invalid");
+      await retryDelay(attempt, signal);
     } catch (error) {
       // Only immutable GETs can be replayed, and integrity failures never reach this retry path.
-      if (request.type === "manifest" || attempt >= 2 || !(error instanceof TypeError) || signal.aborted) throw error;
+      if (request.type === "manifest" || final || !(error instanceof TypeError) || signal.aborted) throw error;
       await retryDelay(attempt, signal);
     }
   }
@@ -185,7 +194,8 @@ async function retryDelay(attempt: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-async function readResponse(request: FetchRequest, response: Response, downloaded?: (bytes:number)=>void): Promise<Uint8Array<ArrayBuffer>> {
+/** Returns undefined only when an immutable blob body ends before its declared length. */
+async function readResponse(request: FetchRequest, response: Response, downloaded?: (bytes:number)=>void): Promise<Uint8Array<ArrayBuffer> | undefined> {
   if (request.type === "transport" && response.status === 404) {
     await response.body?.cancel();
     throw new VMError("STORAGE_NOT_FOUND", "rootfs transport is not available", { reason: "image-transport-not-found" });
@@ -205,7 +215,7 @@ async function readResponse(request: FetchRequest, response: Response, downloade
       chunks.push(value);
     }
   } finally {await reader.cancel().catch(()=>{});reader.releaseLock();}
-  if (request.type === "blob" && length !== request.bytes) throw new VMError("STORAGE_ERROR", "rootfs blob length is invalid");
+  if (request.type === "blob" && length < request.bytes) return undefined;
   const bytes = new Uint8Array(length);
   let offset = 0;
   for (const chunk of chunks) {

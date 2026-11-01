@@ -84,7 +84,7 @@ Call `serveProcess(handler)` once in a dedicated module worker. Its
 
 | Owner | Methods |
 | --- | --- |
-| `files`, `filesSync` | `open`, `read`, `write`, `seek`, `close`, `dup`, `pipe`, `stat`, `lstat`, `fstat`, `readdir`, `realpath`, `mkdir`, `rename`, `unlink`, `fsync`, `readFile`, `writeFile`, `writeAll` |
+| `files`, `filesSync` | `open`, `read`, `write`, `seek`, `close`, `dup`, `pipe`, `stat`, `lstat`, `fstat`, `readdir`, `realpath`, `mkdir`, `rename`, `unlink`, `fsync`, `chmod`, `fchmod`, `truncate`, `ftruncate`, `utimes`, `link`, `symlink`, `readlink`, `readFile`, `writeFile`, `writeAll` |
 | `sockets` | `socket`, `connect`, `bind`, `listen`, `accept`, `address`, `read`, `write`, `shutdown`, `close` |
 | `process` | `info`, `cwd`, `chdir`, `spawn`, `wait`, `signal` |
 | Inherited descriptors | `stdin`, `stdout`, `stderr` |
@@ -107,6 +107,27 @@ and its offset. `write` and `read` preserve short I/O. Empty reads mean EOF.
 `writeAll` loops over partial writes. `readFile` defaults to a 16 MiB limit.
 `writeFile` creates or truncates a file. Use `fsync` when durability is required.
 
+`chmod` and `fchmod` set the permission bits and ignore the file-type bits, as
+chmod(2) does, so a mode read with `stat` can be passed back. `truncate` and
+`ftruncate` set a file's length from a safe integer or a `bigint` that fits a
+signed 64-bit offset, and zero-fill when the file grows. `link(from, to)` adds a
+name for an existing file. `symlink(target, path)` stores `target` verbatim, and
+`readlink` returns it decoded as UTF-8. Rust applies permissions, ownership and
+path resolution to each call, and a failure carries the Linux `errno`.
+
+`utimes(path, access, modification, { followLinks })` sets the access and
+modification times with utimensat(2). Each time is a `Date` (kept to the
+millisecond), `"now"` for the current time, or `"omit"` to leave that time
+unchanged. Leaving both unchanged succeeds without looking at the path, and the
+link itself is changed when `followLinks` is `false`. A file's change time
+becomes the current time whenever a time is set. There is no descriptor form.
+
+By default a `write` to a socket whose peer has closed ends the whole worker
+with SIGPIPE, as it does for a native program. Pass `{ noSignal: true }` to
+`write` or `writeAll` to get the `EPIPE` error instead, for a server that must
+outlive its clients. It sends with `MSG_NOSIGNAL` (`sendto`), so it applies to
+sockets only: any other descriptor reports `ENOTSOCK`.
+
 TCP accepts numeric IPv4 and IPv6 addresses. Unix stream sockets use guest
 paths. `address(fd, true)` queries the peer. `shutdown` supports `"read"`,
 `"write"` and `"both"`. Sockets share the ordinary file descriptor table.
@@ -126,10 +147,13 @@ accept `{ signal }`. Cancellation is an ordered Rust request. A completed
 operation can win the race. An interrupted operation reports EINTR. Do not
 retry a mutation after an ambiguous transport failure.
 
-The transport bounds individual I/O at 16 MiB. Rust admits eight outstanding
-ordinary requests plus two cancellation requests per process. At most four
-JS processes can run at once. Limits fail explicitly. These bounds do not
-account for V8 CPU or heap consumption.
+The transport bounds individual I/O at 16 MiB. A worker keeps at most 32
+requests in flight (34 with wake operations, 35 with a cancellation) and queues
+up to 512 requests or 64 MiB. Rust admits 36 ordinary requests and 38 including
+cancellations per process. The engine admits at most 32 host commands at once,
+and JS processes, worker threads, esbuild runs, command interceptors and native
+commands share that lane; a start beyond it fails with `QUOTA_EXCEEDED`. Limits
+fail explicitly. These bounds do not account for V8 CPU or heap consumption.
 
 ## Ownership and diagnostics
 
@@ -140,10 +164,11 @@ Guest syscalls and JS calls share the same file, socket and process owners.
 The JS adapter encodes requests and manages worker transport promises. It
 does not implement Linux policy or a second process manager.
 
-The internal launch record is OXCR version 2. JS requests and completions use
-OXJR/OXJP version 1. Fields, lengths, identities and operation payloads are
-validated before effects. Stale completions cannot affect a successor.
-Compiler-only filesystem requests are no longer accepted.
+The internal launch record is OXCR version 17. JS requests use OXJR version 4
+and completions OXJP version 1, over JS process protocol 3. Fields, lengths,
+identities and operation payloads are validated before effects. Stale
+completions cannot affect a successor. Compiler-only filesystem requests are no
+longer accepted.
 
 `@oxidevm/sdk/diagnostics` exports `configureJSProcessTrace(vm, capacity)` and
 `readJSProcessTrace(vm)`. Traces include bounded capture counts, monotonic
@@ -153,3 +178,10 @@ boundary records but cannot capture or replay a live V8 heap.
 
 Use the diagnostic traces to inspect worker operations and native process
 boundaries in your application.
+
+## WebAssembly modules
+
+Typed, pinned packages of WebAssembly programs run on this mechanism: the module
+runner is a worker built from the SDK, started with `spawnJS`, and it holds the
+same host command lane as any other JS process. See
+[WebAssembly modules](./wasm-modules.md).

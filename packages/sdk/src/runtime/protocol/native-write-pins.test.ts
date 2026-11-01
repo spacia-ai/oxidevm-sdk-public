@@ -4,8 +4,8 @@ import { PROTOCOL_VERSION } from "./common.js";
 import { decodeNativeGraphVersion, NATIVE_LOGICAL_CHECKPOINT_VERSION, supportsNativeCheckpointVersion } from "./native-capture.js";
 
 it("retains historical owners, ordered urgent notifications and host attention under API141", () => {
-  expect(USERSPACE_API_VERSION).toBe(143);
-  expect(PROTOCOL_VERSION).toBe(175);
+  expect(USERSPACE_API_VERSION).toBe(144);
+  expect(PROTOCOL_VERSION).toBe(176);
   expect(NATIVE_LOGICAL_CHECKPOINT_VERSION).toBe(99);
   const graph = new Uint8Array(85), view = new DataView(graph.buffer);
   graph.set(new TextEncoder().encode("OXUG")); view.setUint32(4, 1, true);

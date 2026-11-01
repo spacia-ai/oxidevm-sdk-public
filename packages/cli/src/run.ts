@@ -12,6 +12,10 @@ import { pinnedStarterRelease } from "./starter-release.js";
 import {runSnapshotCommand} from "./snapshot-commands.js";
 import {snapshotHelp,snapshotCommandHelp} from "./snapshot-help.js";
 import {snapshotFailureDetail,snapshotFailureText,cancellationExit} from "./snapshot-errors.js";
+import { runWasmCommand } from "./wasm-commands.js";
+import { wasmCommandHelp, wasmHelp } from "./wasm-help.js";
+import { addText, buildText, doctorText, initText, inspectText, printable, releaseText, stageText } from "./wasm-text.js";
+import { wasmFailureDetail } from "./wasm-errors.js";
 
 export interface CLIEnvironment {
   readonly directory: string;
@@ -19,6 +23,8 @@ export interface CLIEnvironment {
   readonly signal: AbortSignal;
   stdout(text: string): void;
   stderr(text: string): void;
+  /** Asks a yes-or-no question of a person at a terminal; absent when nobody can answer. */
+  confirm?(question: string): Promise<boolean>;
 }
 const help = `oxidevm — Linux in your browser\n\nCommands:\n  init <directory> [--start] [--use-bun]\n    Creates the Python + pandas starter using the hosted runtime and signed image.\n    Advanced: [--mode system|userspace] [--image <bundle> --image-trust <file>]\n              [--skip-assets | --engine-dir <release>] [--sdk-archive <sdk.tgz> --cli-archive <cli.tgz>]\n  assets install [--config oxidevm.config.ts] [--image <bundle> --trust <file>] [--reference <file>] [--engine-dir <release>]\n  doctor [url] [--browser chromium|firefox|webkit] [--preview-origin <origin>]\n  image init <directory> --mode system|userspace\n  image keygen --out <author.pem>\n  image build <recipe.ts> --signing-key <author.pem> [--distribution]\n  image test <bundle> --trust <author.public.json> [--browser chromium|firefox|webkit] [--engine-dir <release>]\n  image inspect <bundle> [--trust <author.public.json>]\n  image pack <bundle> --trust <author.public.json>\n\nEvery command accepts --json; --start runs interactively and cannot use --json. Paths resolve from the current directory.\nNormal init installs no local engine files. Development and production use run.oxidevm.dev.\nSelf-hosting is an explicit commercial option: --engine-dir selects a local pinned release.\nExplicit assets/image test commands can use OXIDEVM_ENGINE_DIR or the verified engine cache.\nExample: oxidevm init app --start\n`;
 
@@ -26,6 +32,7 @@ async function execute(invocation: CLIInvocation, io: CLIEnvironment): Promise<C
   const path = (value: string) => resolve(io.directory, value); const command = invocation.command;
   switch (command) {
     case "snapshot init":case "snapshot build":case "snapshot pack":case "snapshot test":case "snapshot inspect":return runSnapshotCommand(invocation,io);
+    case "wasm add":case "wasm stage":case "wasm doctor":case "wasm inspect":case "wasm build":case "wasm release":case "wasm init":return runWasmCommand(invocation,io);
     case "init": {
       const starter = invocation.mode === "userspace" && invocation.image === undefined ? await readStarterInputs(io.directory, getSDKRelease().sdkVersion) : undefined;
       const release = invocation.mode === "userspace" && invocation.image === undefined ? pinnedStarterRelease() : undefined;
@@ -73,23 +80,24 @@ export async function runCLI(arguments_: readonly string[], io: CLIEnvironment):
       // Help and version are textual control flags, outside the eight-command JSON envelope.
       if (json) throw new VMError("INVALID_ARGUMENT", "use --help or --version without --json");
       const release = getSDKRelease();
-      io.stdout(invocation.kind === "help" ? invocation.command===undefined?help+snapshotHelp:snapshotCommandHelp(invocation.command) : `@oxidevm/cli ${release.sdkVersion}; @oxidevm/sdk ${release.sdkVersion}; engine ${release.engineRelease}\n`); return 0;
+      io.stdout(invocation.kind === "help" ? invocation.command===undefined?help+snapshotHelp+wasmHelp:invocation.command.startsWith("wasm ")?wasmCommandHelp(invocation.command):snapshotCommandHelp(invocation.command) : `@oxidevm/cli ${release.sdkVersion}; @oxidevm/sdk ${release.sdkVersion}; engine ${release.engineRelease}\n`); return 0;
     }
     command = invocation.command;
     if (io.signal.aborted) throw new VMError("ABORTED", "command interrupted");
     const report = decodeCliReport(await execute(invocation, io));
-    io.stdout(json ? `${JSON.stringify(report)}\n` : successText(report));
+    io.stdout(json ? `${JSON.stringify(report)}\n` : command.startsWith("wasm ") ? printable(successText(report)) : successText(report));
     if (invocation.command === "init" && invocation.start && report.command === "init" && report.kind === "result") await startApplication(report.result.directory, invocation.packageManager, io);
-    return report.kind === "result" && (report.command === "doctor" || report.command === "image test"||report.command==="snapshot test") && report.result.result === "failed" ? 3 : 0;
+    const failed = report.kind === "result" && ((report.command === "doctor" || report.command === "image test" || report.command === "snapshot test" || report.command === "wasm doctor" || report.command === "wasm build") && report.result.result === "failed" || report.command === "wasm release" && report.result.build.result === "failed");
+    return failed ? 3 : 0;
   } catch (error) {
     const interrupted = io.signal.aborted;
     const code = interrupted ? "ABORTED" : error instanceof VMError ? error.code : "STORAGE_ERROR";
     // Raw filesystem/tool errors can include author secrets. Emit only normalized SDK context.
-    const snapshot=command?.startsWith("snapshot ")===true;
+    const snapshot=command?.startsWith("snapshot ")===true,wasm=command?.startsWith("wasm ")===true;
     const message = interrupted ? "command interrupted; owned resources have been cleaned up" : snapshot?"Snapshot command failed; check its phase and reason":error instanceof VMError ? error.message : "operation failed; check the selected files and installed tools";
-    const detail=snapshot?snapshotFailureDetail(error):undefined;
+    const detail=snapshot?snapshotFailureDetail(error):wasm?wasmFailureDetail(error):undefined;
     const report = decodeCliReport({ schemaVersion: 2, kind: "error", command, error: { code, message,...(detail===undefined?{}:{detail}) } });
-    io.stdout(json ? `${JSON.stringify(report)}\n` : snapshot&&!interrupted ? snapshotFailureText(code,detail) : `${code}: ${message}\n`);
+    io.stdout(json ? `${JSON.stringify(report)}\n` : snapshot&&!interrupted ? snapshotFailureText(code,detail) : `${code}: ${wasm ? printable(message) : message}\n`);
     return interrupted ? cancellationExit(io.signal) : detail?.["reason"]==="snapshot-verify-failed"?3:code === "INVALID_ARGUMENT" || code === "FEATURE_NOT_AVAILABLE"||snapshot&&code==="CORE_LOAD_FAILED" ? 2 : 1;
   }
 }
@@ -99,6 +107,15 @@ function successText(report:CliReport):string {
     if(report.command==="snapshot init")return `Created ${report.result.directory}. Edit prepare.ts, then run oxidevm snapshot build ${report.result.recipePath}.\n`;
     if(report.command==="snapshot test")return `Snapshot ${report.result.name} restoration ${report.result.result} (${report.result.browser.name} ${report.result.browser.version}).\n`;
     if(report.command==="snapshot inspect")return `${report.result.kind==="bundle"?report.result.name:"Personal backup"}: ${report.result.snapshot.mode}, integrity verified; authentication ${report.result.authentication.kind}; runtime restoration not run.\n`;
+  }
+  if(report.kind==="result"){
+    if(report.command==="wasm add")return addText(report.result);
+    if(report.command==="wasm stage")return stageText(report.result);
+    if(report.command==="wasm doctor")return doctorText(report.result);
+    if(report.command==="wasm inspect")return inspectText(report.result);
+    if(report.command==="wasm build")return buildText(report.result);
+    if(report.command==="wasm release")return releaseText(report.result);
+    if(report.command==="wasm init")return initText(report.result);
   }
   return `${JSON.stringify(report,null,2)}\n`;
 }

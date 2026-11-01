@@ -99,6 +99,21 @@ image from the CDN. Its corresponding sources and notices are available through
 the links in the [licensing guide](licensing.md). Custom images require explicit
 author trust and verified references.
 
+### WebAssembly modules
+
+Modules are separate from the engine and the image. `oxidevm wasm add` writes the
+declaration and lock to commit, and stages each module's files under
+`.oxidevm/modules/<id>/<release>/`; `oxidevm wasm stage` rebuilds them after a
+clone, so run it before the production build. The generated handles name those
+files with `new URL(path, import.meta.url)`, so bundlers copy them as assets (small
+files may be inlined as `data:` URLs; both forms are verified against the lock).
+Ship the notices a module's license requires, and the source offer for a copyleft
+module, with the application. Modules start JS processes, so they run only on a
+self-hosted runtime and a cross-origin isolated page. A content security policy
+needs `blob:` in `script-src` (the verified adapter is imported from a blob URL)
+and `data:` in `connect-src` when files are inlined. See
+[WebAssembly modules](wasm-modules.md).
+
 ## Preview host
 
 Copy the SDK's packaged preview assets to a distinct host. `index.html`,

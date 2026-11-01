@@ -18,6 +18,7 @@
     "src/*.ts",
     "src/contracts/**/*.ts",
     "src/runtime/*.ts",
+    "src/wasm/**/*.ts",
     "src/frame/**/*.ts",
     "src/browser-test/**/*.ts"
   ],

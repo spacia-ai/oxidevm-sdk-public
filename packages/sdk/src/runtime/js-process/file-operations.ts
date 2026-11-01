@@ -1,5 +1,7 @@
-import type { LinuxDirectoryEntry, LinuxFileStat, LinuxPath, SeekOrigin } from "../../js-process-types.js";
+import type { LinuxDirectoryEntry, LinuxFileStat, LinuxPath, LinuxTimestamp, SeekOrigin } from "../../js-process-types.js";
+import { VMError } from "../errors.js";
 import { descriptor, type LinuxOperation, type LinuxResult, noValue, operation, protocol, Reader, value, Writer } from "./codec.js";
+import { integer } from "../decode.js";
 
 const BigInt = globalThis.BigInt, DataView = globalThis.DataView;
 export const files = {
@@ -43,7 +45,8 @@ export const files = {
   statusFlags: (fd: number, flags?: number) => operation(72, flags === undefined ? new Writer().u64(fd).u32(3) : new Writer().u64(fd).u32(4).u64(flags), value),
   open: (path: LinuxPath, flags = 0, mode = 0o666) => operation(2, new Writer().path(path).u64(flags).u64(mode), result => descriptor(value(result))),
   read: (fd: number, count: number) => operation(0, new Writer().u64(fd).u64(count), result => { if (result.value !== BigInt(result.bytes.byteLength) || result.bytes.byteLength > count) protocol("Invalid Linux read result"); return result.bytes; }),
-  write: (fd: number, bytes: Uint8Array) => operation(1, new Writer().u64(fd).blob(bytes), result => { const count = value(result); if (count > bytes.byteLength) protocol("Invalid Linux write result"); return count; }),
+  /** `noSignal` sends with MSG_NOSIGNAL (sendto, 44) so that a closed socket peer is an EPIPE error, not SIGPIPE for the whole worker. */
+  write: (fd: number, bytes: Uint8Array, noSignal = false) => operation(noSignal ? 44 : 1, noSignal ? new Writer().u64(fd).blob(bytes).u64(MSG_NOSIGNAL) : new Writer().u64(fd).blob(bytes), result => { const count = value(result); if (count > bytes.byteLength) protocol("Invalid Linux write result"); return count; }),
   seek: (fd: number, offset: bigint, origin: SeekOrigin = "start") => {
     if (offset < -0x8000_0000_0000_0000n || offset > 0x7fff_ffff_ffff_ffffn) protocol("Linux seek offset is out of range");
     return operation(8, new Writer().u64(fd).u64(BigInt.asUintN(64, offset)).u8(origin === "start" ? 0 : origin === "current" ? 1 : 2), result => { if (result.bytes.byteLength !== 0) protocol("Invalid Linux seek result"); return BigInt.asIntN(64, result.value); });
@@ -66,8 +69,39 @@ export const files = {
   rename: (from: LinuxPath, to: LinuxPath) => operation(82, new Writer().path(from).path(to), noValue),
   unlink: (path: LinuxPath, directory = false) => operation(directory ? 84 : 87, new Writer().path(path), noValue),
   fsync: (fd: number) => operation(74, new Writer().u64(fd), noValue),
+  chmod: (path: LinuxPath, mode: number) => operation(90, new Writer().path(path).u64(permissionBits(mode)), noValue),
+  fchmod: (fd: number, mode: number) => operation(91, new Writer().u64(fd).u64(permissionBits(mode)), noValue),
+  truncate: (path: LinuxPath, length: bigint | number) => operation(76, new Writer().path(path).u64(fileLength(length)), noValue),
+  ftruncate: (fd: number, length: bigint | number) => operation(77, new Writer().u64(fd).u64(fileLength(length)), noValue),
+  /** utimensat(AT_FDCWD, path, times, flags) (280): the path, then each time's seconds and nanoseconds, then the flags. */
+  utimes: (path: LinuxPath, access: LinuxTimestamp, modification: LinuxTimestamp, follow = true) => operation(280, writeTime(writeTime(new Writer().path(path), access), modification).u64(follow ? 0n : AT_SYMLINK_NOFOLLOW), noValue),
+  link: (from: LinuxPath, to: LinuxPath) => operation(86, new Writer().path(from).path(to), noValue),
+  symlink: (target: LinuxPath, path: LinuxPath) => operation(88, new Writer().path(target).path(path), noValue),
+  readlink: (path: LinuxPath) => operation(89, new Writer().path(path), decodeLinkTarget),
   getdents: (fd: number): LinuxOperation<readonly LinuxDirectoryEntry[]> => operation(217, new Writer().u64(fd).u64(64 * 1024), decodeEntries),
 };
+const MSG_NOSIGNAL = 0x4000n, AT_SYMLINK_NOFOLLOW = 0x100n, UTIME_NOW = 0x3fff_ffffn, UTIME_OMIT = 0x3fff_fffen;
+/** A time as the seconds (signed, two's complement) and nanoseconds Linux takes; milliseconds before the epoch round down. */
+function writeTime(writer: Writer, time: LinuxTimestamp): Writer {
+  if (time === "now") return writer.u64(0n).u64(UTIME_NOW);
+  if (time === "omit") return writer.u64(0n).u64(UTIME_OMIT);
+  const milliseconds: unknown = time instanceof Date ? time.getTime() : undefined;
+  if (typeof milliseconds !== "number" || !Number.isFinite(milliseconds)) throw new VMError("INVALID_ARGUMENT", "A Linux time must be a valid date, \"now\" or \"omit\"");
+  const seconds = Math.floor(milliseconds / 1000);
+  return writer.u64(BigInt.asUintN(64, BigInt(seconds))).u64(BigInt((milliseconds - seconds * 1000) * 1_000_000));
+}
+/** chmod(2) keeps the low twelve bits and ignores the file-type bits, so a mode taken from `stat()` is valid input. */
+function permissionBits(mode: number): number { return integer(mode, "Linux mode", 0, 0o177777) & 0o7777; }
+/** A length is an `off_t`: a non-negative signed 64-bit value. */
+function fileLength(length: bigint | number): bigint {
+  const exact = typeof length === "number" ? BigInt(integer(length, "Linux file length", 0)) : length;
+  if (exact < 0n || exact > 0x7fff_ffff_ffff_ffffn) protocol("A Linux file length must fit a signed 64-bit offset");
+  return exact;
+}
+function decodeLinkTarget(result: LinuxResult): string {
+  if (result.bytes.byteLength === 0 || result.bytes.byteLength > 4095 || result.value !== BigInt(result.bytes.byteLength)) protocol("Invalid Linux readlink result");
+  return new TextDecoder().decode(result.bytes);
+}
 function decodeStat(result: LinuxResult): LinuxFileStat & { readonly rdev: bigint; readonly blockSize: bigint; readonly blocks: bigint } {
   if (result.value !== 0n || result.bytes.byteLength !== 144) protocol("Invalid Linux stat result");
   const v = new DataView(result.bytes.buffer, result.bytes.byteOffset, result.bytes.byteLength);

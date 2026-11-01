@@ -1,0 +1,4 @@
+interface:
+  display_name: "OxideVM Modules"
+  short_description: "Package a WebAssembly program as an OxideVM module"
+  default_prompt: "Use $oxidevm-module-author to create or install an OxideVM WebAssembly module."

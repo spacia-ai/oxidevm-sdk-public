@@ -5,6 +5,7 @@
 | SDK, CLI, and starter application code | Apache-2.0 |
 | OxideVM engine | Proprietary. Free non-commercial use and local development. Paid commercial production use. |
 | Guest programs and libraries | Each program's original license |
+| WebAssembly modules you install | Each module's own license, declared in its manifest |
 | Fonts and other assets | Their original licenses and notices |
 
 The SDK's Apache-2.0 license permits commercial use. Keep its license and
@@ -67,6 +68,22 @@ their licenses. You must meet their obligations when redistributing binaries.
 The starter's Archivo, Roboto, and JetBrains Mono fonts use OFL-1.1.
 Their original license files remain in `public/fonts`. Preserve them when
 you redistribute the fonts. You may replace the fonts in your own app.
+
+## WebAssembly modules
+
+A [module](wasm-modules.md) is separate software from the SDK, the CLI and the
+engine. Its license is the `license.spdx` expression in its manifest, which
+`oxidevm wasm add` shows before it installs anything and which is committed in
+`modules/<id>/module.json`. The SDK's Apache-2.0 license does not apply to a
+module, and installing one does not change the engine's terms.
+
+A module can bundle third-party code and carry upstream binaries. The build lists
+the packages it bundled, warns when `license.spdx` does not name them, and
+requires a copyleft module to give the location of its complete source in
+`license.source`. When you ship an application that uses a module, ship the
+notices the module's license requires, and the source offer for a copyleft module,
+with it. Authors keep the license texts and notices of what they mirror in an
+artifact named in `license.notices`.
 
 ## Image source downloads
 

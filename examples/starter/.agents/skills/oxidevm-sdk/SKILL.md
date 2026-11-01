@@ -24,6 +24,10 @@ Inspect the recipe and its source locks before proposing files or dependencies. 
 
 Use the project's matching CLI for image initialization, signing and build commands. Add a smoke test for the actual new program. The current `image test` harness requires the matching local engine; report that test as blocked if it is unavailable. A Docker build alone does not prove browser compatibility. Keep `runtime: { hosting: "frame" }` in the app. For image-only staging, use the guide's `installProjectAssets` example with `hosting: "frame"`; bare `assets install` also selects local engine installation. Preserve explicit image references, independent author trust, project locks and saved-workspace migration. Sharing an image requires complete license/source materials and distribution checks; a development signature is insufficient.
 
+## Use a WebAssembly module
+
+Applications can install packaged WebAssembly programs with `oxidevm wasm add`, but only an SDK release that exports `@oxidevm/sdk/wasm` supports it, and only on a self-hosted runtime. Check the installed exports first; if they are missing, report that instead of adding modules by hand. When they are present, follow the `oxidevm-module-author` skill: review what a module declares before installing it, keep generated files untouched, and start modules with the typed handle and `spawnModule`.
+
 ## Use the VM
 
 Create the VM once for its application lifetime. Reuse it across actions. Dispose it when its owner is removed. Do not recreate it for every button click.

@@ -8,7 +8,10 @@ import { admitJSProcess } from "./admission.js";
 import { decodeUserspaceHostRequest, decodeUserspacePendingWork } from "../../userspace-abi.js";
 import { decodeJSCompletion, encodeJSRequest, type JSProcessIdentity } from "../../js-process/native-abi.js";
 import { VMError } from "../../errors.js";
-import { Writer, decodeJSIdentity } from "../../js-process/codec.js";
+import { LinuxError, Writer, decodeJSIdentity, descriptor, noValue, operation, value, type LinuxOperation } from "../../js-process/codec.js";
+import { files } from "../../js-process/file-operations.js";
+import { encodeAddress } from "../../js-process/sockets.js";
+import type { FileDescriptor } from "../../../js-process-types.js";
 import { encodeCommandExit } from "../../userspace-command-abi.js";
 import { decodeSpawn, spawnPayload } from "../../js-process/process.js";
 import { traceRingElf } from "../userspace-tier2.test-support.js";
@@ -25,12 +28,44 @@ async function fixture() {
   const request = decodeUserspaceHostRequest(new Uint8Array(runtime.memory.buffer, pointer, length).slice());
   if (request.kind !== "command") throw new Error("Expected a JS process launch");
   expect(request.pid).toBe(pid);
-  const submit = (sequence: number, operation: number, payload = new Uint8Array(), identity: JSProcessIdentity = request) => {
+  const submit = (sequence: number, operation: number, payload: Uint8Array = new Uint8Array(), identity: JSProcessIdentity = request) => {
     const bytes = encodeJSRequest(identity, sequence, operation, payload); stage(bytes); expect(call(runtime.instance, "oxidevm_userspace_js_submit", bytes.byteLength)).toBe(0);
     const result = readFileRecord(runtime); expect(result.byteLength).toBe(4); return new DataView(result.buffer).getUint32(0, true);
   };
   const completion = () => { expect(call(runtime.instance, "oxidevm_userspace_js_next")).toBe(0); const bytes = readFileRecord(runtime); return bytes.byteLength === 0 ? undefined : decodeJSCompletion(bytes); };
   return { runtime, request, pid, stage, submit, completion };
+}
+
+/** Runs requests through the production builders and decoders, so a wrong byte or a wrong reply shape fails here. */
+function operations(f: Awaited<ReturnType<typeof fixture>>) {
+  let sequence = 0;
+  /** Submits the next request and returns its raw completion, for a request whose effect matters more than its reply. */
+  const complete = (request: LinuxOperation<unknown>) => {
+    sequence += 1;
+    expect(f.submit(sequence, request.number, request.payload)).toBe(0);
+    return f.completion();
+  };
+  const send = <T>(request: LinuxOperation<T>): T => {
+    const reply = complete(request); if (reply === undefined) throw new Error(`Operation ${String(request.number)} did not complete`);
+    if (reply.errno !== 0) throw new LinuxError(reply.errno);
+    return request.decode({ value: reply.value, bytes: reply.payload });
+  };
+  /** The errno of a request that fails; 0 when it succeeds. */
+  const failure = (request: LinuxOperation<unknown>): number => { try { send(request); } catch (error: unknown) { return error instanceof LinuxError ? error.errno : -1; } return 0; };
+  return { send, failure, complete };
+}
+
+/** A connected unix stream pair inside one JS process: the connecting end and the accepted end. */
+function connectedPair(send: ReturnType<typeof operations>["send"], path: string): { readonly client: FileDescriptor; readonly server: FileDescriptor } {
+  const address = encodeAddress({ family: "unix", path });
+  const open = () => send(operation(41, new Writer().u32(1), result => descriptor(value(result))));
+  const listener = open();
+  send(operation(49, new Writer().u64(listener).blob(address), noValue));
+  send(operation(50, new Writer().u64(listener).u32(4), noValue));
+  const client = open();
+  send(operation(42, new Writer().u64(client).blob(address), noValue));
+  const server = send(operation(43, new Writer().u64(listener), result => descriptor(value(result))));
+  return { client, server };
 }
 
 it("uses the live Rust umask for JS mask queries and native file creation", async () => {
@@ -144,4 +179,119 @@ it("delivers live workspace edits to a blocked inotify read through production W
     expect(call(f.runtime.instance, "oxidevm_userspace_host_complete", exit.length)).toBe(0);
     expect(f.submit(4, 255, new Writer().u64(opened.value).u32(1).finish())).toBe(3);
   } finally { await f.runtime.jitRuntime.dispose(); }
+});
+
+it("serves the SDK's metadata requests (chmod, fchmod, truncate, ftruncate, link, symlink, readlink) to a worker-kind JS process", async () => {
+  const f = await fixture();
+  try {
+    const { send, failure } = operations(f);
+    const file = "/workspace/metadata.txt", hard = "/workspace/metadata.link", soft = "/workspace/metadata.sym";
+    const fd = send(files.open(file, 0o102, 0o600));
+    expect(send(files.write(fd, new TextEncoder().encode("hello world")))).toBe(11);
+
+    send(files.chmod(file, 0o640)); expect(send(files.stat(file)).mode & 0o7777).toBe(0o640);
+    send(files.fchmod(fd, 0o604)); expect(send(files.fstat(fd)).mode & 0o7777).toBe(0o604);
+    // A mode that still carries the file-type bits is masked, exactly as chmod(2) does.
+    send(files.chmod(file, send(files.stat(file)).mode)); expect(send(files.stat(file)).mode & 0o7777).toBe(0o604);
+    send(files.truncate(file, 5)); expect(send(files.stat(file)).size).toBe(5n);
+    send(files.ftruncate(fd, 3n)); expect(send(files.fstat(fd)).size).toBe(3n);
+    send(files.ftruncate(fd, 4096)); expect(send(files.fstat(fd)).size).toBe(4096n);
+
+    send(files.link(file, hard)); expect(send(files.stat(file)).links).toBe(2n);
+    expect(send(files.stat(hard)).inode).toBe(send(files.stat(file)).inode);
+    send(files.symlink("metadata.txt", soft));
+    expect(send(files.readlink(soft))).toBe("metadata.txt");
+    expect(send(files.stat(soft, false)).mode & 0o170000).toBe(0o120000);
+    expect(send(files.stat(soft)).inode).toBe(send(files.stat(file)).inode);
+
+    expect(failure(files.chmod("/workspace/absent", 0o600))).toBe(2);
+    expect(failure(files.truncate("/workspace/absent", 1))).toBe(2);
+    expect(failure(files.readlink(file))).toBe(22);
+    expect(failure(files.fchmod(999, 0o600))).toBe(9);
+    expect(failure(files.link(file, hard))).toBe(17);
+    expect(failure(files.symlink("x", soft))).toBe(17);
+  } finally { await f.runtime.jitRuntime.dispose(); }
+});
+
+it("serves utimes (utimensat, 280) to a worker-kind JS process and reads the times back through stat", async () => {
+  const f = await fixture();
+  try {
+    const { send, failure } = operations(f);
+    const file = "/workspace/times.txt", soft = "/workspace/times.sym";
+    const at = (seconds: number, milliseconds = 0) => new Date(seconds * 1000 + milliseconds);
+    const times = (path: string, follow = true) => { const { accessedNs, modifiedNs } = send(files.stat(path, follow)); return { accessedNs, modifiedNs }; };
+    send(files.close(send(files.open(file, 0o102, 0o600))));
+    send(files.symlink("times.txt", soft));
+
+    send(files.utimes(file, at(10, 5), at(20, 7)));
+    expect(times(file)).toEqual({ accessedNs: 10_005_000_000n, modifiedNs: 20_007_000_000n });
+    // Setting a time is a change of the inode, so its change time is the moment of the call, not either requested time.
+    expect(send(files.stat(file)).changedNs).not.toBe(20_007_000_000n);
+    // "omit" leaves exactly that one time alone.
+    send(files.utimes(file, "omit", at(30)));
+    expect(times(file)).toEqual({ accessedNs: 10_005_000_000n, modifiedNs: 30_000_000_000n });
+    send(files.utimes(file, at(40), "omit"));
+    expect(times(file)).toEqual({ accessedNs: 40_000_000_000n, modifiedNs: 30_000_000_000n });
+    // "now" is the guest clock's current time, which is neither of the earlier values.
+    send(files.utimes(file, "now", "now"));
+    expect(times(file).accessedNs).not.toBe(40_000_000_000n);
+    expect(times(file).modifiedNs).not.toBe(30_000_000_000n);
+
+    // The final link is followed by default and changed itself when asked not to.
+    send(files.utimes(soft, at(50), at(60), false));
+    expect(times(soft, false)).toEqual({ accessedNs: 50_000_000_000n, modifiedNs: 60_000_000_000n });
+    expect(times(file).modifiedNs).not.toBe(60_000_000_000n);
+    send(files.utimes(soft, at(70), at(80)));
+    expect(times(file)).toEqual({ accessedNs: 70_000_000_000n, modifiedNs: 80_000_000_000n });
+
+    expect(failure(files.utimes("/workspace/absent", at(1), at(1)))).toBe(2);
+    expect(failure(files.utimes(file, at(1), at(1), true))).toBe(0);
+  } finally { await f.runtime.jitRuntime.dispose(); }
+});
+
+it("sends with MSG_NOSIGNAL (sendto, 44) so a closed peer is EPIPE and the worker survives, where a plain write ends it with SIGPIPE", async () => {
+  const bytes = new TextEncoder().encode("ping");
+  for (const noSignal of [true, false]) {
+    const f = await fixture();
+    try {
+      const { send, failure, complete } = operations(f);
+      const { client, server } = connectedPair(send, "/workspace/peer.sock");
+      // While the peer is there both forms deliver the bytes.
+      expect(send(files.write(server, bytes, noSignal))).toBe(4);
+      expect(new TextDecoder().decode(send(files.read(client, 16)))).toBe("ping");
+      if (noSignal) {
+        // MSG_NOSIGNAL only exists for sockets: a regular file says so instead of silently writing.
+        const plain = send(files.open("/workspace/plain.txt", 0o102, 0o600));
+        expect(failure(files.write(plain, bytes, true))).toBe(88);
+      }
+      send(files.close(client));
+      if (noSignal) {
+        expect(failure(files.write(server, bytes, true))).toBe(32);
+        expect(failure(files.write(server, bytes, true))).toBe(32);
+        expect(send(files.stat("/workspace")).mode & 0o170000).toBe(0o040000);
+        expect(call(f.runtime.instance, "oxidevm_userspace_run", 1000, 0)).toBe(0);
+        expect(call(f.runtime.instance, "oxidevm_userspace_process_wait_status", f.pid)).toBe(0xffff_ffff);
+      } else {
+        // The plain write is answered with EPIPE too, and then the pending SIGPIPE ends the worker.
+        expect(complete(files.write(server, bytes, false))?.errno).toBe(32);
+        expect(call(f.runtime.instance, "oxidevm_userspace_run", 100, 0)).toBe(0);
+        expect(call(f.runtime.instance, "oxidevm_userspace_process_wait_status", f.pid)).toBe(13);
+      }
+    } finally { await f.runtime.jitRuntime.dispose(); }
+  }
+});
+
+// The documentation states this number (docs/js-process.md, docs/wasm-modules.md and `oxidevm wasm doctor`), so it is measured here:
+// JS processes, worker threads, esbuild runs, command interceptors and native addons all draw on one host command lane.
+it("admits 32 JS processes at once and refuses the 33rd as a quota error, because the host command lane holds 32 requests", async () => {
+  const bytes = new Uint8Array(await readFile(engineModulePath("oxidevm_userspace.wasm")));
+  const runtime = await instantiateRuntime(await WebAssembly.compile(bytes.buffer), "js-lane-core-test", { kind: "disabled" });
+  try {
+    expect(call(runtime.instance, "oxidevm_userspace_staging_resize", 0)).toBe(0);
+    expect(call(runtime.instance, "oxidevm_userspace_mount_rootfs", 0, 1, 128)).toBe(0);
+    for (let token = 1; token <= 32; token += 1) admitJSProcess(runtime, token, [], [], "/workspace");
+    let refusal: unknown;
+    try { admitJSProcess(runtime, 33, [], [], "/workspace"); } catch (error: unknown) { refusal = error; }
+    expect(refusal).toMatchObject({ code: "QUOTA_EXCEEDED" });
+  } finally { await runtime.jitRuntime.dispose(); }
 });
