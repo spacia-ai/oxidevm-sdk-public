@@ -2,11 +2,11 @@
 export const starterRelease: unknown = {
   "schemaVersion": 2,
   "sdkVersion": "0.0.8",
-  "engineRelease": "9f0ec667a348ddca02f5127fae279a7b17852811ed6201fc6a98072c12de44d8",
+  "engineRelease": "38288e4b44dbc46cbaceb623291df267029e4b03462ee47b926add687a4131ac",
   "engineCompliance": {
-    "url": "https://cdn.oxidevm.dev/engine/9f0ec667a348ddca02f5127fae279a7b17852811ed6201fc6a98072c12de44d8/compliance/255c8ce3b9ece077f94ddac68da67b872e420da9ea595e60529b96b3babda3f2/compliance.json",
+    "url": "https://cdn.oxidevm.dev/engine/38288e4b44dbc46cbaceb623291df267029e4b03462ee47b926add687a4131ac/compliance/780494f3bab493908dd18a13dbc5cde552e0c2b413dffb4c376a70d9633cdf20/compliance.json",
     "bytes": 746,
-    "sha256": "255c8ce3b9ece077f94ddac68da67b872e420da9ea595e60529b96b3babda3f2"
+    "sha256": "780494f3bab493908dd18a13dbc5cde552e0c2b413dffb4c376a70d9633cdf20"
   },
   "image": {
     "mode": "userspace",
