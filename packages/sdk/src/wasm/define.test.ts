@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
+import type { ProcessSignals, SignalTrap, TrappableSignal } from "./capabilities.js";
 import { defineModule } from "./define.js";
+import type { CommandIO, Invocation, Terminals } from "./define.js";
 import { moduleHandle } from "./handle.js";
-import type { ModuleProcess, SpawnArgs } from "./handle.js";
+import type { CommandName, ModuleProcess, SpawnArgs } from "./handle.js";
 import type { EndpointDecl, ModuleDecl } from "./manifest-types.js";
 import type { FileDescriptor } from "../js-process-types.js";
+import type { SystemVM, UserspaceVM } from "../contracts.js";
+import type { enableModuleCommands, ModuleCommands, ModuleCommandsStatus } from "./commands.js";
+import type { ModuleHandle } from "./handle.js";
 
 declare function render(markdown: string): string;
 declare function openDatabase(path: string): { query(sql: string): Promise<readonly string[]>; close(): void };
@@ -26,6 +31,40 @@ const command = defineModule({
         if (input === undefined || output === undefined) return host.fail(2, "usage: md2html <in.md> <out.html>");
         host.fs.writeFile(output, new TextEncoder().encode(render(new TextDecoder().decode(host.fs.readFile(input)))));
         return compiled instanceof WebAssembly.Module ? 0 : 1;
+      },
+    };
+  },
+});
+
+/**
+ * A command module that programs in the VM can run as `python3` or `python` once an application turns its commands on.
+ * Declaring commands gives `main` how it was invoked and which descriptors are terminals; declaring `process.signals`
+ * lets it trap Ctrl+C instead of being killed by it.
+ */
+const commanded = defineModule({
+  manifest: {
+    id: "py", version: "1.0.0", abi: "raw", artifacts: [], process: { kind: "command" }, commands: ["python3", "python"],
+    requires: { host: ["files.sync", "process.signals"] }, license: { spdx: "MIT" },
+  },
+  adapter: host => {
+    const signals: ProcessSignals = host.process.signals;
+    return {
+      async main(io) {
+        const invocation: Invocation<"python" | "python3"> = io.invocation;
+        const terminals: Terminals = io.terminals;
+        const name: "python" | "python3" | undefined = invocation.kind === "command" ? invocation.name : undefined;
+        const usage = invocation.kind === "command" ? `usage: ${invocation.argv0} FILE (${invocation.path})` : "usage: FILE";
+        const trap: SignalTrap = await signals.trap(["SIGINT", "SIGTERM"]);
+        const interrupt: Int32Array = trap.interruptBuffer;
+        const trapped: readonly TrappableSignal[] = trap.signals;
+        for await (const signal of trap) {
+          const received: TrappableSignal = signal;
+          void received;
+          break;
+        }
+        await trap.untrap();
+        if (terminals.stdin && io.args.length === 0) await signals.raise("SIGINT");
+        return usage.length + interrupt.length + trapped.length + (name === undefined ? 0 : 1);
       },
     };
   },
@@ -95,6 +134,45 @@ export function typeContract(): void {
     adapter: () => ({ protocols: { sql: async () => {} } }),
   });
   defineModule({
+    // @ts-expect-error only a command module runs as a program, so a service cannot declare commands
+    manifest: {
+      id: "s", version: "1.0.0", abi: "raw", artifacts: [], process: { kind: "service" }, commands: ["s"], requires: { host: [] }, license: { spdx: "MIT" },
+      expose: { sql: { kind: "unix", path: "/tmp/s.sock", protocol: "x/1" } },
+    },
+    // @ts-expect-error the invalid manifest also leaves the adapter with no valid shape
+    adapter: () => ({ protocols: { sql: async () => {} } }),
+  });
+  defineModule({
+    manifest: { id: "n", version: "1.0.0", abi: "raw", artifacts: [], process: { kind: "command" }, requires: { host: ["process.info"] }, license: { spdx: "MIT" } },
+    adapter: host => ({
+      main(io) {
+        // @ts-expect-error a module without commands cannot read how it was invoked: a runner that predates commands never sets it
+        void io.invocation;
+        // @ts-expect-error nor which descriptors are terminals
+        void io.terminals;
+        // @ts-expect-error process.signals was not declared, so host.process has no signals member
+        void host.process.signals;
+        return 0;
+      },
+    }),
+  });
+  defineModule({
+    manifest: { id: "t", version: "1.0.0", abi: "raw", artifacts: [], process: { kind: "command" }, commands: ["python3"], requires: { host: ["process.signals"] }, license: { spdx: "MIT" } },
+    adapter: host => ({
+      async main(io) {
+        const { invocation } = io;
+        if (invocation.kind === "command") {
+          // @ts-expect-error only a declared name can be the command that ran, so io.invocation.name === "undeclared" cannot compile either
+          const undeclared: typeof invocation.name = "undeclared";
+          void undeclared;
+        }
+        // @ts-expect-error SIGKILL can never be trapped
+        await host.process.signals.trap(["SIGKILL"]);
+        return 0;
+      },
+    }),
+  });
+  defineModule({
     // @ts-expect-error a typo in a capability name is rejected
     manifest: { id: "e", version: "1.0.0", abi: "wasi", artifacts: [], process: { kind: "command" }, requires: { host: ["files.syncc"] }, license: { spdx: "MIT" } },
     // @ts-expect-error the invalid manifest also leaves the adapter with no valid shape
@@ -128,15 +206,99 @@ export function consumerContract(running: ModuleProcess<typeof service.manifest>
   void [commandArgs, noArgs, serviceArgs, serviceWithArgs, missingRequired, invalidEnum, commandWithOptions, port, kind, erased, erasedNone, erasedBadSignal, endpoints];
 }
 
+const pins = { release: "0".repeat(64), adapter: { url: "/a.mjs", sha256: "1".repeat(64), bytes: 1 }, artifacts: {} };
+/** What `oxidevm wasm stage` generates for a module with commands: module.json as a literal. */
+const generated = moduleHandle({
+  schemaVersion: 1, id: "py", version: "1.0.0", abi: "raw", adapter: { api: 1, sha256: "1".repeat(64), bytes: 1 }, artifacts: [],
+  process: { kind: "command" }, commands: ["python", "python3"], requires: { host: [] }, license: { spdx: "MIT" },
+}, pins);
+
+/** Command names come from the manifest literal too; a handle whose manifest was loaded accepts any name for the runtime to check. */
+export function commandContract(declared: CommandName<typeof commanded.manifest>, handled: CommandName<typeof generated.manifest>, plain: CommandIO, named: CommandIO<"python">): void {
+  // Exactly the declared names, in both directions, for a module definition and for a generated handle.
+  const onlyDeclared: "python" | "python3" = declared;
+  const everyDeclared: readonly CommandName<typeof commanded.manifest>[] = ["python", "python3"];
+  const onlyHandled: "python" | "python3" = handled;
+  const everyHandled: readonly CommandName<typeof generated.manifest>[] = ["python", "python3"];
+  // @ts-expect-error only declared names are command names
+  const undeclared: CommandName<typeof commanded.manifest> = "node";
+  // @ts-expect-error md2html declares no commands, so it has no command names
+  const none: CommandName<typeof command.manifest> = "md2html";
+  const loaded: CommandName<ModuleDecl> = "anything";
+  // Without a type argument CommandIO is the shape every runner provides, and a command's io is one.
+  const widened: CommandIO = named;
+  const args: readonly string[] = plain.args;
+  void [onlyDeclared, everyDeclared, onlyHandled, everyHandled, undeclared, none, loaded, widened, args];
+}
+
+const resolved = { schemaVersion: 1, version: "1.0.0", abi: "raw", adapter: { api: 1, sha256: "1".repeat(64), bytes: 1 }, artifacts: [], requires: { host: [] }, license: { spdx: "MIT" } } as const;
+/** Generated handles of a command module with a required option, a command module without commands, and a service. */
+const optioned = moduleHandle({
+  ...resolved, id: "conv", process: { kind: "command" }, commands: ["conv"],
+  options: { dataDir: { type: "string", maxLength: 64 }, mode: { type: "enum", values: ["a", "b"], default: "a" } },
+}, pins);
+const commandless = moduleHandle({ ...resolved, id: "plain", process: { kind: "command" } }, pins);
+const generatedService = moduleHandle({ ...resolved, id: "db", process: { kind: "service" }, expose: { sql: { kind: "unix", path: "/tmp/db.sock", protocol: "x/1" } } }, pins);
+
+/**
+ * `enableModuleCommands`' contract, also never called: only a command module that declares commands turns them on,
+ * `commands` names only declared ones, the options are the module's own (a required one is required), nothing that the
+ * program running a command supplies itself (`args`, `cwd`, `env`) can be passed, and `paths` is typed by the names
+ * the call turned on.
+ */
+export async function enableContract(enable: typeof enableModuleCommands, vm: UserspaceVM, system: SystemVM, loaded: ModuleHandle): Promise<void> {
+  // Every declared command by default, each with its typed path.
+  const all = await enable(vm, generated);
+  const python: "/usr/local/bin/python" = all.paths.python;
+  const names: readonly ("python" | "python3")[] = all.commands;
+  const named: ModuleCommands<typeof generated.manifest> = all;
+  // A subset narrows the names and the paths to the commands this call turned on.
+  const one = await enable(vm, generated, { commands: ["python3"], concurrency: 2, signal: AbortSignal.timeout(1000) });
+  const python3: "/usr/local/bin/python3" = one.paths.python3;
+  const status: ModuleCommandsStatus<"python3"> = await one.status();
+  // @ts-expect-error python was not turned on by this call, so it has no path
+  void one.paths.python;
+  // Options come from the manifest; the one without a default is required.
+  await enable(vm, optioned, { options: { dataDir: "/workspace/data" } });
+  // @ts-expect-error dataDir has no default, so the options argument is required
+  await enable(vm, optioned);
+  // @ts-expect-error a required option cannot be left out
+  await enable(vm, optioned, { options: { mode: "b" } });
+  // @ts-expect-error an enum option accepts only its declared values
+  await enable(vm, optioned, { options: { dataDir: "/workspace/data", mode: "c" } });
+  // @ts-expect-error a service runs no commands
+  await enable(vm, generatedService);
+  // @ts-expect-error a command module without commands has none to turn on
+  await enable(vm, commandless);
+  // @ts-expect-error only declared names can be turned on
+  await enable(vm, generated, { commands: ["node"] });
+  // @ts-expect-error the program that runs a command supplies its own arguments
+  await enable(vm, generated, { args: ["x.py"] });
+  // @ts-expect-error and its own working directory
+  await enable(vm, generated, { cwd: "/workspace" });
+  // @ts-expect-error and its own environment
+  await enable(vm, generated, { env: { HOME: "/home/user" } });
+  // @ts-expect-error a module that declares no options takes none
+  await enable(vm, generated, { options: { mode: "a" } });
+  // @ts-expect-error a System VM runs no module commands
+  await enable(system, generated);
+  // A loaded handle has no literal type: any names and options type-check, and the call checks them when it runs.
+  const loose = await enable(vm, loaded, { commands: ["anything"], options: { mode: 1 } });
+  const anything: "/usr/local/bin/anything" = loose.paths.anything;
+  const every: Readonly<Record<string, string>> = (await enable(vm, loaded)).paths;
+  void [python, names, named, python3, status, anything, every];
+}
+
 describe("module definitions", () => {
   it("returns the module unchanged so the build can read both halves", () => {
     expect(command.manifest.id).toBe("md2html");
+    expect(commanded.manifest.commands).toEqual(["python3", "python"]);
+    expect(generated.manifest.commands).toEqual(["python", "python3"]);
     expect(typeof command.adapter).toBe("function");
     expect(Object.keys(service.manifest.expose)).toEqual(["sql", "pg"]);
   });
 
   it("builds a handle that carries the manifest literal and the launch pins untouched", () => {
-    const pins = { release: "0".repeat(64), adapter: { url: "/a.mjs", sha256: "1".repeat(64), bytes: 1 }, artifacts: {} };
     const handle = moduleHandle(service.manifest, pins);
     expect(handle.manifest).toBe(service.manifest);
     expect(handle.pins).toBe(pins);

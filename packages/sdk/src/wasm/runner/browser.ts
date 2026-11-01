@@ -1,6 +1,9 @@
+import type { LinuxClient } from "../../runtime/js-process/transport.js";
+import { dispositionOperation } from "../../runtime/js-process/signals.js";
 import type { LinuxParts } from "./host.js";
 import type { BrowserProbe } from "./prerequisites.js";
 import type { RunnerContext } from "./run.js";
+import type { SignalTransport } from "./signals.js";
 
 /** The parts of a worker's global scope the probe reads, so tests can offer a fake scope. */
 export interface BrowserScope {
@@ -20,9 +23,9 @@ export function probeBrowser(scope: BrowserScope): BrowserProbe {
   };
 }
 
-/** Evaluates a verified adapter bundle as an ES module through a short-lived blob URL. */
-export async function importAdapterFromBlob(bytes: Uint8Array<ArrayBuffer>): Promise<unknown> {
-  const url = URL.createObjectURL(new Blob([bytes], { type: "text/javascript" }));
+/** Evaluates a verified adapter bundle as an ES module through a short-lived blob URL; a module script needs a JavaScript type. */
+export async function importAdapterFromBlob(bundle: Blob): Promise<unknown> {
+  const url = URL.createObjectURL(bundle.type === "text/javascript" ? bundle : new Blob([bundle], { type: "text/javascript" }));
   try {
     const namespace: unknown = await import(/* @vite-ignore */ url);
     return namespace;
@@ -31,13 +34,24 @@ export async function importAdapterFromBlob(bytes: Uint8Array<ArrayBuffer>): Pro
   }
 }
 
-/** Binds the runner to this worker's `fetch`, `navigator.locks` and dynamic `import`. */
-export function browserContext(linux: LinuxParts): RunnerContext {
+/** The process's signal words and OXJR 65550, through its Linux client (JS process protocol 4, engine ADR 0027). */
+export function clientSignals(client: LinuxClient): SignalTransport {
+  return {
+    setDisposition: (signal, disposition) => client.call(dispositionOperation(signal, disposition)),
+    listen: listener => { client.listenForSignals(listener); },
+    get interruptWord() { return client.interruptWord; },
+    signaled: signal => { client.signaled(signal); },
+  };
+}
+
+/** Binds the runner to this worker's `fetch`, `navigator.locks`, dynamic `import` and its process's signals. */
+export function browserContext(linux: LinuxParts, client: LinuxClient): RunnerContext {
   return {
     ...linux,
     fetch: (url, init) => fetch(url, { signal: init.signal }),
     locks: "locks" in navigator ? navigator.locks : undefined,
     browser: probeBrowser(globalThis),
     importAdapter: importAdapterFromBlob,
+    signals: clientSignals(client),
   };
 }

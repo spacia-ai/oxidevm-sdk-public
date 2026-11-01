@@ -1,4 +1,25 @@
-/** The fixed files of a generated module project. Nothing here depends on the module's id or kind. */
+/** The text of the files of a generated module project. */
+
+/** Command names that start with this are reserved; the SDK's manifest decoder refuses them in `commands`. */
+export const RESERVED_COMMAND_PREFIX = "oxidevm";
+
+/** The command a generated command module declares: its id, which is always a valid command name unless the prefix is reserved. */
+export function commandFor(id: string): string | undefined {
+  return id.startsWith(RESERVED_COMMAND_PREFIX) ? undefined : id;
+}
+
+/** The name `oxidevm wasm stage` exports a module's handle under: `my-tool` becomes `myTool`. */
+export function handleName(id: string): string {
+  return id.replace(/-([a-z0-9])/gu, (_match, character: string) => character.toUpperCase());
+}
+
+/**
+ * What a generated project is: a service, or a command module with the name its manifest declares in `commands`
+ * (`undefined` when the id starts with the reserved prefix) that is either the add example or a `--from` skeleton.
+ */
+export type TemplateShape =
+  | { readonly kind: "service" }
+  | { readonly kind: "command"; readonly command: string | undefined; readonly skeleton: boolean };
 
 /** A hand-assembled WebAssembly module exporting `add(i32, i32) -> i32`, so the example needs no binary in source control. */
 export const ADD_WASM: Uint8Array<ArrayBuffer> = Uint8Array.from([
@@ -41,6 +62,125 @@ describe("parseOperands", () => {
 });
 `;
 
+/** What follows the command's name in its usage line. */
+const USAGE_ARGUMENTS = "<a> <b>  (two 32-bit integers)";
+const usage = (name: string): string => `usage: ${name} ${USAGE_ARGUMENTS}`;
+
+/**
+ * `src/command.ts` of the add example: the command's behavior, apart from the WebAssembly, against only the host members it
+ * uses. `command` is the name module.ts declares, or undefined when the id is reserved and the module declares none.
+ */
+export function addCommandSource(id: string, command: string | undefined): string {
+  const about = command === undefined
+    ? ` * \`${id} <a> <b>\` prints the sum of two 32-bit integers.
+ *
+ * The application starts it with \`spawnModule\`. The module declares no commands, because command names that start with
+ * "${RESERVED_COMMAND_PREFIX}" are reserved, so no program in the VM runs it by name.`
+    : ` * \`${command} <a> <b>\` prints the sum of two 32-bit integers.
+ *
+ * The application starts it with \`spawnModule\`, and once it turns the module's commands on, any program in the VM runs
+ * it as \`/usr/local/bin/${command}\`.`;
+  const name = command === undefined
+    ? `      // Only the application starts this module, so a usage line names the module.
+      const name = ${JSON.stringify(id)};`
+    : `      // Name the command as the caller typed it (perhaps a path, or a link to it); io.args never holds argv[0].
+      const name = io.invocation.kind === "command" ? io.invocation.argv0 : ${JSON.stringify(id)};`;
+  return `import type { BaseHost, CommandHooks, Host } from "@oxidevm/sdk/wasm";
+import { parseOperands } from "./operands.ts";
+
+/**
+ * The host members the command uses. Asking for only these keeps it testable with a small stand-in instead of a whole
+ * host, whose members grow with the SDK.
+ */
+export type AddHost = Pick<BaseHost, "fail"> & { readonly fs: Pick<Host<"files.sync">["fs"], "writeAll"> };
+
+/**
+${about}
+ */
+export function addCommand(host: AddHost, add: (left: number, right: number) => unknown): ${command === undefined ? "CommandHooks" : `CommandHooks<${JSON.stringify(command)}>`} {
+  return {
+    main(io) {
+${name}
+      const operands = parseOperands(io.args);
+      if (operands === undefined) return host.fail(2, \`usage: \${name} ${USAGE_ARGUMENTS}\`);
+      // writeAll writes every byte: a pipe may take only part of one write.
+      host.fs.writeAll(io.stdout, new TextEncoder().encode(\`\${String(add(...operands))}\\n\`));
+      return 0;
+    },
+  };
+}
+`;
+}
+
+/**
+ * `test/command.test.ts` of the add example: runs `main` the way the runner does, for each way the module can start, with
+ * public types only and nothing of the SDK at run time. A stand-in for the narrow host stays valid as the SDK grows.
+ */
+export function addCommandTest(id: string, command: string | undefined): string {
+  const invocation = command !== undefined;
+  const cases = command === undefined
+    ? `describe(${JSON.stringify(`the ${id} command`)}, () => {
+  it("prints the sum of its two arguments", async () => {
+    expect(await run(["2", "3"])).toEqual({ status: 0, stdout: "5\\n", failures: [] });
+  });
+
+  it("answers bad input with status 2 and a usage line", async () => {
+    expect(await run(["2"])).toEqual({ status: 2, stdout: "", failures: [${JSON.stringify(usage(id))}] });
+  });
+});
+`
+    : `/** How the runner describes a run that a program in the VM started by typing \`argv0\`. */
+const fromVM = (argv0: string): IO["invocation"] => ({ kind: "command", name: ${JSON.stringify(command)}, path: ${JSON.stringify(`/usr/local/bin/${command}`)}, argv0 });
+
+describe(${JSON.stringify(`the ${command} command`)}, () => {
+  it("prints the sum when the application starts the module", async () => {
+    expect(await run(["2", "3"], { kind: "host" })).toEqual({ status: 0, stdout: "5\\n", failures: [] });
+  });
+
+  it("prints the sum when a program in the VM runs it", async () => {
+    expect(await run(["2", "3"], fromVM(${JSON.stringify(command)}))).toEqual({ status: 0, stdout: "5\\n", failures: [] });
+  });
+
+  it("answers bad input with status 2 and a usage line that names the command as it was typed", async () => {
+    expect(await run(["2"], fromVM(${JSON.stringify(command)}))).toEqual({ status: 2, stdout: "", failures: [${JSON.stringify(usage(command))}] });
+    expect(await run(["two", "3"], fromVM(${JSON.stringify(`/usr/local/bin/${command}`)}))).toEqual({ status: 2, stdout: "", failures: [${JSON.stringify(usage(`/usr/local/bin/${command}`))}] });
+    expect(await run([], { kind: "host" })).toEqual({ status: 2, stdout: "", failures: [${JSON.stringify(usage(id))}] });
+  });
+});
+`;
+  return `import { describe, expect, it } from "vitest";
+import type { CommandIO } from "@oxidevm/sdk/wasm";
+import { addCommand } from "../src/command.ts";
+import type { AddHost } from "../src/command.ts";
+
+type IO = ${command === undefined ? "CommandIO" : `CommandIO<${JSON.stringify(command)}>`};
+
+/** Descriptors are branded numbers; this check makes one from a test's number without a cast. */
+function isDescriptor(value: number): value is IO["stdout"] {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+function descriptor(value: number): IO["stdout"] {
+  if (!isDescriptor(value)) throw new RangeError(\`\${String(value)} is not a descriptor\`);
+  return value;
+}
+
+/** Runs main once with a stand-in for the host members the command uses, and returns what it wrote and failed with. */
+async function run(args: readonly string[]${invocation ? ", invocation: IO[\"invocation\"]" : ""}): Promise<{ status: number; stdout: string; failures: string[] }> {
+  const stdout = descriptor(1);
+  let written = "";
+  const failures: string[] = [];
+  const host: AddHost = {
+    fs: { writeAll: (fd, bytes) => { expect(fd).toBe(stdout); written += new TextDecoder().decode(bytes); } },
+    fail: (status, message) => { failures.push(message); return status; },
+  };
+  const io: IO = { args, env: {}, cwd: "/workspace", stdin: descriptor(0), stdout, stderr: descriptor(2)${invocation ? ", invocation, terminals: { stdin: false, stdout: false, stderr: false }" : ""} };
+  const status = await addCommand(host, (left, right) => left + right).main(io);
+  return { status, stdout: written, failures };
+}
+
+${cases}`;
+}
+
 export const TSCONFIG = `{
   "compilerOptions": {
     "allowImportingTsExtensions": true,
@@ -78,15 +218,19 @@ export const TEST_TSCONFIG = `{
 }
 `;
 
-export function moduleTest(id: string, kind: "command" | "service"): string {
+export function moduleTest(id: string, shape: TemplateShape): string {
+  const commands = shape.kind === "service" ? ""
+    : shape.command === undefined
+      ? `    // Command names that start with "${RESERVED_COMMAND_PREFIX}" are reserved, so this module declares none.\n    expect("commands" in definition.manifest).toBe(false);\n`
+      : `    expect(definition.manifest.commands).toEqual([${JSON.stringify(shape.command)}]);\n`;
   return `import { describe, expect, it } from "vitest";
 import definition from "../module.ts";
 
 describe("module definition", () => {
   it("declares what the build and the consumer read", () => {
     expect(definition.manifest.id).toBe(${JSON.stringify(id)});
-    expect(definition.manifest.process.kind).toBe(${JSON.stringify(kind)});
-    expect(typeof definition.adapter).toBe("function");
+    expect(definition.manifest.process.kind).toBe(${JSON.stringify(shape.kind)});
+${commands}    expect(typeof definition.adapter).toBe("function");
   });
 });
 `;
@@ -227,7 +371,24 @@ redistributes. Keep the license texts of shipped binaries in this repository too
 `;
 }
 
-export function agentsFile(id: string): string {
+/** The rules for a command module's runs that programs in the VM start (engine ADR 0027). */
+const COMMAND_RULES = `
+## Commands that programs in the VM run
+
+Each name in \`commands\` becomes a program: once an application turns it on for a VM (\`enableModuleCommands\`), any program there runs the module as \`/usr/local/bin/<name>\`, in a fresh process with the caller's arguments, environment, directory and standard streams.
+
+- Name the command with \`io.invocation.argv0\` in usage lines and errors; the caller may have typed a path or a link. \`io.args\` never contains argv[0].
+- Standard input may be a terminal, a pipe, a file or empty. Read it only when the command's interface says so, and until a read returns no bytes.
+- Use colour or prompts only when \`io.terminals\` says that descriptor is a terminal.
+- Return 0-119 from \`main\`, and 2 for a usage error. Never throw for a user's mistake: a throw ends the run with status 123.
+- A signal kills the process at once and \`close()\` does not run, unless the module declares \`process.signals\`. If you trap a signal, finish quickly, then \`untrap()\` and \`raise()\` it, so the caller sees the process killed by that signal and a shell loop stops.
+- Write results atomically (a temporary file, then a rename), so an interrupted run never leaves half a file.
+- Choose names that do not shadow image programs unless you mean to: \`/usr/local/bin\` comes before \`/usr/bin\` on PATH. Adding a name in a later release makes every application consent again.
+- Never list your own command (\`/usr/local/bin/<name>\`) in \`requires.guest.executables\`, and never start your own command through PATH.
+- Keep start-up cheap: every run starts a fresh process, which runs the adapter factory again.
+`;
+
+export function agentsFile(id: string, shape: TemplateShape): string {
   return `# ${id}: instructions for coding agents
 
 This repository is an OxideVM WebAssembly module. \`module.ts\` holds the whole definition: a literal \`manifest\` and the \`adapter\` that runs the WebAssembly inside a Userspace JS process.
@@ -240,16 +401,56 @@ This repository is an OxideVM WebAssembly module. \`module.ts\` holds the whole 
 - Artifacts are files in this repository named by \`from\`. Pin upstream binaries by hash where they come from, and keep their licenses and notices in this repository.
 - Verify with \`pnpm run check\` (types, lint, and \`oxidevm wasm build --check\`), then \`pnpm test\`, then \`pnpm run test:conformance\` (\`oxidevm wasm test\` in a real browser).
 - Release by tag: \`pnpm run release\` prints the steps.
+${shape.kind === "command" ? COMMAND_RULES : ""}`;
+}
+
+/** The README section of a command module: how an application turns its command on, and what a shell then sees. */
+function shellSection(id: string, command: string | undefined, skeleton: boolean): string {
+  if (command === undefined) {
+    return `
+## Run it from a shell
+
+The module declares no commands: command names that start with \`${RESERVED_COMMAND_PREFIX}\` are reserved. To let programs in a VM run it, add \`commands: ["<name>"]\` after \`process\` in \`module.ts\` with a name of your own; an application then turns it on with \`enableModuleCommands(vm, ${handleName(id)})\`, and programs run it as \`/usr/local/bin/<name>\`.
+`;
+  }
+  return `
+## Run it from a shell
+
+The module declares the command \`${command}\`. An application that installed it turns the command on for one Userspace VM, and from then on any program in that VM can run it:
+
+\`\`\`ts
+import { enableModuleCommands } from "@oxidevm/sdk/wasm";
+import { ${handleName(id)} } from "./oxidevm.modules.generated";
+
+const commands = await enableModuleCommands(vm, ${handleName(id)});
+// A terminal in the VM now runs \`${skeleton ? command : `${command} 2 3`}\`${skeleton ? " like any other program" : ", which prints 5"}.
+await commands.disable();
+\`\`\`
+
+A third argument turns on only some of a module's commands (\`commands\`), sets its \`options\`, and bounds how many runs may be active at once (\`concurrency\`, 4 by default).
+
+Turning the command on places a stub at \`/usr/local/bin/${command}\`. A shell finds it when its \`PATH\` lists \`/usr/local/bin\` before \`/usr/bin\`, and then the command takes the place of an image program with the same name. It runs as the guest user, with the caller's arguments, environment, working directory and standard streams. A shell sees these exit statuses:
+
+| Status | Meaning |
+| --- | --- |
+| 0-119 | the module's own status |
+| 120 | the module could not be launched |
+| 122 | a prerequisite is missing |
+| 123 | the adapter failed: it threw, or returned an invalid status |
+| 125 | the engine failed |
+| 126 | the stub ran as an ordinary program: the command is not turned on in this VM, or more runs are active than \`concurrency\` allows |
+| 127 | the command is not on \`PATH\` |
+| 128+n | the process was killed by signal n (130 for Ctrl+C) |
 `;
 }
 
-export function readmeFile(id: string, kind: "command" | "service"): string {
-  const run = kind === "command"
+export function readmeFile(id: string, shape: TemplateShape): string {
+  const run = shape.kind === "command"
     ? "A command module runs once per start, like a program: `spawnModule(vm, handle, { args: [\"2\", \"3\"] })`."
     : "A service module listens on the sockets its manifest declares and serves clients until it is stopped.";
   return `# ${id}
 
-An [OxideVM](https://oxidevm.dev) WebAssembly module (${kind}). ${run}
+An [OxideVM](https://oxidevm.dev) WebAssembly module (${shape.kind}). ${run}
 
 ## Use it
 
@@ -260,7 +461,7 @@ oxidevm wasm add github:OWNER/REPO@v0.1.0
 \`\`\`
 
 The command shows what the module declares and asks before installing it.
-
+${shape.kind === "command" ? shellSection(id, shape.command, shape.skeleton) : ""}
 ## Develop it
 
 \`\`\`sh

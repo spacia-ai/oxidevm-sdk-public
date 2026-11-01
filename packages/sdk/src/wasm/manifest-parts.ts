@@ -1,4 +1,5 @@
 import { exactKeys, record, string } from "../runtime/decode.js";
+import { MODULE_COMMAND_NAME, moduleCommandPath, RESERVED_COMMAND_PREFIX } from "../runtime/module-command-names.js";
 import { decodeSHA256 } from "../values.js";
 import { isBrowserFeature, isCapability } from "./capabilities.js";
 import type { BrowserFeature, Capability } from "./capabilities.js";
@@ -79,6 +80,30 @@ export function decodeProcess(value: unknown): { readonly kind: "command" } | { 
     return { kind };
   }
   return item["exclusive"] === undefined ? { kind } : { kind, exclusive: choice(item["exclusive"], "process exclusive", ["workspace"]) };
+}
+
+/** A module's own commands; the name grammar and the stub path belong to the engine's table (engine ADR 0027). */
+const MAX_COMMANDS = 16;
+
+function commandName(value: unknown): string {
+  const name = string(value, "commands");
+  if (!MODULE_COMMAND_NAME.test(name)) return invalid("commands", `${JSON.stringify(name)} is not a command name (lower-case letters, digits, ".", "_", "+" and "-", starting with a letter or digit, at most 64 characters)`);
+  if (name.startsWith(RESERVED_COMMAND_PREFIX)) return invalid("commands", `${name} starts with ${RESERVED_COMMAND_PREFIX}, which is reserved`);
+  return name;
+}
+
+/** A command module's `commands`: a set of one to sixteen names, stored sorted like `requires.host`. */
+export function decodeCommands(value: unknown): readonly string[] {
+  const names = list(value, "commands", MAX_COMMANDS).map(commandName);
+  if (names.length === 0) invalid("commands", "must name at least one command; leave the field out instead");
+  unique(names, "commands");
+  return sorted(names);
+}
+
+/** A module cannot require its own command: that path is the engine's stub, never a program of the image. */
+export function rejectOwnCommands(commands: readonly string[], executables: readonly string[]): void {
+  const own = commands.find(name => executables.includes(moduleCommandPath(name)));
+  if (own !== undefined) invalid("commands", `${own} is this module's own command, so requires.guest.executables cannot list ${moduleCommandPath(own)}`);
 }
 
 export function decodeExpose(value: unknown): Readonly<Record<string, EndpointDecl>> {

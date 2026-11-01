@@ -63,19 +63,43 @@ export interface Connection {
   write(bytes: Uint8Array): Promise<void>;
 }
 
-/** What `main` receives: the process arguments and environment, and the same descriptors as `host.stdio`. */
-export interface CommandIO extends Stdio {
+/** Whether each standard descriptor of a module command is a terminal. */
+export interface Terminals {
+  readonly stdin: boolean;
+  readonly stdout: boolean;
+  readonly stderr: boolean;
+}
+
+/**
+ * How the module was started: by the application (`host`), or by a program in the VM that ran one of its `commands`
+ * (engine ADR 0027), with the declared name, the canonical path of its stub and the caller's argv[0].
+ */
+export type Invocation<N extends string> =
+  | { readonly kind: "host" }
+  | { readonly kind: "command"; readonly name: N; readonly path: string; readonly argv0: string };
+
+/** The names a manifest literal declares in `commands`; `never` when it declares none. */
+export type CommandsOf<M> = M extends { readonly commands: readonly (infer N extends string)[] } ? N : never;
+
+/** The process arguments and environment, and the same descriptors as `host.stdio`. */
+interface BaseCommandIO extends Stdio {
   readonly args: readonly string[];
   readonly env: Readonly<Record<string, string>>;
   readonly cwd: string;
 }
 
+/**
+ * What `main` receives. A module that declares `commands` also learns how it was invoked and which descriptors are
+ * terminals. A module without commands cannot read those fields, because a runner that predates commands never sets them.
+ */
+export type CommandIO<N extends string = never> = BaseCommandIO & ([N] extends [never] ? unknown : { readonly invocation: Invocation<N>; readonly terminals: Terminals });
+
 export type Info = Readonly<Record<string, string | number | boolean>>;
 
-/** What a command module returns from its factory. */
-export interface CommandHooks {
+/** What a command module returns from its factory; `N` is the names it declares in `commands`. */
+export interface CommandHooks<N extends string = never> {
   /** Returns the exit status, 0-119. */
-  main(io: CommandIO): number | Promise<number>;
+  main(io: CommandIO<N>): number | Promise<number>;
   close?(): void | Promise<void>;
 }
 
@@ -90,7 +114,7 @@ export interface ServiceHooks<E extends Readonly<Record<string, EndpointDecl>>> 
 
 export type Hooks<M extends ModuleDecl> =
   M extends ServiceDecl ? ServiceHooks<M["expose"]>
-  : M extends CommandDecl ? CommandHooks
+  : M extends CommandDecl ? CommandHooks<CommandsOf<M>>
   : never;
 
 /**

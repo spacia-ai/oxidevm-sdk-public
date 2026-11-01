@@ -1,11 +1,13 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { adaptVM } from "./vm-adapter.js";
+import { adaptVM, bindFrameDiagnostics, ownedModuleCommands, spawnOwnedModuleProcess } from "./vm-adapter.js";
+import { record } from "./runtime/decode.js";
 import { decodePublicVMOptions } from "./vm-options.js";
 import { decodeSHA256 } from "./values.js";
 import { VMError } from "./runtime/errors.js";
 import { bootedManagedVm, ScriptedWorker } from "./runtime/system-vm.test-support.js";
-import type { WorkspaceChange, WorkspaceFileEntry, WorkspaceWatch } from "./contracts.js";
+import type { PipeJSProcessSpec, WorkspaceChange, WorkspaceFileEntry, WorkspaceWatch } from "./contracts.js";
 import type { SnapshotInfo } from "./runtime/snapshot-types.js";
+import type { ModuleCommandsRequest } from "./runtime/protocol/userspace-module-commands.js";
 
 const ACCEL = { available: true } as const;
 const NOT_APPLICABLE = { available: false, reason: "mode-unsupported" } as const;
@@ -194,4 +196,73 @@ it.each(["system", "userspace"] as const)("%s keeps the requested update offer c
     expect((await vm.snapshots.restore(point.ref)).start.update).toBeUndefined();
     expect(vm.image.version).toBe("new");
   } finally { await vm.dispose(); }
+});
+
+it("starts spawnModule's runner with its launch through the VM's owner record, and refuses VMs that cannot run it", async () => {
+  vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true); vi.stubGlobal("navigator", { storage: undefined });
+  vi.stubGlobal("location", new URL("https://ide.example.test/"));
+  const runtime = await bootedManagedVm(), started: unknown[] = [];
+  runtime.spawnJS = spec => { started.push(spec); return Promise.reject(new VMError("ABORTED", "the test runtime starts nothing")); };
+  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() };
+  const image = { id: "test", version: "1", manifestSHA256: decodeSHA256("a".repeat(64), "test"), cpuProfile: "x86-64-v3", signatureVerified: true, keyId: "test" } as const;
+  const vm = await adaptVM(runtime, decodePublicVMOptions({ mode: "userspace" }), { ...image, mode: "userspace" }, assets, { tier: "development" }, ACCEL, { start: { kind: "booted", reason: "first-start" } });
+  const system = await adaptVM(runtime, decodePublicVMOptions({ mode: "system" }), { ...image, mode: "system" }, assets, { tier: "development" }, NOT_APPLICABLE, { start: { kind: "booted", reason: "first-start" } });
+  if (vm.mode !== "userspace") throw new Error("Expected a Userspace VM");
+  const worker = new URL("https://ide.example.test/assets/module-runner/runner.worker.js"), launch = { kind: "host", descriptor: "{\"v\":1}" } as const;
+  try {
+    await expect(spawnOwnedModuleProcess(vm, { worker, args: ["in.md"] }, launch)).rejects.toMatchObject({ code: "ABORTED" });
+    expect(started).toEqual([expect.objectContaining({ worker: worker.href, args: ["in.md"], launch })]);
+    // The public spawnJS starts the same way, without a launch.
+    await expect(vm.spawnJS({ worker, args: ["in.md"] })).rejects.toMatchObject({ code: "ABORTED" });
+    expect(started).toHaveLength(2);
+    expect(record(started[1], "public start")["launch"]).toBeUndefined();
+    // Another object with a spawnJS, a System VM and a hosted frame's VM have no runner to start.
+    await expect(spawnOwnedModuleProcess({ spawnJS: (spec: PipeJSProcessSpec) => vm.spawnJS(spec) }, { worker }, launch)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(spawnOwnedModuleProcess(system, { worker }, launch)).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
+    const hosted = { ...vm };
+    bindFrameDiagnostics(hosted, { readJSProcessTrace: () => Promise.reject(new Error("unused")), watchAccelerationNotices: () => Promise.reject(new Error("unused")) });
+    await expect(spawnOwnedModuleProcess(hosted, { worker }, launch)).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
+    expect(started).toHaveLength(2);
+    // A disposed VM starts nothing.
+    await vm.dispose();
+    await expect(spawnOwnedModuleProcess(vm, { worker }, launch)).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    expect(started).toHaveLength(2);
+  } finally { await system.dispose(); await runtime.dispose(); }
+});
+
+// Engine ADR 0027: enableModuleCommands reaches a VM's module commands only through its owner record.
+it("sends module-command requests through a Userspace VM's owner record until the VM is disposed, and refuses VMs that cannot run them", async () => {
+  vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true); vi.stubGlobal("navigator", { storage: undefined });
+  vi.stubGlobal("location", new URL("https://ide.example.test/"));
+  const runtime = await bootedManagedVm();
+  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() };
+  const image = { id: "test", version: "1", manifestSHA256: decodeSHA256("a".repeat(64), "test"), cpuProfile: "x86-64-v3", signatureVerified: true, keyId: "test" } as const;
+  const vm = await adaptVM(runtime, decodePublicVMOptions({ mode: "userspace" }), { ...image, mode: "userspace" }, assets, { tier: "development" }, ACCEL, { start: { kind: "booted", reason: "first-start" } });
+  const system = await adaptVM(runtime, decodePublicVMOptions({ mode: "system" }), { ...image, mode: "system" }, assets, { tier: "development" }, NOT_APPLICABLE, { start: { kind: "booted", reason: "first-start" } });
+  const refusal = (vmLike: object): unknown => { try { ownedModuleCommands(vmLike); return undefined; } catch (error: unknown) { return error; } };
+  const unavailable = { code: "FEATURE_NOT_AVAILABLE", detail: { reason: "wasm-module-command-unavailable" } };
+  const status: ModuleCommandsRequest = { operation: "status", registration: 1 };
+  try {
+    const owned = ownedModuleCommands(vm);
+    // A runtime without a module-command owner refuses the request itself.
+    await expect(owned.request(status)).rejects.toMatchObject(unavailable);
+    const received: unknown[] = [];
+    runtime.moduleCommands = (request, options) => { received.push([request, options]); return Promise.resolve({ operation: "status", enabled: true, skipped: [] }); };
+    const signal = new AbortController().signal;
+    await expect(owned.request(status, signal)).resolves.toEqual({ operation: "status", enabled: true, skipped: [] });
+    await expect(owned.request(status)).resolves.toMatchObject({ enabled: true });
+    expect(received).toEqual([[status, { signal }], [status, {}]]);
+    // Another object, a System VM and a hosted frame's VM have none.
+    expect(refusal({ spawnJS: (): Promise<never> => Promise.reject(new Error("unused")) })).toMatchObject({ ...unavailable, message: expect.stringContaining("not created by this copy of the SDK") as unknown });
+    expect(refusal(system)).toMatchObject({ ...unavailable, message: expect.stringContaining("Userspace VM") as unknown });
+    const hosted = { ...vm };
+    bindFrameDiagnostics(hosted, { readJSProcessTrace: () => Promise.reject(new Error("unused")), watchAccelerationNotices: () => Promise.reject(new Error("unused")) });
+    expect(refusal(hosted)).toMatchObject({ ...unavailable, message: expect.stringContaining("hosted runtime frame") as unknown });
+    // Disposal ends the VM's lifetime: nothing more is sent.
+    expect(owned.disposed.aborted).toBe(false);
+    await vm.dispose();
+    expect(owned.disposed.aborted).toBe(true);
+    await expect(owned.request(status)).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    expect(received).toHaveLength(2);
+  } finally { await system.dispose(); await runtime.dispose(); }
 });

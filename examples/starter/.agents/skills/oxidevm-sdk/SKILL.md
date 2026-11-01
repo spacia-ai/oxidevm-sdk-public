@@ -26,7 +26,7 @@ Use the project's matching CLI for image initialization, signing and build comma
 
 ## Use a WebAssembly module
 
-Applications can install packaged WebAssembly programs with `oxidevm wasm add`, but only an SDK release that exports `@oxidevm/sdk/wasm` supports it, and only on a self-hosted runtime. Check the installed exports first; if they are missing, report that instead of adding modules by hand. When they are present, follow the `oxidevm-module-author` skill: review what a module declares before installing it, keep generated files untouched, and start modules with the typed handle and `spawnModule`.
+Applications can install packaged WebAssembly programs with `oxidevm wasm add`, but only an SDK release that exports `@oxidevm/sdk/wasm` supports it, and only on a self-hosted runtime. Check the installed exports first; if they are missing, report that instead of adding modules by hand. When they are present, follow the `oxidevm-module-author` skill: review what a module declares before installing it, keep generated files untouched, and start modules with the typed handle and `spawnModule`. When the installed `@oxidevm/sdk/wasm` exports `enableModuleCommands`, a module's declared commands can be turned on per VM, and programs in the VM then run them from `/usr/local/bin`; keep `/usr/local/bin` before `/usr/bin` on a terminal's `PATH`.
 
 ## Use the VM
 

@@ -1,5 +1,5 @@
-import { MODULE_EXIT, classifyLicense, decodeModuleManifest, defineModule, encodeModuleManifest, isServiceDecl, moduleHandle, spawnModule, stopModule } from "@oxidevm/sdk/wasm";
-import type { Connection, Gate, ModuleHandle, ModuleProcess, SpawnArgs } from "@oxidevm/sdk/wasm";
+import { MODULE_EXIT, classifyLicense, decodeModuleManifest, defineModule, enableModuleCommands, encodeModuleManifest, isServiceDecl, moduleHandle, spawnModule, stopModule } from "@oxidevm/sdk/wasm";
+import type { Connection, Gate, ModuleCommands, ModuleCommandsStatus, ModuleHandle, ModuleProcess, SpawnArgs } from "@oxidevm/sdk/wasm";
 import type { ProcessExit, SystemVM, UserspaceVM } from "@oxidevm/sdk";
 
 declare function render(markdown: string): string;
@@ -146,4 +146,24 @@ export async function spawnContract(vm: UserspaceVM, system: SystemVM, loaded: M
   await spawnModule(system, generated, { workspaceId: "w", options: { dataDir: "/x" } });
   void [port, version, tool, maybe];
   return stopModule(database);
+}
+
+/** Turning commands on: only a command module that declares commands, with names, paths and options from its manifest. */
+export async function commandsContract(vm: UserspaceVM, system: SystemVM, loaded: ModuleHandle): Promise<void> {
+  const pins = { release: "0".repeat(64), adapter: { url: "https://app.test/a.mjs", sha256: "1".repeat(64), bytes: 1 }, artifacts: {} };
+  const python = moduleHandle({ ...command.manifest, id: "py", commands: ["python", "python3"] }, pins);
+  const commands = await enableModuleCommands(vm, python, { commands: ["python3"], concurrency: 2 });
+  const path: "/usr/local/bin/python3" = commands.paths.python3;
+  const status: ModuleCommandsStatus<"python3"> = await commands.status();
+  await commands.disable();
+  // @ts-expect-error a service runs no commands
+  await enableModuleCommands(vm, moduleHandle(service.manifest, pins), { options: { dataDir: "/x" } });
+  // @ts-expect-error only declared names can be turned on
+  await enableModuleCommands(vm, python, { commands: ["node"] });
+  // @ts-expect-error the program that runs a command supplies its own arguments
+  await enableModuleCommands(vm, python, { args: ["x.py"] });
+  // @ts-expect-error a system VM runs no module commands
+  await enableModuleCommands(system, python);
+  const loose: ModuleCommands = await enableModuleCommands(vm, loaded, { commands: ["anything"], options: { any: 1 } });
+  void [path, status, loose];
 }

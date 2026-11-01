@@ -46,7 +46,7 @@ it("retires an admitted JS process before creation cancellation settles", async 
   const worker = CreationWorker.instance;
   if (worker === undefined) throw new Error("Missing worker");
   const cancellation = new AbortController();
-  const creating = backend.spawnJS({ id: "fixture", version: "1", fileCount: 0, totalBytes: 0, runtimes: { supportingFiles: [] }, metadata: new Uint8Array(), rootTreeSha256: "a".repeat(64), cpuProfile: "x86-64-v2" }, "https://example.test/process.js", [], {}, "/workspace", undefined, cancellation.signal);
+  const creating = backend.spawnJS({ id: "fixture", version: "1", fileCount: 0, totalBytes: 0, runtimes: { supportingFiles: [] }, metadata: new Uint8Array(), rootTreeSha256: "a".repeat(64), cpuProfile: "x86-64-v2" }, { worker: "https://example.test/process.js", args: [], env: {}, cwd: "/workspace", signal: cancellation.signal });
   const rejected = expect(creating).rejects.toMatchObject({ code: "ABORTED" });
   await worker.admitted.promise; cancellation.abort();
   await new Promise<void>(ready => setTimeout(ready, 10)); worker.publish();

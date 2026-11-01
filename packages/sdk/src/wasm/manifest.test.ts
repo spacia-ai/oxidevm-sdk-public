@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { VMError } from "../runtime/errors.js";
 import { decodeDeclaration, decodeModuleManifest, decodeResolvedManifest, encodeModuleManifest, isServiceDecl, MAX_MANIFEST_BYTES } from "./manifest.js";
@@ -35,7 +36,7 @@ const service = {
   upstream: [{ name: "@electric-sql/pglite", version: "0.5.14", source: "https://www.npmjs.com/package/@electric-sql/pglite" }],
 };
 
-function resolved(declaration: typeof command | typeof service) {
+function resolved<D extends { readonly artifacts: readonly { readonly name: string }[] }>(declaration: D) {
   return {
     ...declaration,
     schemaVersion: 1,
@@ -44,12 +45,14 @@ function resolved(declaration: typeof command | typeof service) {
   };
 }
 
-function expectInvalid(run: () => unknown, label: string): void {
+/** Expects the stable decode failure; with `message`, the failure's message must also match it. */
+function expectInvalid(run: () => unknown, label: string, message?: RegExp): void {
   try {
     run();
   } catch (error: unknown) {
     expect(error, label).toBeInstanceOf(VMError);
     expect(error, label).toMatchObject({ code: "INVALID_ARGUMENT", detail: { reason: "wasm-manifest-invalid" } });
+    if (message !== undefined && error instanceof VMError) expect(error.message, label).toMatch(message);
     return;
   }
   throw new Error(`${label} was accepted`);
@@ -225,5 +228,71 @@ describe("file names within one release", () => {
     for (const names of [["foo.js", "foo.json"], ["foo.js", "foo.js.map"], ["a.wasm", "b.wasm"], ["tool.wasm", "tool.wasm.gz"]]) {
       expect(decodeDeclaration(withNames(names)).artifacts.map(artifact => artifact.name).sort(), names.join(" + ")).toEqual([...names].sort());
     }
+  });
+});
+
+describe("commands", () => {
+  const digest = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+  const requiring = (executables: readonly string[]) => ({ host: ["files.sync"], guest: { executables } });
+
+  it("decodes a command's names as a sorted set right after process, in a declaration and in module.json", () => {
+    const declared = decodeDeclaration({ ...command, commands: ["python3", "python", "py.test-3+x_y"] });
+    expect(Object.keys(declared)).toEqual(["id", "version", "abi", "artifacts", "process", "commands", "requires", "license"]);
+    expect(declared).toMatchObject({ commands: ["py.test-3+x_y", "python", "python3"] });
+    const manifest = decodeResolvedManifest({ ...resolved(command), commands: ["b", "a"] });
+    expect(Object.keys(manifest)).toEqual(["schemaVersion", "id", "version", "abi", "adapter", "artifacts", "process", "commands", "requires", "license"]);
+    expect(manifest).toMatchObject({ schemaVersion: 1, adapter: { api: 1 }, commands: ["a", "b"] });
+  });
+
+  it("accepts the edges of the grammar and another program's path among the guest executables", () => {
+    const sixteen = Array.from({ length: 16 }, (_, index) => `tool${String(index).padStart(2, "0")}`);
+    expect(decodeDeclaration({ ...command, commands: sixteen })).toMatchObject({ commands: sixteen });
+    const edges = ["0", "a", "c++", "g.v", "x86_64-gcc", `a${"b".repeat(63)}`, "toxidevm"];
+    expect(decodeDeclaration({ ...command, commands: edges })).toMatchObject({ commands: [...edges].sort() });
+    const others = decodeDeclaration({ ...command, commands: ["python3"], requires: requiring(["/usr/bin/python3", "/usr/local/bin/python"]) });
+    expect(others.requires.guest?.executables).toEqual(["/usr/bin/python3", "/usr/local/bin/python"]);
+  });
+
+  it("rejects every invalid list with a stable message that names the field, in a declaration and in module.json", () => {
+    const notAName = /commands: ".*" is not a command name/u;
+    const cases: readonly (readonly [string, typeof command | typeof service, Readonly<Record<string, unknown>>, RegExp])[] = [
+      ["commands on a service", service, { commands: ["db"] }, /commands: a service cannot declare commands/u],
+      ["an empty list", command, { commands: [] }, /commands: must name at least one command/u],
+      ["a list that is not an array", command, { commands: "python" }, /commands: must be an array of at most 16 entries/u],
+      ["a duplicate name", command, { commands: ["python", "python"] }, /commands: contains duplicates/u],
+      ["seventeen names", command, { commands: Array.from({ length: 17 }, (_, index) => `tool${String(index)}`) }, /commands: must be an array of at most 16 entries/u],
+      ["an uppercase name", command, { commands: ["Python"] }, notAName],
+      ["a name with a slash", command, { commands: ["bin/python"] }, notAName],
+      ["a name with NUL", command, { commands: ["py\u0000thon"] }, notAName],
+      ["a name with a leading dot", command, { commands: [".python"] }, notAName],
+      ["a name with a leading dash", command, { commands: ["-python"] }, notAName],
+      ["a name with a space", command, { commands: ["py thon"] }, notAName],
+      ["a name longer than 64 characters", command, { commands: [`a${"b".repeat(64)}`] }, notAName],
+      ["an empty name", command, { commands: [""] }, notAName],
+      ["a name that is not a string", command, { commands: [7] }, /commands must be a string/u],
+      ["the reserved oxidevm prefix", command, { commands: ["oxidevm-python"] }, /commands: oxidevm-python starts with oxidevm, which is reserved/u],
+      ["the bare reserved name", command, { commands: ["oxidevm"] }, /commands: oxidevm starts with oxidevm, which is reserved/u],
+      ["its own stub as a required guest executable", command, { commands: ["python", "python3"], requires: requiring(["/usr/local/bin/python3"]) }, /commands: python3 is this module's own command, so requires\.guest\.executables cannot list \/usr\/local\/bin\/python3/u],
+    ];
+    for (const [label, base, change, message] of cases) {
+      expectInvalid(() => decodeDeclaration({ ...base, ...change }), label, message);
+      expectInvalid(() => decodeResolvedManifest({ ...resolved(base), ...change }), `${label} in module.json`, message);
+    }
+  });
+
+  it("round-trips module.json byte for byte and refuses names that are not sorted as not canonical", () => {
+    const manifest = decodeResolvedManifest({ ...resolved(command), commands: ["python3", "python"] });
+    const bytes = encodeModuleManifest(manifest);
+    const text = new TextDecoder().decode(bytes);
+    expect(text).toContain(`"process": {\n    "kind": "command"\n  },\n  "commands": [\n    "python",\n    "python3"\n  ],\n  "requires": {`);
+    expect(decodeModuleManifest(bytes)).toEqual(manifest);
+    expect(encodeModuleManifest(decodeModuleManifest(bytes))).toEqual(bytes);
+    expectInvalid(() => decodeModuleManifest(new TextEncoder().encode(text.replace(`"python",\n    "python3"`, `"python3",\n    "python"`))), "unsorted names");
+  });
+
+  it("keeps the exact bytes of manifests that declare no commands", () => {
+    // Digests of both fixtures' canonical module.json, recorded before the commands field existed.
+    expect(digest(encodeModuleManifest(decodeResolvedManifest(resolved(command))))).toBe("43acbde6ab5e59150e08dec2b562715e3b1787229c90d2bdf006ea2bb5c9eb72");
+    expect(digest(encodeModuleManifest(decodeResolvedManifest(resolved(service))))).toBe("caf97b952eec9c1f16ecc285e68e977ba0cb40d346e15907310d9e33ca6d7b8f");
   });
 });

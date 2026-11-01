@@ -6,9 +6,9 @@ provide Node or Bun compatibility.
 
 Userspace enables the packaged TypeScript interceptor by default when the page
 is cross-origin isolated. This also works inside the hosted runtime frame, which
-loads its own trusted worker. Set `interceptors: false` to keep all commands in
-Linux. Without cross-origin isolation, automatic interception is not admitted and
-commands run in Linux. Custom worker URLs remain self-hosted only.
+loads its own trusted worker. Set `commandInterceptors: "off"` to keep all
+commands in Linux. Without cross-origin isolation, automatic interception is not
+admitted and commands run in Linux. Custom worker URLs remain self-hosted only.
 
 The initial handler matches only the managed TypeScript 6.0.2 entrypoint and
 `--noEmit` invocation. Different versions, paths or arguments run in Linux.
@@ -65,6 +65,21 @@ not suspend arbitrary JavaScript computation in V8. SIGKILL retires the worker.
 Snapshots and suspend fail with `FEATURE_NOT_AVAILABLE` and
 `detail.reason: "js-process-active"` while any JS process remains alive.
 VM disposal closes workers and pending operations.
+
+JS process protocol 4 puts the process's signal words in every worker's start
+message, and `serveProcess` accepts only that start message, so build workers
+with the same SDK version as the runtime. A worker that `spawnJS` started catches
+no signal: SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1 and SIGUSR2 keep their
+default action, so they end the process at once and retire the worker without its
+own cleanup, and the parent sees the process killed by that signal (a shell
+reports 128 + n). A pinned WebAssembly module can catch these six through its
+`process.signals` capability (engine ADR 0027): Rust then hands each caught signal
+to the module's worker instead of its default action, a signal that arrives again
+before the worker has taken it is delivered once, and while a signal is caught its
+arrival makes the process's waiting requests fail with `EINTR`. A module that
+gives a signal back its default action can end its process killed by it, so its
+parent sees the same as for a native program. Signal masks and real-time signals
+are not delivered to JS processes.
 
 ## Worker context
 
@@ -164,8 +179,8 @@ Guest syscalls and JS calls share the same file, socket and process owners.
 The JS adapter encodes requests and manages worker transport promises. It
 does not implement Linux policy or a second process manager.
 
-The internal launch record is OXCR version 17. JS requests use OXJR version 4
-and completions OXJP version 1, over JS process protocol 3. Fields, lengths,
+The internal launch record is OXCR version 18. JS requests use OXJR version 4
+and completions OXJP version 1, over JS process protocol 4. Fields, lengths,
 identities and operation payloads are validated before effects. Stale
 completions cannot affect a successor. Compiler-only filesystem requests are no
 longer accepted.
@@ -182,6 +197,11 @@ boundaries in your application.
 ## WebAssembly modules
 
 Typed, pinned packages of WebAssembly programs run on this mechanism: the module
-runner is a worker built from the SDK, started with `spawnJS`, and it holds the
-same host command lane as any other JS process. See
+runner is a worker built from the SDK, started like a `spawnJS` worker, and it
+holds the same host command lane as any other JS process. Its launch description
+travels in its start message, not in its arguments, so `/proc/<pid>/cmdline`
+shows only the arguments the application passed. A module's commands, once an
+application turns them on with `enableModuleCommands`, run the same way: the stub
+a program executes becomes the runner's process, with the same process id and the
+caller's arguments, and each run counts toward the 32 host commands. See
 [WebAssembly modules](./wasm-modules.md).

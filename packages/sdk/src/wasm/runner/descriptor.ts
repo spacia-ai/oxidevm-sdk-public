@@ -1,11 +1,12 @@
 import { exactKeys, record } from "../../runtime/decode.js";
+import { RUNNER_LAUNCH_DESCRIPTOR_BYTES } from "../../runtime/js-process/launch.js";
 import { decoding, invalid, pinURL, text } from "../decode-support.js";
 import { decodePin } from "../manifest-parts.js";
 import { decodeResolvedManifest } from "../manifest.js";
 import type { ResolvedManifest } from "../manifest-types.js";
 import type { PinnedFile } from "../handle.js";
 
-/** Everything the runner needs to start one module; `spawnModule` writes it as the process's first argument. */
+/** Everything the runner needs to start one module; `spawnModule` sends it in the runner's start message. */
 export interface LaunchDescriptor {
   readonly v: 1;
   readonly manifest: ResolvedManifest;
@@ -17,7 +18,7 @@ export interface LaunchDescriptor {
   readonly workspaceId?: string;
 }
 
-export const MAX_DESCRIPTOR_BYTES = 512 * 1024;
+export const MAX_DESCRIPTOR_BYTES = RUNNER_LAUNCH_DESCRIPTOR_BYTES;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 
@@ -58,7 +59,7 @@ export function decodeLaunchDescriptor(value: unknown): LaunchDescriptor {
   });
 }
 
-/** Parses the first process argument. The size is checked before parsing so a hostile argument cannot cost more. */
+/** Parses the launch description. The size is checked before parsing so a hostile one cannot cost more. */
 export function parseLaunchArgument(argument: string | undefined): LaunchDescriptor {
   return decoding("launch descriptor", () => {
     if (argument === undefined) return invalid("launch descriptor", "is missing");
@@ -69,7 +70,7 @@ export function parseLaunchArgument(argument: string | undefined): LaunchDescrip
   });
 }
 
-/** The text `spawnModule` passes as the first argument. */
+/** The text `spawnModule` sends as the runner's launch description. */
 export function encodeLaunchArgument(descriptor: LaunchDescriptor): string {
   const text = JSON.stringify(decodeLaunchDescriptor(descriptor));
   if (new TextEncoder().encode(text).length > MAX_DESCRIPTOR_BYTES) invalid("launch descriptor", `exceeds ${String(MAX_DESCRIPTOR_BYTES)} bytes`);

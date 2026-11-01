@@ -18,15 +18,18 @@ const setBigUint64 = viewMethods.setBigUint64.value ?? protocol("Binary u64 writ
  * or failure. Version 2 counts every posted request in the mailbox (`jsMailboxAttention`), so the
  * execution worker ends a guest slice to receive it; version 1 workers never counted and are rejected.
  * Version 3 adds `late-failure`, which a process posts before it exits on an uncaught fast-path
- * limitation (ADR 0026). */
-export const JS_PROCESS_PROTOCOL_VERSION = 3;
+ * limitation (ADR 0026). Version 4 (ADR 0027) gives every non-native start message its `signals`
+ * words (`signals.ts`), adds the driver's `signal` nudge and the worker's `signaled` exit on the
+ * service port, and lets the module runner's start message carry its private `launch`. */
+export const JS_PROCESS_PROTOCOL_VERSION = 4;
 /** The native execution broker's per-process channel: `spawn`, `start` and `stop` in, `error` and
  * `message` out. Version 2 adds `start.attention`, the port that receives one notice per Linux
  * request the broker forwards to the execution worker (`workers/attention-notices.ts`). */
 export const NATIVE_BROKER_PROCESS_VERSION = 2;
 export const JS_MAILBOX_BYTES = 16 * 1024 ** 2 + 4096;
 export const JS_MAX_IO_BYTES = 16 * 1024 ** 2;
-export const JS_MAX_OPERATION = 65549;
+/** OXJR 65550 sets a trappable signal's host disposition (engine ADR 0027). */
+export const JS_MAX_OPERATION = 65550;
 /** The mailbox header is four Int32s: reply state, reply length and reply sequence, then the count of
  * requests the worker posted, which the execution worker compares with the requests it received. */
 export function jsMailboxAttention(mailbox: SharedArrayBuffer): AttentionCounter {

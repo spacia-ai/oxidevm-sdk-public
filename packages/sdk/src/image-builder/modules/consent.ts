@@ -1,7 +1,8 @@
-import { CAPABILITY_MIN_API } from "../../wasm/capabilities.js";
+import { manifestMinApi } from "../../wasm/capabilities.js";
 import { formatModuleSource, type ModuleSource } from "../../wasm/declaration.js";
 import { classifyLicense } from "../../wasm/license.js";
 import type { Tristate } from "../../wasm/lock.js";
+import { moduleCommandPath } from "../../runtime/module-command-names.js";
 import type { ResolvedManifest } from "../../wasm/manifest-types.js";
 import { isServiceDecl } from "../../wasm/manifest.js";
 import type { Resolution } from "./resolve.js";
@@ -18,12 +19,14 @@ export interface ConsentCard {
   readonly guestExecutables: readonly string[];
   readonly mounts: readonly string[];
   readonly endpoints: readonly string[];
+  /** Commands an application can turn on per VM, each with the path any program there runs it as (engine ADR 0027). */
+  readonly commands: readonly { readonly name: string; readonly path: string }[];
   readonly guestFiles: readonly string[];
   readonly durablePaths: readonly string[];
   readonly options: readonly string[];
   readonly artifacts: readonly { readonly name: string; readonly bytes: number }[];
   readonly signals: { readonly commit?: string; readonly immutable?: Tristate; readonly attested?: Tristate };
-  /** The first Userspace API version that serves every operation the module asks for. */
+  /** The first Userspace API version that serves every operation the module asks for, its commands included. */
   readonly minApi: number;
 }
 
@@ -38,6 +41,8 @@ export function authorityOf(manifest: ResolvedManifest): readonly string[] {
     ...(manifest.requires.guest?.executables ?? []).map(path => `guest-executable:${path}`),
     ...(manifest.mounts ?? []).map(mount => `mount:${mount.access}:${mount.guest}`),
     ...(isServiceDecl(manifest) ? Object.values(manifest.expose).map(endpoint => endpoint.kind === "unix" ? `listen:unix:${endpoint.path}` : `listen:tcp:${String(endpoint.port)}`) : []),
+    // Once an application turns a command on, every program in the VM can run it with the module's authority.
+    ...(manifest.commands ?? []).map(name => `command:${name}`),
     ...(manifest.guestFiles ?? []).map(file => `guest-file:${file.to}`),
     ...(manifest.state?.durable ?? []).map(path => `durable:${path}`),
   ];
@@ -65,11 +70,12 @@ export function consentCard(resolution: Resolution, source: ModuleSource): Conse
     guestExecutables: manifest.requires.guest?.executables ?? [],
     mounts: (manifest.mounts ?? []).map(mount => `${mount.access} ${mount.guest}`),
     endpoints: isServiceDecl(manifest) ? Object.entries(manifest.expose).map(([name, endpoint]) => `${name}: ${endpoint.kind === "unix" ? endpoint.path : `127.0.0.1:${String(endpoint.port)}`} (${endpoint.protocol})`) : [],
+    commands: (manifest.commands ?? []).map(name => ({ name, path: moduleCommandPath(name) })),
     guestFiles: (manifest.guestFiles ?? []).map(file => file.to),
     durablePaths: manifest.state?.durable ?? [],
     options: Object.keys(manifest.options ?? {}),
     artifacts: manifest.artifacts.map(artifact => ({ name: artifact.name, bytes: artifact.bytes })),
     signals,
-    minApi: Math.max(0, ...manifest.requires.host.map(capability => CAPABILITY_MIN_API[capability])),
+    minApi: manifestMinApi(manifest),
   };
 }

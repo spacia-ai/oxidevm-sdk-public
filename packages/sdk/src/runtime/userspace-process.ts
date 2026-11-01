@@ -9,6 +9,8 @@ import {
   userspaceResponseDecoders,
 } from "./userspace-protocol.js";
 import type { AccelerationNotice } from "./js-process/late-failure.js";
+import type { RunnerHostLaunch } from "./js-process/launch.js";
+import type { ModuleCommandsRequest, ModuleCommandsResult } from "./protocol/userspace-module-commands.js";
 import type { UserspaceSyscallTraceSnapshot } from "./userspace-abi.js";
 import type { ListeningPortsRead } from "./listening-ports.js";
 import type { FileMount } from "./protocol/userspace-files.js";
@@ -17,6 +19,12 @@ import type { PreparedUserspaceRootfs } from "./protocol/storage.js";
 import { controlResponseDecoders, PROTOCOL_VERSION, type ControlOperations } from "./protocol.js";
 import type {NativeSpawnResult} from "./userspace-protocol.js";
 import { WorkerClient, workerClientForPort } from "./worker-client.js";
+
+/** A JS process for the Userspace worker to admit. `launch` is the module runner's private start input (ADR 0027). */
+export interface JSProcessStart {
+  readonly worker: string; readonly args: readonly string[]; readonly env: Readonly<Record<string, string>>; readonly cwd: string;
+  readonly terminal?: UserspaceTerminalSize; readonly signal?: AbortSignal; readonly launch?: RunnerHostLaunch;
+}
 
 export class UserspaceProcessBackend {
   readonly #client: WorkerClient<UserspaceOperations>;
@@ -121,9 +129,9 @@ export class UserspaceProcessBackend {
     ), terminal !== undefined);
   }
 
-  spawnJS(rootfs: PreparedUserspaceRootfs, worker: string, args: readonly string[], env: Readonly<Record<string, string>>, cwd: string, terminal?: UserspaceTerminalSize, signal?: AbortSignal): Promise<ProcessHandle & { readonly pid: number }> {
-    const metadata = rootfs.metadata.slice();
-    return this.#spawn(signal, port => this.#client.request("spawn-js", { rootTreeSha256: rootfs.rootTreeSha256, workspaceBaseSha256: rootfs.workspaceBaseSha256 ?? rootfs.rootTreeSha256, cpuProfile: rootfs.cpuProfile, worker, arguments: args, environment: encodeEnvironment(env), cwd, rootfs: metadata, port, ...(terminal === undefined ? {} : { terminal }) }, { transfer: [metadata.buffer, port] }), terminal !== undefined);
+  spawnJS(rootfs: PreparedUserspaceRootfs, start: JSProcessStart): Promise<ProcessHandle & { readonly pid: number }> {
+    const metadata = rootfs.metadata.slice(), { terminal, launch } = start;
+    return this.#spawn(start.signal, port => this.#client.request("spawn-js", { rootTreeSha256: rootfs.rootTreeSha256, workspaceBaseSha256: rootfs.workspaceBaseSha256 ?? rootfs.rootTreeSha256, cpuProfile: rootfs.cpuProfile, worker: start.worker, arguments: start.args, environment: encodeEnvironment(start.env), cwd: start.cwd, rootfs: metadata, port, ...(terminal === undefined ? {} : { terminal }), ...(launch === undefined ? {} : { launch }) }, { transfer: [metadata.buffer, port] }), terminal !== undefined);
   }
 
   async #spawn(
@@ -165,6 +173,16 @@ export class UserspaceProcessBackend {
       throw new VMError("ABORTED", "process creation cancelled");
     }
     return process;
+  }
+
+  /**
+   * ADR 0027: one request to the Userspace worker's module-command owner. Its cancellation is settled: the owner answers
+   * a cancelled request too, because an enable may have registered before the cancellation reached it, and only its
+   * answer lets the page turn that registration off again.
+   */
+  async moduleCommands(request: ModuleCommandsRequest, signal?: AbortSignal): Promise<ModuleCommandsResult> {
+    if (this.#disposed) throw new VMError("PROTOCOL_ERROR", "Userspace backend is disposed");
+    return this.#client.request("module-commands", request, { signal, cancellation: "settled" });
   }
 
   readJSProcessTrace(capacity?: number): Promise<Uint8Array> {

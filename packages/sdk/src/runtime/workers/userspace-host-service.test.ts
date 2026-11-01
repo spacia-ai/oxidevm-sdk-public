@@ -3,6 +3,8 @@ import { UserspaceHostService } from "./userspace-host-service.js";
 import { createUserspaceWorkspaceCommit } from "./userspace-workspace-commit.js";
 import { userspaceDurabilityCompletion } from "./userspace-durability.js";
 import { VMError } from "../errors.js";
+import type { UserspaceCommandHostRequest } from "../userspace-command-abi.js";
+import { decodeJSIdentity } from "../js-process/codec.js";
 
 it("drains immutable reads for a workspace publication without requiring a live guest process", async () => {
   const reply = Promise.withResolvers<undefined>();
@@ -52,4 +54,41 @@ it("fences saturated durability admission before failed disposal drains its publ
   host.pump(); await Promise.resolve();
   expect(taken).toBe(128); expect(publications).toBe(2);
   host.cancel();
+});
+
+function commandRequest(id: number): UserspaceCommandHostRequest {
+  return { kind: "command", ...decodeJSIdentity(1n, BigInt(id)), pid: 100 + id, tty: false, cwd: "/workspace", args: [], environment: [], program: { kind: "worker", token: BigInt(id) } };
+}
+
+it("serves every admitted command without waiting for earlier JS processes to end", () => {
+  // A JS process holds its command request until it exits, so a cap here would hold processes Rust already admitted.
+  const running = Promise.withResolvers<undefined>();
+  let offered = 8, taken = 0;
+  const host = new UserspaceHostService({
+    active: () => true,
+    take: mask => mask !== 8 || taken === offered ? undefined : commandRequest(++taken),
+    service: () => running.promise,
+    settled() {}, failed(error) { throw error; },
+  });
+  host.pump();
+  expect(taken).toBe(8);
+  offered = 9;
+  host.pump();
+  expect(taken).toBe(9);
+  host.cancel(); running.resolve(undefined);
+});
+
+it("keeps storage reads at four while commands run without an SDK cap", () => {
+  const blocked = Promise.withResolvers<undefined>();
+  let reads = 0, commands = 0;
+  const host = new UserspaceHostService({
+    active: () => true,
+    take: mask => mask === 1 && reads < 10 ? { kind: "storage", generation: 1n, id: BigInt(++reads), path: "/workspace/file", expectedBytes: 1, offset: 0, length: 1 }
+      : mask === 8 && commands < 6 ? commandRequest(++commands) : undefined,
+    service: () => blocked.promise,
+    settled() {}, failed(error) { throw error; },
+  });
+  host.pump();
+  expect(reads).toBe(4); expect(commands).toBe(6);
+  host.cancel(); blocked.resolve(undefined);
 });

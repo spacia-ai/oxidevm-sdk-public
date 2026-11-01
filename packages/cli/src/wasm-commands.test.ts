@@ -86,6 +86,33 @@ describe("oxidevm wasm add", () => {
     expect(await readdir(join(dir, "modules", "tool"))).toEqual(["module.json"]);
   });
 
+  it("reports the commands a module declares in the JSON add result, and keeps the previous shape for a module without them", async () => {
+    const dir = await temporary();
+    await release(join(dir, "dist"), { commands: ["tool-run", "tool"] });
+    const added = await run(dir, ["wasm", "add", "file:dist", "--yes", "--json"]);
+    expect(added.code).toBe(0);
+    expect(added.report).toMatchObject({ kind: "result", command: "wasm add", result: { id: "tool", commands: ["tool", "tool-run"] } });
+    const keys = (stdout: string): string[] => { const parsed: unknown = JSON.parse(stdout); const result: unknown = typeof parsed === "object" && parsed !== null ? Reflect.get(parsed, "result") : undefined; return typeof result === "object" && result !== null ? Object.keys(result) : []; };
+    expect(keys(added.stdout)).toEqual(["id", "version", "source", "release", "status", "consent", "license", "capabilities", "commands", "added", "removed", "generatedFile"]);
+    const plain = await temporary();
+    await release(join(plain, "dist"));
+    expect(keys((await run(plain, ["wasm", "add", "file:dist", "--yes", "--json"])).stdout)).toEqual(["id", "version", "source", "release", "status", "consent", "license", "capabilities", "added", "removed", "generatedFile"]);
+  });
+
+  it("asks again before an update that adds a command, and shows the command it adds", async () => {
+    const dir = await temporary();
+    await release(join(dir, "dist"), { commands: ["tool"] });
+    expect((await run(dir, ["wasm", "add", "file:dist", "--yes", "--json"])).code).toBe(0);
+    await rm(join(dir, "dist"), { recursive: true });
+    await release(join(dir, "dist"), { commands: ["tool", "tool-run"] }, "1.1.0");
+    const declined = await run(dir, ["wasm", "add", "file:dist"], false);
+    expect(declined.code).toBe(1);
+    expect(declined.asked).toEqual(["Install this module? [y/N] "]);
+    expect(declined.stderr).toContain("Update module tool 1.1.0");
+    expect(declined.stderr).toContain("  commands tool, tool-run\n");
+    expect(declined.stderr).toContain("Compared with the installed release:\n  + command:tool-run");
+  });
+
   it("rejects a release that does not verify, naming the problem", async () => {
     const dir = await temporary();
     await release(join(dir, "dist"));
@@ -161,7 +188,18 @@ describe("oxidevm wasm init, build and release", () => {
     const text = await run(await temporary(), ["wasm", "init", "tool"]);
     expect(text.code).toBe(0);
     expect(text.stdout).toContain("a command module named tool (abi raw)");
+    expect(text.stdout).toContain("It declares the command tool: once an application turns it on, programs in a VM run it as /usr/local/bin/tool");
     expect(text.stdout).toContain("pnpm run check && pnpm test");
+  });
+
+  it("reports the command a command module declares, and why an id with the reserved prefix declares none", async () => {
+    const command = await run(await temporary(), ["wasm", "init", "tool", "--json"]);
+    expect(command.report).toMatchObject({ kind: "result", command: "wasm init", result: { id: "tool", kind: "command", commands: ["tool"] } });
+    const reserved = await run(await temporary(), ["wasm", "init", "tools", "--id", "oxidevm-tools", "--json"]);
+    expect(reserved.report).toMatchObject({ kind: "result", command: "wasm init", result: { id: "oxidevm-tools", kind: "command", commands: [] } });
+    const text = await run(await temporary(), ["wasm", "init", "tools", "--id", "oxidevm-tools"]);
+    expect(text.code).toBe(0);
+    expect(text.stdout).toContain("It declares no commands: command names that start with \"oxidevm\" are reserved.");
   });
 
   it("refuses to create over an existing directory with exit status 2 and leaves it alone", async () => {
@@ -263,7 +301,7 @@ describe("oxidevm wasm init, build and release", () => {
   it("builds with an output directory and a module file named on the command line", async () => {
     const { dir, tool } = await scaffold();
     await mkdir(join(tool, "src"), { recursive: true });
-    await writeFile(join(tool, "src", "definition.ts"), (await readFile(join(tool, "module.ts"), "utf8")).replace("./src/operands.ts", "./operands.ts").replace("id: \"tool\"", "id: \"definition\""));
+    await writeFile(join(tool, "src", "definition.ts"), (await readFile(join(tool, "module.ts"), "utf8")).replace("./src/command.ts", "./command.ts").replace("id: \"tool\"", "id: \"definition\""));
     const built = await run(dir, ["wasm", "build", "--project", "tool", "--module", "src/definition.ts", "--out", "release", "--json"]);
     expect(built.code).toBe(0);
     expect(built.report).toMatchObject({ result: { result: "built", id: "definition", directory: join("tool", "release") } });
@@ -284,6 +322,9 @@ describe("oxidevm wasm init, build and release", () => {
     const help = await run(await temporary(), ["--help"]);
     for (const line of ["wasm init <directory>", "wasm build [--project", "wasm release [--project"]) expect(help.stdout).toContain(line);
     expect((await run(await temporary(), ["wasm", "build", "--help"])).stdout).toContain("wasm build [--project");
+    const init = (await run(await temporary(), ["wasm", "init", "--help"])).stdout;
+    expect(init).toContain("A command module declares its id in commands, so programs in a VM can run it from a shell");
+    expect(init).toContain("an id that starts with oxidevm is reserved and gets none");
   });
 });
 

@@ -525,6 +525,14 @@ it("admits an explicit JS launch through the versioned process boundary", () => 
     expect(decodeUserspaceRequest(request)).toEqual(request);
     expect(() => decodeUserspaceRequest({ ...request, version: PROTOCOL_VERSION - 1 })).toThrow();
     expect(() => decodeUserspaceRequest({ ...request, extra: true })).toThrow();
+    // spawnModule's launch description travels beside the arguments, for the runner's start message only (ADR 0027).
+    const launch = { kind: "host", descriptor: "{\"v\":1}" };
+    expect(decodeUserspaceRequest({ ...request, launch })).toEqual({ ...request, launch });
+    // A page asks only for spawnModule's own launch; a module command's launch comes from the worker's registration owner.
+    const command = { kind: "module-command", invocation: { name: "python", path: "/usr/local/bin/python" }, terminals: { stdin: false, stdout: false, stderr: false }, descriptor: "{}", adapter: new Blob([]), artifacts: {} };
+    for (const invalid of [command, { kind: "module-command", descriptor: "{}" }, { kind: "host" }, { kind: "host", descriptor: 1 }, { ...launch, extra: true }, { kind: "host", descriptor: "x".repeat(512 * 1024 + 1) }, null]) {
+      expect(() => decodeUserspaceRequest({ ...request, launch: invalid })).toThrow();
+    }
   } finally { channel.port1.close(); channel.port2.close(); }
 });
 

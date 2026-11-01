@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { Writer } from "./js-process/codec.js";
-import { decodeUserspaceCommandRequest, decodeNativeProcessProgram, decodeNativeEvalSource, encodeNativeEvalSource, NATIVE_EVAL_MAX_UNITS } from "./userspace-command-abi.js";
+import { decodeJSIdentity, Writer } from "./js-process/codec.js";
+import { decodeCommandNotice, decodeUserspaceCommandRequest, decodeNativeProcessProgram, decodeNativeEvalSource, encodeCommandNoticeRequest, encodeCommandSignalExit, encodeNativeEvalSource, NATIVE_EVAL_MAX_UNITS } from "./userspace-command-abi.js";
 
 it("preserves required capabilities and rejects absent, unknown and forged capability records", () => {
   const program = decodeUserspaceCommandRequest(launch()).program;
@@ -26,7 +26,7 @@ it("rejects invalid and oversized eval source before encoding or evaluation", ()
 
 it("binds captured eval source to a worker context and rejects forged origins", () => {
   const code = "/*\0" + String.fromCharCode(0xd800) + "*/require('node:fs');";
-  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(17).u64(7n).u64(19n)
+  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(18).u64(7n).u64(19n)
     .u32(23).u8(0).path("/workspace").u8(2).u8(1).blob(encodeNativeEvalSource(code)).u32(3).u32(4)
     .u8(0).path("/usr/bin/node").path("af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab").path("native-parity-fixture-v1").u32(1).u8(0).path("/workspace/node_modules").u8(1).u64(11n)
     .u32(0).strings([]).u32(0).u8(1).u32(24).u64(17n).u32(5).u32(6).u32(7)
@@ -47,7 +47,7 @@ it("binds captured eval source to a worker context and rejects forged origins", 
 
 it("binds generic native artifacts to hashes, canonical inode identity and dependency generation", () => {
   const path = "/workspace/node_modules/unrelated/addon.node", sha256 = "a".repeat(64);
-  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(17).u64(7n).u64(19n)
+  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(18).u64(7n).u64(19n)
     .u32(23).u8(0).path("/workspace").u8(2).u8(0).path("/workspace/probe.cjs").u32(3).u32(4)
     .u8(0).path("/usr/bin/node").path("af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab").path("native-parity-fixture-v1").u32(1).u8(0).path("/workspace/node_modules").u8(0).u64(11n)
     .u32(1).u8(0).path(path).path(sha256).u64(71n).strings([]).u32(0).u8(0)
@@ -61,7 +61,7 @@ it("binds generic native artifacts to hashes, canonical inode identity and depen
 });
 
 it("decodes only the pinned compiler service and rejects malformed compiler launches", () => {
-  const compiler = (executable = "/workspace/esbuild", version = "0.25.12", args = [executable, "--service=0.25.12", "--ping"], protocol = 17) => new Writer()
+  const compiler = (executable = "/workspace/esbuild", version = "0.25.12", args = [executable, "--service=0.25.12", "--ping"], protocol = 18) => new Writer()
     .raw(new TextEncoder().encode("OXCR")).u32(protocol).u64(7n).u64(19n).u32(23).u8(0).path("/workspace")
     .u8(3).path(executable).path(version).strings(args).strings(["PATH=/usr/bin:/bin"]).finish();
   expect(decodeUserspaceCommandRequest(compiler())).toMatchObject({ program: { kind: "esbuild", executable: "/workspace/esbuild", version: "0.25.12" }, args: ["/workspace/esbuild", "--service=0.25.12", "--ping"] });
@@ -73,7 +73,7 @@ it("decodes only the pinned compiler service and rejects malformed compiler laun
 });
 
 it("keeps shared-library identities separate from loadable addons and rejects stale launch peers", () => {
-  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(17).u64(7n).u64(19n)
+  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(18).u64(7n).u64(19n)
     .u32(23).u8(0).path("/workspace").u8(2).u8(0).path("/workspace/probe.cjs").u32(3).u32(4)
     .u8(0).path("/usr/bin/node").path("af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab").path("native-parity-fixture-v1").u32(1).u8(0).path("/workspace/node_modules").u8(0).u64(11n)
     .u32(1).u8(1).path("libuv.so.1").path("/usr/lib/libuv.so.1").path("a".repeat(64)).u64(71n)
@@ -88,7 +88,7 @@ it("keeps shared-library identities separate from loadable addons and rejects st
   const stale = bytes.slice(); new DataView(stale.buffer).setUint32(4, 10, true); expect(() => decodeUserspaceCommandRequest(stale)).toThrow(/version mismatch/u);
 });
 
-function launch({ version = 17, fork = false, input = 3, output = 4, entry = "/workspace/scripts/custom.cjs", runtime = 1, executable = "/usr/local/bin/bun", profile = "node24-bun1-v1", generation = 11n, moduleSearchPaths = ["/workspace/node_modules/.pnpm/node_modules"], addon = "/workspace/node_modules/@next/swc-linux-x64-musl/next-swc.linux-x64-musl.node" } = {}, runtimeSHA256?: string) {
+function launch({ version = 18, fork = false, input = 3, output = 4, entry = "/workspace/scripts/custom.cjs", runtime = 1, executable = "/usr/local/bin/bun", profile = "node24-bun1-v1", generation = 11n, moduleSearchPaths = ["/workspace/node_modules/.pnpm/node_modules"], addon = "/workspace/node_modules/@next/swc-linux-x64-musl/next-swc.linux-x64-musl.node" } = {}, runtimeSHA256?: string) {
   const writer = new Writer().raw(new TextEncoder().encode("OXCR")).u32(version).u64(7n).u64(19n)
     .u32(23).u8(1).path("/workspace").u8(2).u8(0).path(entry).u32(input).u32(output)
     .u8(runtime).path(executable).path(runtimeSHA256 ?? (runtime === 0 ? "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab" : "500e6edbf321ddf490adcc55a6a01639993a07924616ab67492e1256c15557e2")).path(profile).u32(1).u8(0).path("/workspace/node_modules").u8(0).u64(generation).u32(1).u8(0).path(addon).path("a".repeat(64)).u64(71n).strings(moduleSearchPaths).u32(0).u8(fork ? 2 : 0);
@@ -136,7 +136,7 @@ it("preserves editable module placement, runtime identity, generation and privat
 
 type Root = readonly [kind: number, path: string];
 function rootsLaunch(roots: readonly Root[], { basis = 1, artifacts = [] as readonly string[], moduleSearchPaths = [] as readonly string[], entry = "/workspace/app/main.cjs" } = {}) {
-  const writer = new Writer().raw(new TextEncoder().encode("OXCR")).u32(17).u64(7n).u64(19n)
+  const writer = new Writer().raw(new TextEncoder().encode("OXCR")).u32(18).u64(7n).u64(19n)
     .u32(23).u8(0).path("/workspace/app").u8(2).u8(0).path(entry).u32(3).u32(4)
     .u8(0).path("/usr/bin/node").path("af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab").path("node24-bun1-v1").u32(roots.length);
   for (const [kind, path] of roots) writer.u8(kind).path(path);
@@ -176,4 +176,72 @@ it("rejects roots, add-ons and search paths Rust cannot have admitted", () => {
     expect(() => decodeNativeProcessProgram({ ...program, profile: { ...program.profile, roots } })).toThrow();
   }
   expect(() => decodeNativeProcessProgram({ ...program, profile: { ...program.profile, basis: "verified" } })).toThrow();
+});
+
+/** An OXCR 18 module command launch (ADR 0027): tag 4 with the registration, name, stub path and terminal bits, then the full argv. */
+function moduleLaunch({ version = 18, registration = 3, name = "typst", path = `/usr/local/bin/${name}`, terminals = 0b011, tty = 1, args = ["typst", "compile", "a.typ"] }: { readonly version?: number; readonly registration?: number; readonly name?: string; readonly path?: string; readonly terminals?: number; readonly tty?: number; readonly args?: readonly string[] } = {}) {
+  return new Writer().raw(new TextEncoder().encode("OXCR")).u32(version).u64(7n).u64(19n).u32(23).u8(tty).path("/workspace/doc")
+    .u8(4).u32(registration).blob(new TextEncoder().encode(name)).blob(new TextEncoder().encode(path)).u8(terminals)
+    .strings(args).strings(["PATH=/usr/local/bin:/usr/bin:/bin"]).finish();
+}
+
+it("decodes a module command launch (OXCR 18 tag 4) with its registration, stub path, terminals and the caller's whole argv", () => {
+  expect(decodeUserspaceCommandRequest(moduleLaunch())).toEqual({
+    kind: "command", generation: 7n, id: 19n, pid: 23, tty: true, cwd: "/workspace/doc",
+    program: { kind: "module-command", registration: 3, name: "typst", path: "/usr/local/bin/typst", terminals: { stdin: true, stdout: true, stderr: false } },
+    args: ["typst", "compile", "a.typ"], environment: ["PATH=/usr/local/bin:/usr/bin:/bin"],
+  });
+  // Each descriptor's bit stands alone, argv[0] is whatever the caller passed, and an exec with no arguments stays empty.
+  expect(decodeUserspaceCommandRequest(moduleLaunch({ terminals: 0b101, tty: 0, args: ["./py", "-c", "pass"] }))).toMatchObject({ tty: false, program: { terminals: { stdin: true, stdout: false, stderr: true } }, args: ["./py", "-c", "pass"] });
+  expect(decodeUserspaceCommandRequest(moduleLaunch({ terminals: 0, tty: 0, args: [] }))).toMatchObject({ program: { terminals: { stdin: false, stdout: false, stderr: false } }, args: [] });
+  const longest = "a".repeat(64);
+  expect(decodeUserspaceCommandRequest(moduleLaunch({ name: longest, registration: 0xffff_ffff })).program).toMatchObject({ name: longest, path: `/usr/local/bin/${longest}`, registration: 0xffff_ffff });
+});
+
+it("refuses OXCR 17 and module command launches Rust cannot have admitted", () => {
+  expect(() => decodeUserspaceCommandRequest(moduleLaunch({ version: 17 }))).toThrow(/version mismatch/u);
+  expect(() => decodeUserspaceCommandRequest(launch({ version: 17 }))).toThrow(/version mismatch/u);
+  for (const bytes of [
+    moduleLaunch({ registration: 0 }),
+    ...["Typst", "oxidevm-tool", "", "a".repeat(65), "a/b", "-x", ".x", "x y", "é"].map(name => moduleLaunch({ name })),
+    moduleLaunch({ path: "/usr/local/bin/other" }), moduleLaunch({ path: "/usr/bin/typst" }), moduleLaunch({ path: "/usr/local/bin/typst/" }), moduleLaunch({ path: "/usr/local/bin//typst" }),
+    moduleLaunch({ terminals: 0b1011 }), moduleLaunch({ terminals: 0xff }),
+    // The process's terminal flag is descriptor 1's terminal bit, read from the same descriptor table.
+    moduleLaunch({ tty: 0 }), moduleLaunch({ tty: 1, terminals: 0b001 }),
+    moduleLaunch().subarray(0, -1),
+  ]) expect(() => decodeUserspaceCommandRequest(bytes)).toThrow();
+  const trailing = new Uint8Array(moduleLaunch().byteLength + 1); trailing.set(moduleLaunch());
+  expect(() => decodeUserspaceCommandRequest(trailing)).toThrow(/Unexpected/u);
+});
+
+const NOTICE_HEADER = [1, 0, 0, 0, 6, ...new Array<number>(16).fill(0)];
+function notice({ magic = "OXCS", version = 1, generation = 7n, id = 19n, pid = 23, signal = 2, flags = 0b11 } = {}) {
+  return new Writer().raw(new TextEncoder().encode(magic)).u32(version).u64(generation).u64(id).u32(pid).u8(signal).u8(flags).finish();
+}
+
+it("asks Rust for the next caught-signal notice (command operation 6) and decodes OXCS 1 or no notice", () => {
+  expect(Array.from(encodeCommandNoticeRequest())).toEqual(NOTICE_HEADER);
+  expect(notice().byteLength).toBe(30);
+  expect(decodeCommandNotice(notice())).toEqual({ generation: 7n, id: 19n, pid: 23, signal: 2, restart: true, interrupt: true });
+  expect(decodeCommandNotice(notice({ flags: 0 }))).toMatchObject({ restart: false, interrupt: false });
+  expect(decodeCommandNotice(notice({ flags: 0b10 }))).toMatchObject({ restart: false, interrupt: true });
+  for (const signal of [1, 2, 3, 10, 12, 15]) expect(decodeCommandNotice(notice({ signal, flags: 1 }))).toMatchObject({ signal, restart: true, interrupt: false });
+  expect(decodeCommandNotice(new Uint8Array())).toBeNull();
+});
+
+it("refuses a malformed, untrappable or stale caught-signal notice", () => {
+  for (const bytes of [
+    notice({ magic: "OXCR" }), notice({ version: 0 }), notice({ version: 2 }), notice({ generation: 0n }), notice({ id: 0n }), notice({ pid: 0 }),
+    ...[0, 4, 9, 11, 13, 14, 17, 19, 64, 255].map(signal => notice({ signal })), notice({ flags: 0b100 }), notice({ flags: 0xff }),
+    notice().subarray(0, 29), new Uint8Array(1),
+  ]) expect(() => decodeCommandNotice(bytes)).toThrow();
+  const trailing = new Uint8Array(31); trailing.set(notice());
+  expect(() => decodeCommandNotice(trailing)).toThrow();
+});
+
+it("ends a JS process killed by a trappable signal (command operation 7) with an exact request", () => {
+  const identity = decodeJSIdentity(7n, 19n);
+  expect(Array.from(encodeCommandSignalExit(identity, 2))).toEqual([1, 0, 0, 0, 7, 7, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 0, 0, 0, 0, 0, 2]);
+  for (const signal of [1, 3, 10, 12, 15]) expect(encodeCommandSignalExit(identity, signal).at(-1)).toBe(signal);
+  for (const signal of [0, 9, 19, 64, 1.5]) expect(() => encodeCommandSignalExit(identity, signal)).toThrow();
 });

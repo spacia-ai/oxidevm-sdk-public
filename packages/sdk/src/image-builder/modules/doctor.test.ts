@@ -26,6 +26,17 @@ async function installed(extra: Readonly<Record<string, unknown>> = {}) {
   await commitAdd(dir, preview, context);
   return { dir, release: preview.card.release };
 }
+/** A project with several modules installed from a trusted owner, each from its own repository. */
+async function installedAll(releases: readonly ReturnType<typeof buildReleaseFiles>[]): Promise<string> {
+  const dir = await temporary(), cache = new BlobCache(await temporary());
+  await writeFile(join(dir, DECLARATION_FILE), encodeModulesDeclaration({ schemaVersion: 1, trusted: ["acme"], modules: [] }));
+  for (const release of releases) {
+    const stub = githubStub(release, { repo: release.manifest.id });
+    const context = { projectDir: dir, cache, fetchImpl: stub.fetchImpl };
+    await commitAdd(dir, await previewAdd(dir, `github:acme/${release.manifest.id}@v1.0.0`, context), context);
+  }
+  return dir;
+}
 /** A project built from a release directory without going through `add`: declaration, lock, committed manifest, staged files. */
 async function assembled(release: ReturnType<typeof buildReleaseFiles>): Promise<string> {
   const dir = await temporary(), source = join(dir, "vendor", "tool");
@@ -195,5 +206,39 @@ describe("the doctor cross-checks the project's three records", () => {
     const { dir } = await installed();
     await changeDeclaration(dir, "github:ACME/Tool-Module@v1.0.0");
     expect(status(await doctorModules(dir), "lock")).toMatchObject({ status: "passed" });
+  });
+});
+
+describe("the doctor and module commands", () => {
+  const noteOf = (report: WasmDoctorReport): string => {
+    const entry = status(report, "commands");
+    return entry?.status === "note" ? entry.message : "";
+  };
+
+  it("notes each module's commands, a name two modules share, the PATH they need and the image programs they can take the place of", async () => {
+    const pyodide = buildReleaseFiles({ id: "pyodide", host: ["files.sync", "process.signals"], extra: { commands: ["python3", "python"] } });
+    const runner = buildReleaseFiles({ id: "runner", extra: { commands: ["python"], requires: { host: ["files.sync"], guest: { executables: ["/usr/bin/python3", "/usr/local/bin/python3"] } } } });
+    const report = await doctorModules(await installedAll([pyodide, runner]), { engineApi: 145 });
+    expect(report.result).toBe("passed");
+    expect(status(report, "commands")?.status).toBe("note");
+    const note = noteOf(report);
+    expect(note).toContain("pyodide declares python, python3; runner declares python.");
+    expect(note).toContain("python is declared by more than one module (pyodide, runner), so a VM can turn it on for only one of them at a time.");
+    expect(note).toContain("a terminal's PATH must list /usr/local/bin before /usr/bin");
+    expect(note).toContain("python3 can take the place of /usr/bin/python3, which runner requires.");
+    // Another module's command is not an image program, so requiring its path shadows nothing.
+    expect(note).not.toContain("take the place of /usr/local/bin/python3");
+  });
+
+  it("passes when no installed module declares commands", async () => {
+    const report = await doctorModules((await installed()).dir);
+    expect(status(report, "commands")).toEqual({ check: "commands", status: "passed" });
+  });
+
+  it("fails the engine API for a module with commands on an engine without them, and names the module", async () => {
+    // files.sync alone needs API 144, so only the commands ask for 145.
+    const { dir } = await installed({ commands: ["tool"] });
+    expect(status(await doctorModules(dir, { engineApi: 144 }), "engine-api")).toMatchObject({ status: "failed", message: expect.stringContaining("tool needs Userspace API 145; this SDK provides 144") as unknown });
+    expect(status(await doctorModules(dir, { engineApi: 145 }), "engine-api")).toMatchObject({ status: "passed" });
   });
 });

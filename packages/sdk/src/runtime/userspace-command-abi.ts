@@ -2,6 +2,8 @@ import { exactKeys, integer, record, string } from "./decode.ts";
 import { TYPESCRIPT } from "./command-interceptor-identity.ts";
 import { ESBUILD } from "./esbuild-identity.ts";
 import { Reader, Writer, protocol, decodeJSIdentity, type JSProcessIdentity } from "./js-process/codec.ts";
+import { isTrappableSignal, type TrappableSignalNumber } from "./js-process/signals.ts";
+import { isModuleCommandName, moduleCommandPath } from "./module-command-names.ts";
 
 export const NATIVE_EVAL_MAX_UNITS = 256 * 1024;
 export const NATIVE_EVAL_ENTRY = "[worker eval]";
@@ -95,17 +97,30 @@ export function readNativeRoots(r: Reader): readonly NativeProcessRoot[] {
   return decodeNativeRoots(roots);
 }
 
+/** Whether each of descriptors 0 to 2 is a terminal, as the launched module command sees them. */
+export interface ModuleCommandTerminals { readonly stdin: boolean; readonly stdout: boolean; readonly stderr: boolean }
+/** ADR 0027: the engine stub at a registered `/usr/local/bin/<name>` runs registration `registration`'s module. */
+export interface ModuleCommandProgram { readonly kind: "module-command"; readonly registration: number; readonly name: string; readonly path: string; readonly terminals: ModuleCommandTerminals }
 export interface UserspaceCommandHostRequest extends JSProcessIdentity {
   readonly kind: "command";
   readonly pid: number;
   readonly tty: boolean; readonly cwd: string;
+  /** A module command's argv is the caller's whole argv, argv[0] included; other programs' omit the launcher. */
   readonly args: readonly string[]; readonly environment: readonly string[];
-  readonly program: { readonly kind: "typescript"; readonly entry: string; readonly executable: "/usr/bin/node" | "/usr/local/bin/bun" } | { readonly kind: "worker"; readonly token: bigint } | { readonly kind: "esbuild"; readonly executable: string; readonly version: "0.25.12" } | { readonly kind: "native-node"; readonly entry: string; readonly source: NativeProcessSource; readonly input: number; readonly output: number; readonly profile: NativeProcessProfile; readonly context: NativeProcessContext };
+  readonly program: { readonly kind: "typescript"; readonly entry: string; readonly executable: "/usr/bin/node" | "/usr/local/bin/bun" } | { readonly kind: "worker"; readonly token: bigint } | { readonly kind: "esbuild"; readonly executable: string; readonly version: "0.25.12" } | { readonly kind: "native-node"; readonly entry: string; readonly source: NativeProcessSource; readonly input: number; readonly output: number; readonly profile: NativeProcessProfile; readonly context: NativeProcessContext } | ModuleCommandProgram;
 }
+
+/** OXCR 18 tag 4: u32 registration, blob name, blob path, u8 terminals (bit n: descriptor n is a terminal). */
+function readModuleCommand(r: Reader): ModuleCommandProgram {
+  const registration = r.u32(), name = r.text(64), path = r.text(4095), bits = r.u8();
+  if (registration === 0 || !isModuleCommandName(name) || path !== moduleCommandPath(name) || bits > 0b111) protocol("Unregistered module command launch");
+  return { kind: "module-command", registration, name, path, terminals: { stdin: (bits & 1) !== 0, stdout: (bits & 2) !== 0, stderr: (bits & 4) !== 0 } };
+}
+
 export function decodeUserspaceCommandRequest(bytes: Uint8Array): UserspaceCommandHostRequest {
   if (bytes.byteLength > 2 * 1024 * 1024 + NATIVE_EVAL_MAX_UNITS * 2 + 16384) protocol("JS launch record exceeds its limit");
   const r = new Reader(bytes);
-  if (new TextDecoder().decode(r.raw(4)) !== "OXCR" || r.u32() !== 17) protocol("JS launch record version mismatch");
+  if (new TextDecoder().decode(r.raw(4)) !== "OXCR" || r.u32() !== 18) protocol("JS launch record version mismatch");
   const { generation, id } = decodeJSIdentity(r.u64(), r.u64());
   const pid = r.u32(), tty = r.u8(), cwd = r.text(4095), tag = r.u8();
   let program: UserspaceCommandHostRequest["program"];
@@ -142,15 +157,41 @@ export function decodeUserspaceCommandRequest(bytes: Uint8Array): UserspaceComma
     if (!executable.startsWith("/") || executable.includes("\0") || executable.split("/").slice(1).some(part => part === "" || part === "." || part === "..")
       || Array.from(executable).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) || version !== ESBUILD.version) protocol("Unqualified esbuild compiler");
     program = { kind: "esbuild", executable, version };
+  } else if (tag === 4) {
+    program = readModuleCommand(r);
+    // Rust reads the process's terminal flag from descriptor 1 of the same descriptor table.
+    if (program.terminals.stdout !== (tty === 1)) protocol("Module command terminals contradict the launch");
   } else protocol("Unknown JS process program");
   const args = r.strings(), environment = r.strings(); r.end();
   if (program.kind === "esbuild" && (args[1] !== `--service=${ESBUILD.version}` || args.length !== 2 && (args.length !== 3 || args[2] !== "--ping"))) protocol("Invalid esbuild service invocation");
   if (generation === 0n || id === 0n || pid === 0 || tty > 1 || !cwd.startsWith("/") || cwd.includes("\0") || [...args, ...environment].some(value => value.includes("\0"))) protocol("Invalid JS launch identity or metadata");
   return { kind: "command", generation, id, pid, tty: tty === 1, cwd, program, args, environment };
 }
-export function encodeCommandIo(request: { readonly generation: bigint; readonly id: bigint }, operation: 0 | 4): Uint8Array<ArrayBuffer> {
+export function encodeCommandIo(request: { readonly generation: bigint; readonly id: bigint }, operation: 0 | 4 | 6): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(21), view = new DataView(bytes.buffer);
   view.setUint32(0, 1, true); bytes[4] = operation; view.setBigUint64(5, request.generation, true); view.setBigUint64(13, request.id, true); return bytes;
+}
+
+/** Command operation 6 (ADR 0027): the next host-caught signal notice of a running JS process, or no notice. */
+export function encodeCommandNoticeRequest(): Uint8Array<ArrayBuffer> { return encodeCommandIo({ generation: 0n, id: 0n }, 6); }
+
+/** A signal Rust caught for a JS process's worker instead of its default action, with the flags it was caught with. */
+export interface CommandSignalNotice extends JSProcessIdentity { readonly pid: number; readonly signal: TrappableSignalNumber; readonly restart: boolean; readonly interrupt: boolean }
+
+/** OXCS 1, operation 6's answer: "OXCS", u32 1, u64 generation, u64 id, u32 pid, u8 signal, u8 flags (bit 0 restart, bit 1 interrupt), or an empty record. */
+export function decodeCommandNotice(bytes: Uint8Array): CommandSignalNotice | null {
+  if (bytes.byteLength === 0) return null;
+  const r = new Reader(bytes);
+  if (new TextDecoder().decode(r.raw(4)) !== "OXCS" || r.u32() !== 1) protocol("Signal notice version mismatch");
+  const { generation, id } = decodeJSIdentity(r.u64(), r.u64()), pid = integer(r.u32(), "signal notice pid", 1, 0x7fff_ffff), signal = r.u8(), flags = r.u8(); r.end();
+  if (!isTrappableSignal(signal) || flags > 0b11) protocol("Invalid signal notice");
+  return { generation, id, pid, signal, restart: (flags & 1) !== 0, interrupt: (flags & 2) !== 0 };
+}
+
+/** Command operation 7 (ADR 0027): the worker's process ends killed by a trappable signal; Rust answers an empty record. */
+export function encodeCommandSignalExit(request: JSProcessIdentity, signal: number): Uint8Array<ArrayBuffer> {
+  if (!isTrappableSignal(signal)) protocol("A JS process can end only by a trappable signal");
+  return new Writer().u32(1).u8(7).u64(request.generation).u64(request.id).u8(signal).finish();
 }
 export function encodeCommandExit(request: { readonly generation: bigint; readonly id: bigint }, code: number): Uint8Array<ArrayBuffer> {
   return new Writer().raw(new TextEncoder().encode("OXCC")).u32(1).u64(request.generation).u64(request.id).u8(code).finish();

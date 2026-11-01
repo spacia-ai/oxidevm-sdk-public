@@ -1,5 +1,6 @@
 import type { AddPreview, ConsentCard, WasmAddResult, WasmBuildFinding, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult, WasmTestReport } from "@oxidevm/sdk/image-builder";
 import type { WasmInitResult, WasmReleaseResult } from "./contracts.js";
+import { RESERVED_COMMAND_PREFIX, handleName } from "./wasm-template-files.js";
 
 const megabytes = (bytes: number): string => bytes >= 1024 ** 2 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 /** A labelled block of lines; a label with nothing to say is left out. */
@@ -22,7 +23,18 @@ const safeCard = (card: ConsentCard): ConsentCard => ({
   ...card, id: field(card.id), version: field(card.version), source: field(card.source), license: { ...card.license, spdx: field(card.license.spdx) },
   browser: card.browser.map(field), guestExecutables: card.guestExecutables.map(field), mounts: card.mounts.map(field), endpoints: card.endpoints.map(field),
   guestFiles: card.guestFiles.map(field), durablePaths: card.durablePaths.map(field), options: card.options.map(field), capabilities: card.capabilities.map(field),
+  commands: card.commands.map(command => ({ name: field(command.name), path: field(command.path) })),
 });
+
+/** What turning a module's commands on means (engine ADR 0027), said once under their names. */
+const COMMANDS_NOTE: readonly string[] = [
+  "Your application turns them on per VM; then any program in the VM can run them as /usr/local/bin/<name>,",
+  "with its own arguments and input, and the module does that work in a worker of your page.",
+  "/usr/local/bin comes before /usr/bin on PATH: they take the place of image programs with these names,",
+  "including scripts that start with #!/usr/bin/env <name>.",
+  "A module that runs code it is given (an interpreter such as Python) lets those programs run code in",
+  "your page's origin.",
+];
 
 /** What the card needs of a preview: the release's declarations and how it differs from what is installed. */
 export type ConsentView = Pick<AddPreview, "card" | "status" | "added" | "removed"> & { readonly consent: Pick<AddPreview["consent"], "reasons"> };
@@ -45,6 +57,7 @@ export function consentText(preview: ConsentView): string {
     ...row("guest", card.guestExecutables),
     ...row("mounts", card.mounts),
     ...row("listens", card.endpoints),
+    ...row("commands", card.commands.length === 0 ? [] : [card.commands.map(command => command.name).join(", "), ...COMMANDS_NOTE]),
     ...row("writes", [...card.guestFiles, ...card.durablePaths.map(path => `${path} (durable)`)]),
     ...row("options", [card.options.join(", ")]),
     ...row("size", [`${megabytes(card.artifacts.reduce((sum, artifact) => sum + artifact.bytes, 0))} in ${String(card.artifacts.length)} file${card.artifacts.length === 1 ? "" : "s"}`]),
@@ -59,7 +72,7 @@ export function consentText(preview: ConsentView): string {
 
 export function addText(result: WasmAddResult): string {
   if (result.status === "unchanged") return `${result.id} ${result.version} is already installed and up to date.\n`;
-  return `${result.status === "added" ? "Added" : "Updated"} ${result.id} ${result.version} from ${result.source}. Import it from ${result.generatedFile}:\n  import { ${result.id.replace(/-([a-z0-9])/gu, (_match, character: string) => character.toUpperCase())} } from "./${result.generatedFile.replace(/^src\//u, "").replace(/\.ts$/u, "")}";\n`;
+  return `${result.status === "added" ? "Added" : "Updated"} ${result.id} ${result.version} from ${result.source}. Import it from ${result.generatedFile}:\n  import { ${handleName(result.id)} } from "./${result.generatedFile.replace(/^src\//u, "").replace(/\.ts$/u, "")}";\n`;
 }
 
 export function stageText(result: WasmStageResult): string {
@@ -104,8 +117,16 @@ export function releaseText(result: WasmReleaseResult): string {
   return `${buildText(result.build)}\nTo publish ${result.tag} (none of this has been run):\n\n${result.steps.join("\n\n")}\n`;
 }
 
+/** What a new command module declares in `commands`: the names programs in a VM run, or why it declares none. Nothing for a service. */
+function commandsText(commands: readonly string[] | undefined): string {
+  if (commands === undefined) return "";
+  if (commands.length === 0) return `It declares no commands: command names that start with "${RESERVED_COMMAND_PREFIX}" are reserved. Add commands: ["<name>"] after process in module.ts to let programs in a VM run it by a name of your own.\n`;
+  const them = commands.length === 1 ? "it" : "them";
+  return `It declares the command${commands.length === 1 ? "" : "s"} ${commands.join(", ")}: once an application turns ${them} on, programs in a VM run ${them} as ${commands.map(name => `/usr/local/bin/${name}`).join(", ")} (README.md, "Run it from a shell").\n`;
+}
+
 export function initText(result: WasmInitResult): string {
-  return `Created ${result.directory}: a ${result.kind} module named ${result.id} (abi ${result.abi}), ${String(result.files.length)} files.\n\nNext:\n  cd ${result.directory}\n  pnpm install\n  pnpm run check && pnpm test\n  pnpm run build\n`;
+  return `Created ${result.directory}: a ${result.kind} module named ${result.id} (abi ${result.abi}), ${String(result.files.length)} files.\n${commandsText(result.commands)}\nNext:\n  cd ${result.directory}\n  pnpm install\n  pnpm run check && pnpm test\n  pnpm run build\n`;
 }
 
 export function testText(report: WasmTestReport): string {

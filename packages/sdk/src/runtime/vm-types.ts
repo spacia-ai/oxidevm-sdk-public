@@ -13,6 +13,8 @@ import type { Workspace } from "./workspace.js";
 import type { WorkspaceMovedAway } from "./workspace-handoff.js";
 import type { ImagePreparation } from "../values.js";
 import type { AccelerationNotice } from "./js-process/late-failure.js";
+import type { RunnerHostLaunch } from "./js-process/launch.js";
+import type { ModuleCommandsRequest, ModuleCommandsResult } from "./protocol/userspace-module-commands.js";
 
 export type RuntimeMode = "system" | "userspace";
 export type NetworkMode = "local" | "relay";
@@ -245,7 +247,14 @@ export interface RuntimeVM {
   readJSProcessTrace?(capacity?: number): Promise<Uint8Array>;
   /** ADR 0026: each late fast-path failure until `options.signal` aborts or the VM ends. */
   watchAccelerationNotices?(listener: (notice: AccelerationNotice) => void, options: { readonly signal: AbortSignal }): Promise<void>;
-  spawnJS?(spec: Omit<SpawnSpec, "command"> & { readonly worker: string }): Promise<ProcessHandle>;
+  /** `launch` is the module runner's private start input (ADR 0027): `spawnModule` sends its launch description there, not in argv. */
+  spawnJS?(spec: Omit<SpawnSpec, "command"> & { readonly worker: string; readonly launch?: RunnerHostLaunch }): Promise<ProcessHandle>;
+  /**
+   * ADR 0027: turns a command module's commands on for this VM, turns them off, or reads how they stand, through the
+   * Userspace worker's registration owner. A cancelled request is still answered by that owner, so an enable that
+   * registered before its cancellation arrived reports its registration.
+   */
+  moduleCommands?(request: ModuleCommandsRequest, options?: { readonly signal?: AbortSignal }): Promise<ModuleCommandsResult>;
   /** Requires an admitted system build and an implemented guest preparation capability. */
   prepareDependencies(options?: DependencyPreparationOptions): Promise<DependencyInstallHandle>;
   exposePort(port: number, options?: { readonly signal?: AbortSignal }): Promise<PreviewHandle>;

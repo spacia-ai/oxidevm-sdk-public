@@ -112,3 +112,80 @@ it("rejects a reply from a peer on the previous JS process protocol", async () =
   try { await expect(client.call(operation(79, new Writer(), () => undefined))).rejects.toMatchObject({ code: "PROTOCOL_ERROR" }); }
   finally { client.dispose(); channel.port2.close(); }
 });
+
+/** The driver's side of the signal words: what `markSignalPending` does. */
+function pend(words: Int32Array, ...signals: readonly number[]): void { for (const signal of signals) Atomics.or(words, 0, 1 << (signal - 1)); }
+/** Resolves once every message posted to the client before it has been delivered: the reply to a later request. */
+async function settle(client: LinuxClient, peer: MessagePort): Promise<void> {
+  peer.onmessage = (event: MessageEvent<unknown>) => {
+    const sequence = integer(record(event.data, "request")["sequence"], "sequence", 1);
+    peer.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "reply", sequence, errno: 0, value: 0n, payload: new Uint8Array() });
+  };
+  await client.call(operation(79, new Writer(), () => undefined));
+}
+
+it("hands each signal Rust caught to the listener exactly once, lowest first, at once and after each nudge", async () => {
+  const channel = new MessageChannel(), buffer = new SharedArrayBuffer(8), words = new Int32Array(buffer);
+  const client = new LinuxClient(channel.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES), buffer), delivered: number[][] = [];
+  try {
+    pend(words, 15);
+    client.listenForSignals(signals => { delivered.push([...signals]); });
+    expect(delivered).toEqual([[15]]);
+    pend(words, 10, 2, 1);
+    // Two nudges for the same bits: the first takes them all, the second finds nothing to deliver.
+    channel.port2.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "signal" });
+    channel.port2.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "signal" });
+    await settle(client, channel.port2);
+    expect(delivered).toEqual([[15], [1, 2, 10]]);
+    expect(Atomics.load(words, 0)).toBe(0);
+    pend(words, 3);
+    channel.port2.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "signal" });
+    await settle(client, channel.port2);
+    expect(delivered).toEqual([[15], [1, 2, 10], [3]]);
+  } finally { client.dispose(); channel.port2.close(); }
+});
+
+it("keeps the interrupt word for the module and refuses a second listener, untrappable bits and a stale nudge", async () => {
+  const channel = new MessageChannel(), buffer = new SharedArrayBuffer(8), words = new Int32Array(buffer);
+  const client = new LinuxClient(channel.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES), buffer);
+  try {
+    Atomics.store(words, 1, 2);
+    expect(client.interruptWord[0]).toBe(2);
+    client.interruptWord[0] = 0;
+    expect(Atomics.load(words, 1)).toBe(0);
+    client.listenForSignals(() => {});
+    expect(() => { client.listenForSignals(() => {}); }).toThrow(VMError);
+    // SIGKILL's bit can never be pending: the transport fails instead of inventing a delivery.
+    pend(words, 9);
+    channel.port2.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "signal" });
+    await expect(settle(client, channel.port2)).rejects.toBeInstanceOf(VMError);
+  } finally { client.dispose(); channel.port2.close(); }
+  for (const nudge of [{ version: JS_PROCESS_PROTOCOL_VERSION - 1, type: "signal" }, { version: JS_PROCESS_PROTOCOL_VERSION, type: "signal", signal: 2 }]) {
+    const stale = new MessageChannel(), other = new LinuxClient(stale.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES), new SharedArrayBuffer(8));
+    try {
+      stale.port2.postMessage(nudge);
+      await expect(settle(other, stale.port2)).rejects.toMatchObject({ code: expect.stringMatching(/PROTOCOL_ERROR|ABORTED/u) as unknown });
+    } finally { other.dispose(); stale.port2.close(); }
+  }
+  // A native process has no signal words, so it neither listens nor accepts a nudge.
+  const native = new MessageChannel(), withoutWords = new LinuxClient(native.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES));
+  try {
+    expect(() => { withoutWords.listenForSignals(() => {}); }).toThrow(VMError);
+    expect(() => withoutWords.interruptWord).toThrow(VMError);
+    native.port2.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "signal" });
+    await expect(settle(withoutWords, native.port2)).rejects.toBeInstanceOf(VMError);
+  } finally { withoutWords.dispose(); native.port2.close(); }
+  expect(() => new LinuxClient(new MessageChannel().port1, new SharedArrayBuffer(JS_MAILBOX_BYTES), new SharedArrayBuffer(4))).toThrow(VMError);
+});
+
+it("reports the end of its process by a trappable signal, counted like a request", async () => {
+  const channel = new MessageChannel(), mailbox = new SharedArrayBuffer(JS_MAILBOX_BYTES);
+  const client = new LinuxClient(channel.port1, mailbox, new SharedArrayBuffer(8)), attention = jsMailboxAttention(mailbox);
+  try {
+    const received = new Promise<{ readonly data: unknown; readonly counted: number }>(resolve => { channel.port2.onmessage = (event: MessageEvent<unknown>) => { resolve({ data: event.data, counted: Atomics.load(attention, 0) }); }; });
+    client.signaled(2);
+    expect(await received).toEqual({ data: { version: JS_PROCESS_PROTOCOL_VERSION, type: "signaled", signal: 2 }, counted: 1 });
+    // @ts-expect-error SIGKILL is not a signal a process can end itself by through its worker
+    expect(() => { client.signaled(9); }).toThrow(VMError);
+  } finally { client.dispose(); channel.port2.close(); }
+});

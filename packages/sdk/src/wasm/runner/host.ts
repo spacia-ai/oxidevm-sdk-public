@@ -1,6 +1,6 @@
 import type { FileDescriptor, LinuxFiles, LinuxProcesses, LinuxSockets, LinuxSyncFiles } from "../../js-process-types.js";
 import { VMError } from "../../runtime/errors.js";
-import type { Capability, ClientSockets } from "../capabilities.js";
+import type { Capability, ClientSockets, ProcessSignals } from "../capabilities.js";
 import type { HostArtifacts } from "../define.js";
 import { kit } from "../kit/index.js";
 import type { ResolvedOptionValues } from "../options.js";
@@ -30,16 +30,20 @@ export interface HostInputs {
   readonly options: ResolvedOptionValues;
   readonly artifacts: HostArtifacts;
   readonly signal: AbortSignal;
+  /** `host.process.signals` when the manifest declares `process.signals` (engine ADR 0027). */
+  readonly signals: ProcessSignals;
   /** Told about each read of an undeclared member; the member itself stays absent. */
   readonly undeclared?: (access: UndeclaredAccess) => void;
 }
 
+/** The capabilities that fill `process`. */
+const PROCESS_MEMBER: readonly Capability[] = ["process.info", "process.spawn", "process.signals"];
 /** Which capabilities provide each host member, and each function of `process`. */
 const MEMBER_CAPABILITIES: Readonly<Record<string, readonly Capability[]>> = {
-  fs: ["files.sync"], files: ["files.async"], sockets: ["sockets.connect"], process: ["process.info", "process.spawn"],
+  fs: ["files.sync"], files: ["files.async"], sockets: ["sockets.connect"], process: PROCESS_MEMBER,
 };
 const PROCESS_CAPABILITIES: Readonly<Record<string, Capability>> = {
-  info: "process.info", cwd: "process.info", spawn: "process.spawn", wait: "process.spawn", signal: "process.spawn",
+  info: "process.info", cwd: "process.info", spawn: "process.spawn", wait: "process.spawn", signal: "process.spawn", signals: "process.signals",
 };
 
 /**
@@ -76,8 +80,8 @@ function clientSockets(sockets: LinuxSockets): ClientSockets {
   });
 }
 
-/** The members the declared capabilities contribute. `process.info` and `process.spawn` both fill `process`, so they merge. */
-function members(capabilities: readonly Capability[], linux: LinuxParts): Readonly<Record<string, unknown>> {
+/** The members the declared capabilities contribute. `process.info`, `process.spawn` and `process.signals` all fill `process`, so they merge. */
+function members(capabilities: readonly Capability[], linux: LinuxParts, signals: ProcessSignals): Readonly<Record<string, unknown>> {
   const granted: Record<string, unknown> = {};
   if (capabilities.includes("files.sync")) granted["fs"] = linux.filesSync;
   if (capabilities.includes("files.async")) granted["files"] = linux.files;
@@ -85,7 +89,8 @@ function members(capabilities: readonly Capability[], linux: LinuxParts): Readon
   const { process } = linux;
   const info = capabilities.includes("process.info") ? { info: process.info.bind(process), cwd: process.cwd.bind(process) } : {};
   const spawn = capabilities.includes("process.spawn") ? { spawn: process.spawn.bind(process), wait: process.wait.bind(process), signal: process.signal.bind(process) } : {};
-  if (capabilities.includes("process.info") || capabilities.includes("process.spawn")) granted["process"] = Object.freeze({ ...info, ...spawn });
+  const caught = capabilities.includes("process.signals") ? { signals } : {};
+  if (capabilities.some(capability => PROCESS_MEMBER.includes(capability))) granted["process"] = Object.freeze({ ...info, ...spawn, ...caught });
   return granted;
 }
 
@@ -110,7 +115,7 @@ export function buildHost(inputs: HostInputs): { readonly host: Readonly<Record<
       log(message);
       return status;
     },
-    ...members(inputs.capabilities, linux),
+    ...members(inputs.capabilities, linux, inputs.signals),
   });
   const report = inputs.undeclared;
   if (report === undefined) return { host, log };

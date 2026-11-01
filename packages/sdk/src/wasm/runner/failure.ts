@@ -1,5 +1,6 @@
 import { VMError } from "../../runtime/errors.js";
 import { MODULE_EXIT, MODULE_EXIT_REASONS, type ModuleExitReason } from "../exit-codes.js";
+import type { AdapterFault } from "./hooks.js";
 
 /** A runner-level failure with the exit status that reports it. */
 export class ModuleFailure extends VMError {
@@ -14,6 +15,29 @@ export class ModuleFailure extends VMError {
     this.status = MODULE_EXIT[kind];
     this.items = items;
   }
+}
+
+/**
+ * What the runner reports for a failure. An application start writes it as a JSON record on standard error, which
+ * `spawnModule` and `oxidevm wasm test` read; `reason` names a stable `detail.reason` the status alone does not.
+ */
+export type RunnerReport =
+  | { readonly kind: ModuleExitReason; readonly message: string; readonly items?: readonly string[]; readonly reason?: string }
+  | { readonly kind: "adapter"; readonly fault: AdapterFault; readonly message: string; readonly capabilities?: readonly string[]; readonly stack?: string };
+
+/** The longest failure line, in code points. */
+const MAX_LINE = 1024;
+
+/**
+ * The one line a program in the VM that ran `command` (engine ADR 0027) finds on standard error when the runner fails:
+ * readable text with the command's name, like any Linux program's error, instead of a JSON record.
+ */
+export function failureLine(command: string, report: RunnerReport): string {
+  const detail = "fault" in report
+    ? report.fault === "undeclared-capability" ? `the module used ${(report.capabilities ?? []).join(", ")}, which its manifest does not declare: ${report.message}` : `the module failed: ${report.message}`
+    : report.kind === "launch" ? `cannot start: ${report.message}` : report.kind === "adapter" ? `the module failed: ${report.message}` : report.message;
+  // Bounded in code points, so a long message is never cut inside a character.
+  return `${Array.from(`${command}: ${detail}`.replace(/\p{Cc}+/gu, " ")).slice(0, MAX_LINE).join("")}\n`;
 }
 
 /** Rejects when `promise` has not settled within `ms`; the timer is always cleared. */

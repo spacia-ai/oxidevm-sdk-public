@@ -32,7 +32,7 @@ it.each(["sync", "async"])("accepts a named %s handler that returns nothing", as
   if (receive === null) throw new Error("Missing worker receiver");
   const channel = new MessageChannel();
   try {
-    receive(new MessageEvent("message", { data: { version: JS_PROCESS_PROTOCOL_VERSION, type: "start", port: channel.port1, mailbox: new SharedArrayBuffer(JS_MAILBOX_BYTES) } }));
+    receive(new MessageEvent("message", { data: { version: JS_PROCESS_PROTOCOL_VERSION, type: "start", port: channel.port1, mailbox: new SharedArrayBuffer(JS_MAILBOX_BYTES), signals: new SharedArrayBuffer(8) } }));
     await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({ version: JS_PROCESS_PROTOCOL_VERSION, type: "exit", code: 0 }));
   } finally { channel.port1.close(); channel.port2.close(); }
 });
@@ -46,7 +46,7 @@ it.each([null, {}, 256])("rejects an invalid handler result %j before publishing
   if (receive === null) throw new Error("Missing worker receiver");
   const channel = new MessageChannel();
   try {
-    receive(new MessageEvent("message", { data: { version: JS_PROCESS_PROTOCOL_VERSION, type: "start", port: channel.port1, mailbox: new SharedArrayBuffer(JS_MAILBOX_BYTES) } }));
+    receive(new MessageEvent("message", { data: { version: JS_PROCESS_PROTOCOL_VERSION, type: "start", port: channel.port1, mailbox: new SharedArrayBuffer(JS_MAILBOX_BYTES), signals: new SharedArrayBuffer(8) } }));
     await vi.waitFor(() => expect(postMessage).toHaveBeenCalledOnce());
     const failure = record(postMessage.mock.calls[0]?.[0], "worker result");
     expect(failure["type"]).toBe("failure"); expect(record(failure["error"], "worker error")["code"]).toBe("PROTOCOL_ERROR");
@@ -63,10 +63,34 @@ it("rejects a bootstrap from a runtime on the previous JS process protocol", asy
   if (receive === null) throw new Error("Missing worker receiver");
   const channel = new MessageChannel();
   try {
-    receive(new MessageEvent("message", { data: { version: JS_PROCESS_PROTOCOL_VERSION - 1, type: "start", port: channel.port1, mailbox: new SharedArrayBuffer(JS_MAILBOX_BYTES) } }));
+    receive(new MessageEvent("message", { data: { version: JS_PROCESS_PROTOCOL_VERSION - 1, type: "start", port: channel.port1, mailbox: new SharedArrayBuffer(JS_MAILBOX_BYTES), signals: new SharedArrayBuffer(8) } }));
     await vi.waitFor(() => expect(postMessage).toHaveBeenCalledOnce());
     const failure = record(postMessage.mock.calls[0]?.[0], "worker failure");
     expect(failure["type"]).toBe("failure"); expect(record(failure["error"], "worker error")["code"]).toBe("PROTOCOL_ERROR");
     expect(application).not.toHaveBeenCalled();
   } finally { channel.port1.close(); channel.port2.close(); }
+});
+
+it("serves a start message with signal words and refuses the module runner's launch and missing or foreign words", async () => {
+  const start = (port: MessagePort) => ({ version: JS_PROCESS_PROTOCOL_VERSION, type: "start", port, mailbox: new SharedArrayBuffer(JS_MAILBOX_BYTES) });
+  for (const message of [
+    (port: MessagePort) => ({ ...start(port), signals: new SharedArrayBuffer(8), launch: { kind: "host", descriptor: "{}" } }),
+    (port: MessagePort) => start(port), (port: MessagePort) => ({ ...start(port), signals: new SharedArrayBuffer(4) }), (port: MessagePort) => ({ ...start(port), signals: new ArrayBuffer(8) }),
+  ]) {
+    const postMessage = vi.fn<(message: unknown) => void>();
+    const scope: { onmessage: ((event: MessageEvent<unknown>) => void) | null; postMessage: (message: unknown) => void } = { onmessage: null, postMessage };
+    vi.stubGlobal("self", scope);
+    const application = vi.fn(() => 0);
+    serveProcess(application);
+    const receive = scope.onmessage;
+    if (receive === null) throw new Error("Missing worker receiver");
+    const channel = new MessageChannel();
+    try {
+      receive(new MessageEvent("message", { data: message(channel.port1) }));
+      await vi.waitFor(() => expect(postMessage).toHaveBeenCalledOnce());
+      const failure = record(postMessage.mock.calls[0]?.[0], "worker failure");
+      expect(failure["type"]).toBe("failure"); expect(record(failure["error"], "worker error")["code"]).toBe("PROTOCOL_ERROR");
+      expect(application).not.toHaveBeenCalled();
+    } finally { channel.port1.close(); channel.port2.close(); }
+  }
 });

@@ -7,7 +7,8 @@ import { DECLARATION_FILE, LOCK_FILE, loadModulesProject, readVendoredRelease, t
 import { parseModuleSource, type ModuleSource } from "../../wasm/declaration.js";
 import { lockedEntry, type LockedSource } from "../../wasm/lock.js";
 import { DEFAULT_GENERATED_FILE, STAGE_ROOT } from "./stage.js";
-import { CAPABILITY_MIN_API } from "../../wasm/capabilities.js";
+import { manifestMinApi } from "../../wasm/capabilities.js";
+import { moduleCommandPath } from "../../runtime/module-command-names.js";
 import { readProjectFile } from "./project-files.js";
 import { VMError } from "../../runtime/errors.js";
 import { posix, relative, dirname, sep, resolve } from "node:path";
@@ -56,11 +57,40 @@ function hostingNote(ids: readonly string[], committed: Committed): string {
   return `Modules start Userspace JS processes, so they need a self-hosted runtime and a cross-origin isolated page. JS processes, worker threads, esbuild runs and native commands share one lane of at most 32 host commands.${needs.length === 0 ? "" : ` ${needs.join("; ")}. The doctor cannot see the browser or the image: a start that finds one missing exits with code 122 and names it.`}`;
 }
 
+/**
+ * The "commands" note, or nothing when no module declares commands: the names each declares, a name more than one declares,
+ * the PATH a terminal needs, and which image programs a name can take the place of, as far as the modules' own requirements
+ * name them (the doctor cannot see the image).
+ */
+function commandsNote(ids: readonly string[], committed: Committed): string | undefined {
+  const declared = ids.flatMap(id => {
+    const commands = committed.get(id)?.manifest.commands;
+    return commands === undefined ? [] : [{ id, commands }];
+  });
+  if (declared.length === 0) return undefined;
+  const owners = new Map<string, string[]>();
+  for (const { id, commands } of declared) for (const name of commands) owners.set(name, [...owners.get(name) ?? [], id]);
+  const names = [...owners.keys()].sort();
+  const shared = names.flatMap(name => {
+    const owning = owners.get(name) ?? [];
+    return owning.length < 2 ? [] : [`${name} is declared by more than one module (${owning.join(", ")}), so a VM can turn it on for only one of them at a time.`];
+  });
+  const required = ids.flatMap(id => (committed.get(id)?.manifest.requires.guest?.executables ?? []).map(path => ({ id, path })));
+  // Another module's command at /usr/local/bin is not an image program, so requiring it shadows nothing.
+  const shadowed = names.flatMap(name => required.filter(item => posix.basename(item.path) === name && item.path !== moduleCommandPath(name)).map(item => `${name} can take the place of ${item.path}, which ${item.id} requires.`));
+  return [
+    `${declared.map(({ id, commands }) => `${id} declares ${commands.join(", ")}`).join("; ")}.`,
+    ...shared,
+    "An application turns commands on per VM, and programs run them as /usr/local/bin/<name>: a terminal's PATH must list /usr/local/bin before /usr/bin, and a command then takes the place of an image program with the same name.",
+    ...shadowed,
+  ].join(" ");
+}
+
 function formatLockedSource(source: LockedSource): string {
   return source.kind === "file" ? `file:${source.path}` : `github:${source.repository}@${source.tag}`;
 }
 
-export const DOCTOR_CHECKS = ["declaration", "lock", "vendored", "staged", "generated", "engine-api", "license", "hosting"] as const;
+export const DOCTOR_CHECKS = ["declaration", "lock", "vendored", "staged", "generated", "engine-api", "license", "commands", "hosting"] as const;
 export type WasmDoctorCheck = (typeof DOCTOR_CHECKS)[number];
 
 export type WasmDoctorEntry =
@@ -107,14 +137,15 @@ export async function doctorModules(projectDir: string, options: DoctorOptions =
 
   const problems: string[] = [];
   const specs: HandleSpec[] = [];
-  let apiNeeded = 0;
+  const apiNeeded = new Map<string, number>();
   for (const id of ids) {
     const entry = lockedEntry(project.lock, id);
     if (entry === undefined) continue;
     const vendored = committed.get(id);
     if (vendored === undefined) problems.push(`modules/${id}/module.json is missing or invalid`);
     else if (vendored.sha256 !== entry.manifestSha256) problems.push(`modules/${id}/module.json differs from the lock`);
-    apiNeeded = Math.max(apiNeeded, ...entry.capabilities.map(capability => CAPABILITY_MIN_API[capability]));
+    // The lock's capabilities count even without a readable module.json; the manifest adds what the lock does not record, such as commands.
+    apiNeeded.set(id, Math.max(manifestMinApi({ requires: { host: entry.capabilities } }), vendored === undefined ? 0 : manifestMinApi(vendored.manifest)));
     const staged = join(projectDir, STAGE_ROOT, id, entry.release);
     try {
       const read = await readReleaseDirectory(staged, options.signal, { servedCopies: true });
@@ -135,7 +166,8 @@ export async function doctorModules(projectDir: string, options: DoctorOptions =
   } else if (ids.length === 0) pass("generated"); else fail("generated", "cannot be checked until every module is staged");
 
   const provided = options.engineApi ?? getSDKRelease().engine.identities.userspaceApi;
-  if (apiNeeded > provided) fail("engine-api", `the modules need Userspace API ${String(apiNeeded)}; this SDK provides ${String(provided)}. Update @oxidevm/sdk.`);
+  const behind = [...apiNeeded].filter(([, needed]) => needed > provided);
+  if (behind.length > 0) fail("engine-api", `${behind.map(([id, needed]) => `${id} needs Userspace API ${String(needed)}`).join(", ")}; this SDK provides ${String(provided)}. Update @oxidevm/sdk.`);
   else pass("engine-api");
 
   const copyleft: string[] = [];
@@ -147,6 +179,8 @@ export async function doctorModules(projectDir: string, options: DoctorOptions =
   else if (copyleft.some(item => item.endsWith("without a source link"))) fail("license", `copyleft without a source link: ${copyleft.join(", ")}`);
   else note("license", `copyleft modules: ${copyleft.join(", ")}. Ship their notices and offer their source with your application.`);
 
+  const commands = commandsNote(ids, committed);
+  if (commands === undefined) pass("commands"); else note("commands", commands);
   note("hosting", hostingNote(ids, committed));
   return { result: checks.some(entry => entry.status === "failed") ? "failed" : "passed", modules: ids, checks };
 }

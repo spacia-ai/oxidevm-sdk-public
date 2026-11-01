@@ -39,8 +39,8 @@ it("reports profile placement and native rejection without fabricating a JS inca
     .u64(1n).u32(10).u32(10).u64(9n).u8(1).u8(0).u32(11).u32(1).path("").path("").u8(0)
     .u64(2n).u32(11).u32(11).u64(10n).u8(0).u8(1).u64(2n).u64(3n).u64(8n).u8(1).u32(10).path("/workspace/main.cjs").path("node24-bun1-v1").u8(0).finish();
   expect(decodeJSProcessTrace(bytes).placements).toEqual([
-    { ordinal: 1n, pid: 10, parentPid: 1, entry: null, environment: null, tid: 10, addressSpaceId: 9n, runtime: "bun", profile: null, placement: "linux", reason: "unsupported-invocation" },
-    { ordinal: 2n, pid: 11, parentPid: 10, entry: "/workspace/main.cjs", tid: 11, addressSpaceId: 10n, runtime: "node", profile: "node24-bun1-v1", placement: "browser", generation: 2n, incarnationId: 3n, dependencyGeneration: 8n, basis: "no-addons" },
+    { ordinal: 1n, pid: 10, parentPid: 1, entry: null, environment: null, tid: 10, addressSpaceId: 9n, subject: "bun", runtime: "bun", profile: null, placement: "linux", reason: "unsupported-invocation" },
+    { ordinal: 2n, pid: 11, parentPid: 10, entry: "/workspace/main.cjs", tid: 11, addressSpaceId: 10n, subject: "node", runtime: "node", profile: "node24-bun1-v1", placement: "browser", generation: 2n, incarnationId: 3n, dependencyGeneration: 8n, basis: "no-addons" },
   ]);
 });
 
@@ -139,4 +139,88 @@ it("reports each late fast-path failure Rust remembered, in the trace's one ordi
   for (const bytes of [failure(0, "x"), failure(5, "x"), failure(9, "x"), failure(1, "a\nb"), failure(1, "x", 40, 1n), failure(1, "x").subarray(0, -1)]) {
     expect(() => decodeJSProcessTrace(bytes)).toThrow();
   }
+});
+
+/** One OXJT 17 placement row (engine `JsPlacementTraceEvent::encode`): the subject precedes the placement tag. */
+function placement17(writer: Writer, row: { readonly ordinal?: bigint; readonly subject: number; readonly tag: number; readonly fields: (writer: Writer) => Writer; readonly entry?: string; readonly profile?: string; readonly environment?: readonly [number, string] }): Writer {
+  writer.u64(row.ordinal ?? 1n).u32(42).u32(42).u64(9n).u8(row.subject).u8(row.tag);
+  row.fields(writer).u32(20).blob(new TextEncoder().encode(row.entry ?? "/usr/local/bin/typst")).blob(new TextEncoder().encode(row.profile ?? ""));
+  if (row.environment === undefined) writer.u8(0); else writer.u8(row.environment[0]).path(row.environment[1]);
+  return writer.u32(0);
+}
+function trace17(...rows: readonly Parameters<typeof placement17>[1][]): Uint8Array {
+  const writer = new Writer().raw(new TextEncoder().encode("OXJT")).u32(17).u64(0n).u32(0).u32(rows.length).u32(0);
+  for (const [index, row] of rows.entries()) placement17(writer, { ordinal: BigInt(index + 1), ...row });
+  return writer.finish();
+}
+const browserModule = (registration = 3, generation = 7n, incarnation = 8n) => (writer: Writer) => writer.u64(generation).u64(incarnation).u32(registration);
+const linuxReason = (reason: number) => (writer: Writer) => writer.u32(reason);
+
+it("reads a module command's browser placement with its registration and its Linux placements with reasons 41 and 42 under trace 17", () => {
+  expect(decodeJSProcessTrace(trace17(
+    { subject: 2, tag: 2, fields: browserModule() },
+    { subject: 2, tag: 0, fields: linuxReason(42) },
+    // A copy of the stub elsewhere runs in Linux and names the path it ran from.
+    { subject: 2, tag: 0, fields: linuxReason(41), entry: "/tmp/copied-stub" },
+    { subject: 2, tag: 0, fields: linuxReason(36) },
+  )).placements).toEqual([
+    { ordinal: 1n, pid: 42, parentPid: 20, entry: "/usr/local/bin/typst", tid: 42, addressSpaceId: 9n, subject: "module-command", runtime: null, profile: null, codeRoots: [], placement: "browser-module", generation: 7n, incarnationId: 8n, registration: 3 },
+    { ordinal: 2n, pid: 42, parentPid: 20, entry: "/usr/local/bin/typst", tid: 42, addressSpaceId: 9n, subject: "module-command", runtime: null, profile: null, codeRoots: [], placement: "linux", reason: "module-command-concurrency", environment: null },
+    { ordinal: 3n, pid: 42, parentPid: 20, entry: "/tmp/copied-stub", tid: 42, addressSpaceId: 9n, subject: "module-command", runtime: null, profile: null, codeRoots: [], placement: "linux", reason: "module-command-unregistered", environment: null },
+    { ordinal: 4n, pid: 42, parentPid: 20, entry: "/usr/local/bin/typst", tid: 42, addressSpaceId: 9n, subject: "module-command", runtime: null, profile: null, codeRoots: [], placement: "linux", reason: "command-capacity", environment: null },
+  ]);
+  // The command context gate's reasons reach a module command too.
+  for (const [code, reason] of [[1, "unsupported-security"], [4, "mount-namespace"], [10, "user-namespace"]] as const) {
+    expect(decodeJSProcessTrace(trace17({ subject: 2, tag: 0, fields: linuxReason(code) })).placements[0]).toMatchObject({ subject: "module-command", reason });
+  }
+});
+
+it("names the subject of node and bun placements in every readable trace version", () => {
+  const node = trace17({ subject: 0, tag: 1, fields: writer => writer.u64(2n).u64(3n).u64(8n).u8(1), entry: "/workspace/main.cjs", profile: "node24-bun1-v1" });
+  expect(decodeJSProcessTrace(node).placements[0]).toMatchObject({ subject: "node", runtime: "node", placement: "browser", basis: "no-addons", entry: "/workspace/main.cjs" });
+  for (const [code, reason] of [[39, "image-code-unavailable"], [40, "image-code-untrusted"]] as const) {
+    expect(decodeJSProcessTrace(trace17({ subject: 1, tag: 0, fields: linuxReason(code), entry: "/usr/lib/tool/main.js" })).placements[0]).toMatchObject({ subject: "bun", runtime: "bun", reason });
+  }
+  const sixteen = new Writer().raw(new TextEncoder().encode("OXJT")).u32(16).u64(0n).u32(0).u32(1).u32(0)
+    .u64(1n).u32(10).u32(10).u64(9n).u8(1).u8(0).u32(11).u32(1).path("/workspace/main.cjs").path("").u8(0).u32(0).finish();
+  expect(decodeJSProcessTrace(sixteen).placements[0]).toMatchObject({ subject: "bun", runtime: "bun", placement: "linux", reason: "unsupported-invocation" });
+  const fifteen = new Writer().raw(new TextEncoder().encode("OXJT")).u32(15).u64(0n).u32(0).u32(1).u32(0)
+    .u64(1n).u32(10).u32(10).u64(9n).u8(0).u8(0).u32(11).u32(1).path("/workspace/main.cjs").path("").u8(0).finish();
+  expect(decodeJSProcessTrace(fifteen).placements[0]).toMatchObject({ subject: "node", runtime: "node" });
+});
+
+it("reads the signal-disposition service operation (65550) from trace 17 only", () => {
+  const service = (version: number) => new Writer().raw(new TextEncoder().encode("OXJT")).u32(version).u64(0n).u32(1).u32(0).u32(0)
+    .u64(1n).u64(2n).u64(3n).u64(4n).u32(10).u32(10).u32(65550).u32(1).u32(0).finish();
+  expect(decodeJSProcessTrace(service(17)).events[0]).toMatchObject({ operation: { kind: "signal-disposition" }, transition: "completed" });
+  expect(() => decodeJSProcessTrace(service(16))).toThrow("Invalid JS service operation");
+  const beyond = service(17); new DataView(beyond.buffer).setUint32(28 + 40, 65551, true);
+  expect(() => decodeJSProcessTrace(beyond)).toThrow("Invalid JS service operation");
+});
+
+it("refuses module command placements Rust cannot record and module reasons before trace 17", () => {
+  const sixteen = (subject: number, reason: number) => new Writer().raw(new TextEncoder().encode("OXJT")).u32(16).u64(0n).u32(0).u32(1).u32(0)
+    .u64(1n).u32(10).u32(10).u64(9n).u8(subject).u8(0).u32(reason).u32(1).path("/usr/local/bin/typst").path("").u8(0).u32(0).finish();
+  expect(decodeJSProcessTrace(sixteen(0, 40)).placements[0]).toMatchObject({ reason: "image-code-untrusted" });
+  for (const bytes of [sixteen(2, 41), sixteen(0, 41), sixteen(0, 42)]) expect(() => decodeJSProcessTrace(bytes)).toThrow();
+  for (const bytes of [
+    // Subject and tag must agree: module commands never take the native browser tag, node and bun never the module one.
+    trace17({ subject: 2, tag: 1, fields: writer => writer.u64(2n).u64(3n).u64(8n).u8(1) }), trace17({ subject: 0, tag: 2, fields: browserModule() }),
+    trace17({ subject: 3, tag: 0, fields: linuxReason(41) }), trace17({ subject: 2, tag: 3, fields: browserModule() }),
+    // Reasons 41 and 42 belong to module commands, and a module command's Linux reasons are the context, capacity and module ones.
+    trace17({ subject: 0, tag: 0, fields: linuxReason(41) }), trace17({ subject: 1, tag: 0, fields: linuxReason(42) }),
+    trace17({ subject: 2, tag: 0, fields: linuxReason(11) }), trace17({ subject: 2, tag: 0, fields: linuxReason(14) }), trace17({ subject: 2, tag: 0, fields: linuxReason(43) }),
+    trace17({ subject: 2, tag: 0, fields: linuxReason(12), environment: [4, "NODE_PATH"] }), trace17({ subject: 2, tag: 0, fields: linuxReason(41), profile: "node24-bun1-v1" }),
+    trace17({ subject: 2, tag: 0, fields: linuxReason(41), entry: "" }),
+    // A browser module placement names a registration, a live incarnation and the stub at a registered path.
+    trace17({ subject: 2, tag: 2, fields: browserModule(0) }), trace17({ subject: 2, tag: 2, fields: browserModule(3, 0n) }), trace17({ subject: 2, tag: 2, fields: browserModule(3, 7n, 0n) }),
+    // Each tag's fields well formed for the other subject: only the subject decides which layout a row has.
+    trace17({ subject: 0, tag: 2, fields: writer => writer.u64(2n).u64(3n).u64(8n).u8(1), entry: "/workspace/main.cjs", profile: "node24-bun1-v1" }),
+    trace17({ subject: 2, tag: 1, fields: browserModule() }),
+    trace17({ subject: 2, tag: 2, fields: browserModule(), entry: "/usr/bin/typst" }), trace17({ subject: 2, tag: 2, fields: browserModule(), entry: "/usr/local/bin/Typst" }),
+    trace17({ subject: 2, tag: 2, fields: browserModule(), entry: "/opt/local/bin/typst" }),
+    trace17({ subject: 2, tag: 2, fields: browserModule(), entry: "/usr/local/bin/oxidevm-x" }), trace17({ subject: 2, tag: 2, fields: browserModule(), entry: "" }),
+    trace17({ subject: 2, tag: 2, fields: browserModule(), profile: "node24-bun1-v1" }), trace17({ subject: 2, tag: 2, fields: browserModule(), environment: [1, "X"] }),
+    trace17({ subject: 2, tag: 2, fields: browserModule() }).subarray(0, -1),
+  ]) expect(() => decodeJSProcessTrace(bytes)).toThrow();
 });

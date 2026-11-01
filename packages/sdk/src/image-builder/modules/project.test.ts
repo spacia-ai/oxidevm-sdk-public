@@ -86,6 +86,15 @@ describe("updating an installed module", () => {
     expect(preview).toMatchObject({ status: "updated", added: ["host:process.spawn"], removed: [], consent: { required: true, reasons: ["authority-widened"] } });
   });
 
+  it("asks again when a release adds a command, even from a trusted source, because every program in the VM can run it", async () => {
+    const p = await project(["acme"]), first = githubStub(base(["files.sync"], { commands: ["tool"] }));
+    await commitAdd(p.dir, await previewAdd(p.dir, source, p.context(first)), p.context(first));
+    const wider = githubStub(base(["files.sync"], { commands: ["tool", "tool-run"], version: "1.1.0" }), { tag: "v1.1.0" });
+    const preview = await previewAdd(p.dir, "github:acme/tool-module@v1.1.0", p.context(wider));
+    expect(preview).toMatchObject({ status: "updated", added: ["command:tool-run"], removed: [], consent: { required: true, reasons: ["authority-widened"] } });
+    expect(preview.card.commands.map(command => command.path)).toEqual(["/usr/local/bin/tool", "/usr/local/bin/tool-run"]);
+  });
+
   it("does not ask when a release asks for less or the same", async () => {
     const p = await project(), first = githubStub(base(["files.sync", "process.spawn"]));
     await commitAdd(p.dir, await previewAdd(p.dir, source, p.context(first)), p.context(first));

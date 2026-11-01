@@ -1,8 +1,8 @@
 import { exactKeys, record } from "../runtime/decode.js";
 import { canonicalBytes, choice, decoding, invalid, parseJSON, plainStrings, sameBytes, text } from "./decode-support.js";
 import {
-  decodeDeclaredArtifacts, decodeExpose, decodeGuestFiles, decodeLicense, decodeLimits, decodeMounts, decodeOptions, decodePin, decodeProcess,
-  decodeRequires, decodeResolvedArtifacts, decodeState, decodeUpstream,
+  decodeCommands, decodeDeclaredArtifacts, decodeExpose, decodeGuestFiles, decodeLicense, decodeLimits, decodeMounts, decodeOptions, decodePin,
+  decodeProcess, decodeRequires, decodeResolvedArtifacts, decodeState, decodeUpstream, rejectOwnCommands,
 } from "./manifest-parts.js";
 import type { AbiKind, ArtifactDecl, CommonDecl, EndpointDecl, ModuleDecl, ResolvedArtifact, ResolvedManifest, ServiceDecl } from "./manifest-types.js";
 
@@ -10,7 +10,7 @@ export const MAX_MANIFEST_BYTES = 256 * 1024;
 const ID = /^[a-z][a-z0-9-]{0,62}$/u;
 const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 const ABIS = ["wasi", "component", "emscripten", "bindgen", "raw"] as const satisfies readonly AbiKind[];
-const OPTIONAL = ["expose", "mounts", "limits", "state", "guestFiles", "options", "upstream"] as const;
+const OPTIONAL = ["commands", "expose", "mounts", "limits", "state", "guestFiles", "options", "upstream"] as const;
 
 /** The discriminant is nested (`process.kind`), so TypeScript cannot narrow a ModuleDecl by it; this guard can. */
 export function isServiceDecl(manifest: ModuleDecl): manifest is ServiceDecl {
@@ -21,12 +21,16 @@ type Body = Omit<CommonDecl, "artifacts" | "id" | "version" | "abi">;
 interface Decoded {
   readonly head: { readonly id: string; readonly version: string; readonly abi: AbiKind };
   readonly process: ReturnType<typeof decodeProcess>;
+  /** Present only for a command that declares them. */
+  readonly commands: readonly string[] | undefined;
   readonly expose: Readonly<Record<string, EndpointDecl>> | undefined;
   readonly tail: Body;
 }
 
 function decodeBody(input: Readonly<Record<string, unknown>>, artifactNames: ReadonlySet<string>): Decoded {
   const process = decodeProcess(input["process"]);
+  if (process.kind === "service" && input["commands"] !== undefined) invalid("commands", "a service cannot declare commands; only a command module runs as a program");
+  const commands = input["commands"] === undefined ? undefined : decodeCommands(input["commands"]);
   const expose = input["expose"] === undefined ? undefined : decodeExpose(input["expose"]);
   if (process.kind === "service" && expose === undefined) invalid("module", "a service must declare expose");
   if (process.kind === "command" && expose !== undefined) invalid("module", "a command cannot declare expose");
@@ -41,9 +45,10 @@ function decodeBody(input: Readonly<Record<string, unknown>>, artifactNames: Rea
   const guestFiles = input["guestFiles"] === undefined ? undefined : decodeGuestFiles(input["guestFiles"], artifactNames);
   const options = input["options"] === undefined ? undefined : decodeOptions(input["options"]);
   const upstream = input["upstream"] === undefined ? undefined : decodeUpstream(input["upstream"]);
-  return {
+  const decoded: Decoded = {
     head: { id: text(input["id"], "id", ID, 63), version: text(input["version"], "version", SEMVER, 128), abi: choice(input["abi"], "abi", ABIS) },
     process,
+    commands,
     expose,
     tail: {
       requires: decodeRequires(input["requires"]),
@@ -56,21 +61,23 @@ function decodeBody(input: Readonly<Record<string, unknown>>, artifactNames: Rea
       ...(upstream === undefined ? {} : { upstream }),
     },
   };
+  if (commands !== undefined) rejectOwnCommands(commands, decoded.tail.requires.guest?.executables ?? []);
+  return decoded;
 }
 
-/** Keys in canonical order: id, version, abi, artifacts, process, expose, then the shared tail. */
+/** Keys in canonical order: id, version, abi, artifacts, process, a command's commands or a service's expose, then the shared tail. */
 function shapeDeclared(decoded: Decoded, artifacts: readonly ArtifactDecl[]): ModuleDecl {
-  const { head, process, expose, tail } = decoded;
+  const { head, process, commands, expose, tail } = decoded;
   if (process.kind === "service" && expose !== undefined) return { ...head, artifacts, process, expose, ...tail };
-  return { ...head, artifacts, process: { kind: "command" }, ...tail };
+  return { ...head, artifacts, process: { kind: "command" }, ...(commands === undefined ? {} : { commands }), ...tail };
 }
 
 /** Canonical order for `module.json`: schemaVersion first, the adapter pin before the artifacts. */
 function shapeResolved(decoded: Decoded, pin: { readonly sha256: string; readonly bytes: number }, artifacts: readonly ResolvedArtifact[]): ResolvedManifest {
-  const { head, process, expose, tail } = decoded;
+  const { head, process, commands, expose, tail } = decoded;
   const adapter = { api: 1 as const, sha256: pin.sha256, bytes: pin.bytes };
   if (process.kind === "service" && expose !== undefined) return { schemaVersion: 1, ...head, adapter, artifacts, process, expose, ...tail };
-  return { schemaVersion: 1, ...head, adapter, artifacts, process: { kind: "command" }, ...tail };
+  return { schemaVersion: 1, ...head, adapter, artifacts, process: { kind: "command" }, ...(commands === undefined ? {} : { commands }), ...tail };
 }
 
 /** An author's manifest literal: artifacts name repository files, and nothing is hashed yet. */
