@@ -1,4 +1,4 @@
-import { bindFrameDiagnostics } from "../../vm-adapter.js";
+import { bindFrameOwner, type OwnedModuleCommands, type OwnedModules } from "../../vm-adapter.js";
 import { decodeAccelerationNotice } from "../../runtime/js-process/late-failure.js";
 import { decodeBytes } from "../../runtime/protocol/decoders.js";
 import { imageUpdateSignal } from "../../image-update.js";
@@ -19,6 +19,9 @@ import { decodeSnapshotInfo, decodeSnapshotInfos, decodeSnapshotRef, decodeSnaps
 import { decodeListeningPorts } from "../../runtime/protocol/listening-ports.js";
 import type { RuntimeSelection, ValidatedVMOptions } from "../../vm-options.js";
 import { encodeFrameOptions } from "../protocol/options.js";
+import { decodeMissingKeys, type ModulePin } from "../../runtime/protocol/userspace-module-files.js";
+import { decodeModuleCommandsResult } from "../../runtime/protocol/userspace-module-commands.js";
+import type { AccelerationNotice } from "../../runtime/js-process/late-failure.js";
 import type { FrameOperation } from "../protocol/requests.js";
 import { decodeBootProgress, decodeByteProgress, decodeSnapshotEvent, decodeStart, decodeStartProgress, decodeUnit, decodeVMDescription } from "../protocol/values.js";
 import type { StartWire, VMDescription } from "../protocol/values.js";
@@ -142,12 +145,13 @@ function frameVM(channel: FrameChannel, description: VMDescription, page: string
   const vm: VM = description.mode === "userspace"
     ? { ...shared, spawnJS: (): Promise<never> => Promise.reject(new VMError("FEATURE_NOT_AVAILABLE", "JS processes require self-hosted Userspace")), mode: "userspace", get image(){return {...image,mode:"userspace" as const};} }
     : { ...shared, mode: "system", get image(){return {...image,mode:"system" as const};} };
-  bindFrameDiagnostics(vm, {
-    readJSProcessTrace: capacity => call({ type: "js-trace", ...(capacity === undefined ? {} : { capacity }) }, { decode: decodeBytes, signal: lifetime.signal }),
-    watchAccelerationNotices: (listener, signal) => call({ type: "acceleration-notices" }, {
+  const diagnostics = {
+    readJSProcessTrace: (capacity?: number) => call({ type: "js-trace", ...(capacity === undefined ? {} : { capacity }) }, { decode: decodeBytes, signal: lifetime.signal }),
+    watchAccelerationNotices: (listener: (notice: AccelerationNotice) => void, signal: AbortSignal) => call({ type: "acceleration-notices" }, {
       decode: decodeUnit, signal: AbortSignal.any([signal, lifetime.signal]), onAbort: "resolve", onEvent: event => { listener(decodeAccelerationNotice(event)); },
     }),
-  });
+  };
+  bindFrameOwner(vm, description.mode === "userspace" ? { diagnostics, ...frameModules(call, spawnOver, lifetime.signal) } : { diagnostics });
   return vm;
 
 }
@@ -228,4 +232,28 @@ function decodePreview(value: unknown): { readonly port: number; readonly url: s
   const url = string(preview["url"], "preview URL");
   if (!/^https?:\/\//u.test(url)) throw new VMError("PROTOCOL_ERROR", "preview URL is invalid");
   return { port: integer(preview["port"], "preview port", 1, 65_535), url, isolation, preview: integer(preview["preview"], "preview id", 1, 0x7fff_ffff) };
+}
+
+/**
+ * A hosted VM's modules (frame protocol 17, ADR 0028). The page reads the pinned files the frame VM's store lacks from
+ * its own origin and sends them with the start or the enable; the frame verifies them and runs the module in a module
+ * frame it opens from its own document. A cancelled enable waits for the frame's real answer, so the page can turn off
+ * what was turned on.
+ */
+function frameModules(call: Call, spawnOver: (operation: (io: MessagePort) => FrameOperation, signal: AbortSignal | undefined) => Promise<ProcessHandle | TerminalHandle>, disposed: AbortSignal): { readonly modules: OwnedModules; readonly moduleCommands: OwnedModuleCommands } {
+  const missing = (pins: readonly ModulePin[], signal: AbortSignal | undefined) => call({ type: "module.files", pins }, { decode: value => decodeMissingKeys(value).missing, signal });
+  return {
+    modules: {
+      missing,
+      spawn: async (spec, start) => {
+        const process = await spawnOver(io => ({ type: "module.spawn", descriptor: start.descriptor, files: start.files, io, ...(spec.args === undefined ? {} : { args: spec.args }), ...(spec.cwd === undefined ? {} : { cwd: spec.cwd }), ...(spec.env === undefined ? {} : { env: spec.env }) }), spec.signal);
+        if (process.kind !== "process") throw new VMError("PROTOCOL_ERROR", "A module's runner has no terminal");
+        return process;
+      },
+    },
+    moduleCommands: {
+      request: (request, signal) => call({ type: "module.commands", request }, { decode: decodeModuleCommandsResult, signal, onAbort: "settle" }),
+      disposed, missing,
+    },
+  };
 }

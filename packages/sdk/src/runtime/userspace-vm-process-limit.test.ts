@@ -30,7 +30,7 @@ vi.mock("../verified-image.js", async () => {
 vi.mock("../license-admission.js", () => ({ admitLicense: () => Promise.resolve({ tier: "development" }) }));
 vi.mock("../engine-assets.js", async importOriginal => ({
   ...await importOriginal<typeof EngineAssets>(),
-  loadEngineAssets: (): Promise<LoadedEngineAssets> => Promise.resolve({ urls: new Map([["oxidevm_userspace.wasm", "blob:oxidevm_userspace.wasm"]]), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: () => undefined }),
+  loadEngineAssets: (): Promise<LoadedEngineAssets> => Promise.resolve({ urls: new Map([["oxidevm_userspace.wasm", "blob:oxidevm_userspace.wasm"]]), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy: () => Promise.reject(new Error("unused")), dispose: () => undefined }),
 }));
 
 /** The engine exports the Userspace worker calls to configure a runtime it mounts for `request`. */

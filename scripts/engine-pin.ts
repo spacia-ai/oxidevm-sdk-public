@@ -4,7 +4,7 @@
 //
 // usage: pnpm engine:pin <release-dir> [--local-only] [--allow-dirty]
 //
-// <release-dir> holds release.json, LICENSE and the four modules, plus the assets.json that the
+// <release-dir> holds release.json, LICENSE and the five modules, plus the assets.json that the
 // engine's `pnpm engine:publish` writes after uploading them. --local-only pins a release that has
 // not been published: the SDK then records no download location and only --engine-dir,
 // OXIDEVM_ENGINE_DIR or the engine cache can supply it. A release built from an engine checkout
@@ -42,6 +42,7 @@ export async function sdkIdentities(): Promise<Identities> {
     jitAbi: await constant("packages/sdk/src/runtime/core-abi/jit.ts", "JIT_API_VERSION"),
     userspaceApi: await constant("packages/sdk/src/runtime/userspace-abi.ts", "USERSPACE_API_VERSION"),
     netstackApi: await constant("packages/sdk/src/runtime/netstack-abi.ts", "NETSTACK_API_VERSION"),
+    tlsApi: await constant("packages/sdk/src/runtime/tls-abi.ts", "TLS_API_VERSION"),
   };
 }
 
@@ -119,7 +120,7 @@ export async function pinEngine(options: PinEngineOptions): Promise<{ readonly p
   }
   const expected = await sdkIdentities();
   const actual = local.manifest.identities;
-  if (actual.coreApi !== expected.coreApi || actual.jitAbi !== expected.jitAbi || actual.userspaceApi !== expected.userspaceApi || actual.netstackApi !== expected.netstackApi) {
+  if (actual.coreApi !== expected.coreApi || actual.jitAbi !== expected.jitAbi || actual.userspaceApi !== expected.userspaceApi || actual.netstackApi !== expected.netstackApi || actual.tlsApi !== expected.tlsApi) {
     throw new Error(`Engine release ${local.id} has identities ${JSON.stringify(actual)}, but this SDK is built for ${JSON.stringify(expected)}: update the SDK's ABI owners together with the engine, or pin a matching release`);
   }
   await verifyEngineRelease(directory, local);
@@ -141,6 +142,6 @@ export async function pinEngine(options: PinEngineOptions): Promise<{ readonly p
 if (isEntryPoint(import.meta.url)) {
   const { pin, cached } = await pinEngine(parseArguments(process.argv.slice(2)));
   const { identities, engineSource } = pin.manifest;
-  process.stdout.write(`Pinned engine release ${pin.id} (core ${String(identities.coreApi)}, JIT ${String(identities.jitAbi)}, Userspace ${String(identities.userspaceApi)}, netstack ${String(identities.netstackApi)}; engine commit ${engineSource.commit}${engineSource.dirty ? ", dirty" : ""}; LICENSE ${String(pin.license.bytes)} bytes).\n`
+  process.stdout.write(`Pinned engine release ${pin.id} (core ${String(identities.coreApi)}, JIT ${String(identities.jitAbi)}, Userspace ${String(identities.userspaceApi)}, netstack ${String(identities.netstackApi)}, TLS ${String(identities.tlsApi)}; engine commit ${engineSource.commit}${engineSource.dirty ? ", dirty" : ""}; LICENSE ${String(pin.license.bytes)} bytes).\n`
     + `Download: ${pin.download === null ? "none (--local-only)" : pin.download.release}. Cached at ${cached}.\nRebuild the SDK with pnpm build.\n`);
 }

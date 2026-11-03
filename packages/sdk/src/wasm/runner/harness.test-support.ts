@@ -1,26 +1,13 @@
-import type { RunnerCommandLaunch } from "../../runtime/js-process/launch.js";
-import { LinuxError } from "../../runtime/js-process/codec.js";
-import type { SignalDisposition, TrappableSignalNumber } from "../../runtime/js-process/signals.js";
+import type { RunnerCommandLaunch, RunnerCopies, RunnerHostLaunch } from "../../runtime/js-process/launch.js";
 import type { SignalTransport } from "./signals.js";
+import { fakeSignals } from "../testing/memory-signals.js";
 import { encodeLaunchArgument } from "./descriptor.js";
-import { fakeLinux, type FakeLinux } from "./linux.test-support.js";
+import { fakeLinux, type FakeLinux } from "../testing/memory-linux.js";
 import type { BrowserProbe } from "./prerequisites.js";
 import { runModule, type RunnerContext } from "./run.js";
 import type { Release } from "./fixtures.test-support.js";
-
-/** Web Locks with `ifAvailable` semantics: a held name yields `null` to the callback. */
-export function fakeLocks(held = new Set<string>()): { readonly held: Set<string>; readonly locks: NonNullable<RunnerContext["locks"]> } {
-  const locks: NonNullable<RunnerContext["locks"]> = {
-    request: async (name: string, ...rest: unknown[]): Promise<unknown> => {
-      const callback = rest.at(-1);
-      if (typeof callback !== "function") throw new Error("a lock callback is required");
-      if (held.has(name)) return Reflect.apply(callback, undefined, [null]);
-      held.add(name);
-      try { return await Reflect.apply(callback, undefined, [{ name, mode: "exclusive" }]); } finally { held.delete(name); }
-    },
-  };
-  return { held, locks };
-}
+import { MemoryNetwork, PASS_THROUGH_TLS } from "../net/memory-network.js";
+import { moduleReach } from "../reach.js";
 
 export const ALL_FEATURES: BrowserProbe = { crossOriginIsolated: true, indexedDB: true, jspi: true, webLocks: true };
 
@@ -37,29 +24,32 @@ export interface Launch {
   readonly existingFiles?: Readonly<Record<string, { readonly bytes: Uint8Array; readonly mode: number }>>;
   readonly writeFailure?: number;
   readonly browser?: BrowserProbe;
-  readonly locks?: RunnerContext["locks"] | null;
   /** Replaces the launch description of the start message, to model a missing or corrupt one. */
   readonly argument?: string | null;
   /** Starts the module as a program in the VM that ran one of its commands (engine ADR 0027); `args` is then the whole argv. */
   readonly command?: RunnerCommandLaunch;
-  /** Replaces the server of the release's files. */
-  readonly fetch?: (url: string) => Promise<Response>;
   /** The process's signals; a fresh `fakeSignals()` unless given. */
   readonly signals?: SignalTransport;
+  /** The VM network the module process sees; an empty local-only one with the module's reach unless given. */
+  readonly network?: MemoryNetwork;
 }
 
 export interface Running {
   readonly linux: FakeLinux;
   readonly done: Promise<number>;
+  /** Every non-blob: URL the runner or the adapter tried to fetch: the runner itself fetches nothing (ADR 0028). */
   readonly fetched: string[];
   readonly imports: { count: number };
+  /** The worker scope the runner installed the module network into. */
+  readonly scope: Record<string, unknown>;
 }
 
-/** Starts the runner against fakes. The served files come from the release, so hashes are real. */
+/** Starts the runner against fakes. The copies come from the release's served bytes, as the VM's store would hold them. */
 export function launch(spec: Launch): Running {
   const argument = spec.argument === undefined ? encodeLaunchArgument(spec.release.descriptor) : spec.argument;
   const linux = fakeLinux({
     args: [...(spec.args ?? [])],
+    reach: moduleReach(spec.release.manifest.requires.host),
     ...(spec.environment === undefined ? {} : { environment: spec.environment }),
     ...(spec.cwd === undefined ? {} : { cwd: spec.cwd }),
     ...(spec.paths === undefined ? {} : { paths: spec.paths }),
@@ -69,16 +59,10 @@ export function launch(spec: Launch): Running {
     ...(spec.existingFiles === undefined ? {} : { existingFiles: spec.existingFiles }),
     ...(spec.writeFailure === undefined ? {} : { writeFailure: spec.writeFailure }),
   });
-  const fetched: string[] = [], imports = { count: 0 };
+  const fetched: string[] = [], imports = { count: 0 }, scope: Record<string, unknown> = { XMLHttpRequest: {}, EventSource: {} };
+  const network = spec.network ?? new MemoryNetwork(moduleReach(spec.release.manifest.requires.host));
   const context: RunnerContext = {
     ...linux,
-    fetch: (url) => {
-      fetched.push(url);
-      if (spec.fetch !== undefined) return spec.fetch(url);
-      const bytes = spec.release.served.get(url);
-      return Promise.resolve(bytes === undefined ? new Response(null, { status: 404 }) : new Response(bytes.slice()));
-    },
-    locks: spec.locks === null ? undefined : spec.locks ?? fakeLocks().locks,
     browser: spec.browser ?? ALL_FEATURES,
     importAdapter: async bundle => {
       imports.count += 1;
@@ -87,8 +71,38 @@ export function launch(spec: Launch): Running {
       return namespace;
     },
     signals: spec.signals ?? fakeSignals(),
+    network: { ports: { sockets: network.sockets(), sync: network.syncSockets(), tls: null }, scope, tls: PASS_THROUGH_TLS },
   };
-  return { linux, done: runModule(context, spec.command ?? (argument === null ? undefined : { kind: "host", descriptor: argument })), fetched, imports };
+  const done = (async () => {
+    const start = spec.command ?? (argument === null ? undefined : await hostLaunch(spec.release, argument));
+    const original = globalThis.fetch;
+    // A blob: URL of a copy is the module's own; any other URL is a fetch the runner must never make.
+    globalThis.fetch = (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.startsWith("blob:")) return original(input, init);
+      fetched.push(url);
+      return Promise.reject(new TypeError("Failed to fetch"));
+    };
+    try { return await runModule(context, start); } finally { globalThis.fetch = original; }
+  })();
+  return { linux, done, fetched, imports, scope };
+}
+
+/** The release's files as the VM's verified-copy store hands them over: a compiled module for each `.wasm` file. */
+async function copiesOf(release: Release): Promise<RunnerCopies> {
+  const served = (url: string): Uint8Array<ArrayBuffer> => release.served.get(url) ?? new Uint8Array();
+  const artifacts = await Promise.all(Object.entries(release.descriptor.artifacts).map(async ([artifact, pin]) => {
+    const bytes = served(pin.url);
+    // A file that does not compile is kept as bytes, as the VM's store keeps it.
+    const module = artifact.endsWith(".wasm") ? await WebAssembly.compile(bytes).catch(() => null) : null;
+    return [artifact, { blob: new Blob([bytes]), module }] as const;
+  }));
+  return { adapter: new Blob([served(release.descriptor.adapter.url)], { type: "text/javascript" }), artifacts: Object.fromEntries(artifacts), tls: null };
+}
+
+/** `spawnModule`'s launch for `release` (engine ADR 0028): its description and the VM's verified copies. */
+export async function hostLaunch(release: Release, descriptor = encodeLaunchArgument(release.descriptor)): Promise<RunnerHostLaunch> {
+  return { kind: "host", descriptor, ...await copiesOf(release) };
 }
 
 /**
@@ -96,45 +110,7 @@ export function launch(spec: Launch): Running {
  * worker verified them when the commands were turned on, a compiled module for each `.wasm` file.
  */
 export async function commandLaunch(release: Release, name: string, terminals: RunnerCommandLaunch["terminals"] = { stdin: false, stdout: false, stderr: false }): Promise<RunnerCommandLaunch> {
-  const served = (url: string): Uint8Array<ArrayBuffer> => release.served.get(url) ?? new Uint8Array();
-  const artifacts = await Promise.all(Object.entries(release.descriptor.artifacts).map(async ([artifact, pin]) => {
-    const bytes = served(pin.url);
-    return [artifact, { blob: new Blob([bytes]), module: artifact.endsWith(".wasm") ? await WebAssembly.compile(bytes) : null }] as const;
-  }));
-  return {
-    kind: "module-command", invocation: { name, path: `/usr/local/bin/${name}` }, terminals, descriptor: encodeLaunchArgument(release.descriptor),
-    adapter: new Blob([served(release.descriptor.adapter.url)], { type: "text/javascript" }), artifacts: Object.fromEntries(artifacts),
-  };
-}
-
-/**
- * A process's signals with the test playing Rust: each disposition is recorded and answered with the previous one (an
- * `ignored` signal starts as "ignore"; a `refuse`d one fails with EOPNOTSUPP), `deliver` hands signals to the listener,
- * `release` answers the oldest held disposition when `deferred`, and `exits` lists the signals the process ended by.
- */
-export function fakeSignals(options: { readonly ignored?: readonly TrappableSignalNumber[]; readonly refuse?: readonly TrappableSignalNumber[]; readonly deferred?: boolean } = {}) {
-  const dispositions = new Map<TrappableSignalNumber, SignalDisposition>((options.ignored ?? []).map(signal => [signal, "ignore"]));
-  const calls: [TrappableSignalNumber, SignalDisposition][] = [], exits: TrappableSignalNumber[] = [], refused = new Set(options.refuse ?? []), held: (() => void)[] = [];
-  const listening: { listener?: (signals: readonly TrappableSignalNumber[]) => void; count: number } = { count: 0 };
-  const transport: SignalTransport = {
-    setDisposition: async (signal, disposition) => {
-      calls.push([signal, disposition]);
-      if (options.deferred === true) await new Promise<void>(resolve => { held.push(resolve); });
-      if (refused.has(signal)) throw new LinuxError(95);
-      const previous = dispositions.get(signal) ?? "default";
-      dispositions.set(signal, disposition);
-      return previous;
-    },
-    listen: listener => { listening.listener = listener; listening.count += 1; },
-    interruptWord: new Int32Array(new SharedArrayBuffer(8)).subarray(1, 2),
-    signaled: signal => { exits.push(signal); },
-  };
-  return {
-    ...transport, calls, exits, dispositions, refused,
-    get listeners() { return listening.count; },
-    deliver: (signals: readonly TrappableSignalNumber[]) => { listening.listener?.(signals); },
-    release: () => { held.shift()?.(); },
-  };
+  return { kind: "module-command", invocation: { name, path: `/usr/local/bin/${name}` }, terminals, descriptor: encodeLaunchArgument(release.descriptor), ...await copiesOf(release) };
 }
 
 /** The JSON records the runner wrote with an `oxidevm` key, in order. */

@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { deliverProcessSignal, installProcessIpc, NodeProcess, validateNodeEnvironment } from "./node-process.ts";
+import { deliverProcessSignal, installProcessIpc, installSignalListeners, NodeProcess, validateNodeEnvironment } from "./node-process.ts";
+import { VMError } from "../../errors.ts";
 import { createWarningPrinter } from "./node-warnings.ts";
 
 it("publishes admitted Node build config as an enumerable non-writable data property", () => {
@@ -143,7 +144,7 @@ it("exposes the IPC channel on the child process and references it only through 
   expect(process.connected).toBe(false);
   expect(channel.disconnected).toBe(1);
   // Signals reach listeners by name; without a listener the process ends by that signal.
-  const ended = vi.fn<(signal: 1 | 2 | 9 | 15) => never>(() => { throw new Error("ended"); });
+  const ended = vi.fn<(signal: number) => never>(() => { throw new Error("ended"); });
   expect(() => deliverProcessSignal(process, "TERM", ended)).toThrow("ended");
   expect(ended).toHaveBeenCalledWith(15);
   const seen: unknown[] = [];
@@ -151,4 +152,32 @@ it("exposes the IPC channel on the child process and references it only through 
   deliverProcessSignal(process, "INT", ended);
   expect(seen).toEqual([["SIGINT"]]);
   expect(ended).toHaveBeenCalledOnce();
+  // Any listenable signal (bridge 16): SIGUSR1 reaches its listener, and without one ends the process as signal 10.
+  expect(() => deliverProcessSignal(process, "USR1", ended)).toThrow("ended");
+  expect(ended).toHaveBeenLastCalledWith(10);
 });
+
+it("watches a signal while JavaScript listens for it, and refuses a listener the helper cannot serve before adding it", () => {
+  const process = new NodeProcess(() => { throw new Error("unexpected exit"); }, "24.18.1"), calls: [number, boolean][] = [];
+  installSignalListeners(process, (signal, watching) => {
+    if (signal === 12) throw new VMError("FEATURE_NOT_AVAILABLE", "bridge 15", { reason: "native-bridge-signal-listener", signal, bridgeVersion: 15 });
+    calls.push([signal, watching]);
+  });
+  const first = () => undefined, second = () => undefined;
+  process.on("SIGUSR1", first); process.on("SIGUSR1", second);
+  process.removeListener("SIGUSR1", first);
+  expect(calls).toEqual([[10, true]]);
+  process.removeListener("SIGUSR1", second);
+  expect(calls).toEqual([[10, true], [10, false]]);
+  // Events that are not listenable signals change nothing.
+  process.on("message", first); process.on("SIGKILL", first);
+  expect(calls).toHaveLength(2);
+  expect(thrown(() => process.on("SIGUSR2", first))).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", detail: { reason: "native-bridge-signal-listener", signal: 12, bridgeVersion: 15 } });
+  expect(process.listenerCount("SIGUSR2")).toBe(0);
+});
+
+/** What `run` throws, for matching its typed code and detail. */
+function thrown(run: () => unknown): unknown {
+  try { run(); } catch (error: unknown) { return error; }
+  throw new Error("expected a throw");
+}

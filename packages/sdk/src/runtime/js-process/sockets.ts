@@ -1,6 +1,6 @@
-import type { LinuxFiles, LinuxSocketAddress, LinuxSockets } from "../../js-process-types.js";
+import type { FileDescriptor, LinuxFiles, LinuxSocketAddress, LinuxSockets } from "../../js-process-types.js";
 import { integer } from "../decode.js";
-import { descriptor, noValue, operation, protocol, value, Writer } from "./codec.js";
+import { descriptor, noValue, operation, protocol, Reader, value, Writer, type LinuxOperation } from "./codec.js";
 import type { LinuxClient } from "./transport.js";
 
 export function encodeAddress(address: LinuxSocketAddress): Uint8Array<ArrayBuffer> {
@@ -43,10 +43,20 @@ export function decodeAddress(bytes: Uint8Array): LinuxSocketAddress {
   if (family === 10 && bytes.byteLength === 28) return { family: "ipv6", address: Array.from({ length: 8 }, (_, index) => view.getUint16(8 + index * 2).toString(16)).join(":"), port: view.getUint16(2) };
   return protocol("Unsupported Linux socket address");
 }
+/** The stream-socket operations both the asynchronous facade and synchronous callers (the module network) send. */
+export const streamSocket = {
+  /** OXJR 41: socket(family, SOCK_STREAM, 0). */
+  socket: (family: LinuxSocketAddress["family"]): LinuxOperation<FileDescriptor> => operation(41, new Writer().u32(family === "unix" ? 1 : family === "ipv4" ? 2 : 10), result => descriptor(value(result))),
+  /** OXJR 42: connect(fd, address). */
+  connect: (fd: number, address: LinuxSocketAddress): LinuxOperation<void> => operation(42, new Writer().u64(fd).blob(encodeAddress(address)), noValue),
+  /** OXJR 48: shutdown(fd, how). */
+  shutdown: (fd: number, direction: "read" | "write" | "both"): LinuxOperation<void> => operation(48, new Writer().u64(fd).u8(direction === "read" ? 0 : direction === "write" ? 1 : 2), noValue),
+} as const;
+
 export function sockets(client: LinuxClient, files: LinuxFiles): LinuxSockets {
   return {
-    socket: family => client.call(operation(41, new Writer().u32(family === "unix" ? 1 : family === "ipv4" ? 2 : 10), result => descriptor(value(result)))),
-    connect: (fd, address, options) => client.call(operation(42, new Writer().u64(fd).blob(encodeAddress(address)), noValue), options?.signal),
+    socket: family => client.call(streamSocket.socket(family)),
+    connect: (fd, address, options) => client.call(streamSocket.connect(fd, address), options?.signal),
     bind: (fd, address) => client.call(operation(49, new Writer().u64(fd).blob(encodeAddress(address)), noValue)),
     listen: (fd, backlog = 128) => client.call(operation(50, new Writer().u64(fd).u32(backlog), noValue)),
     accept: (fd, options) => client.call(operation(43, new Writer().u64(fd), result => descriptor(value(result))), options?.signal),
@@ -55,7 +65,36 @@ export function sockets(client: LinuxClient, files: LinuxFiles): LinuxSockets {
       const length = new DataView(result.bytes.buffer, result.bytes.byteOffset, result.bytes.byteLength).getUint32(128, true);
       if (length > 128) protocol("Oversized Linux socket address"); return decodeAddress(result.bytes.subarray(0, length));
     })),
-    shutdown: (fd, direction) => client.call(operation(48, new Writer().u64(fd).u8(direction === "read" ? 0 : direction === "write" ? 1 : 2), noValue)),
+    shutdown: (fd, direction) => client.call(streamSocket.shutdown(fd, direction)),
     read: files.read.bind(files), write: files.write.bind(files), close: files.close.bind(files),
   };
 }
+
+const SOCK_DGRAM = 2, MSG_PEEK = 0x2, MSG_DONTWAIT = 0x40, MSG_NOSIGNAL = 0x4000;
+/** One datagram and the address it came from. */
+export interface ReceivedDatagram { readonly bytes: Uint8Array; readonly source: LinuxSocketAddress | null }
+
+/**
+ * Datagram sockets (Userspace API 146, engine ADR 0029): the runner's own facility for its DNS resolver, never a member
+ * of a module's `host`. Rust's socket owner applies the VM's network policy (UDP 53 to the resolver only) and the
+ * module's reach to every datagram.
+ */
+export const datagram = {
+  /** OXJR 41 `{u32 family, u32 type}`: socket(AF_INET or AF_INET6, SOCK_DGRAM, 0). */
+  socket: (family: "ipv4" | "ipv6"): LinuxOperation<number> =>
+    operation(41, new Writer().u32(family === "ipv4" ? 2 : 10).u32(SOCK_DGRAM), result => descriptor(value(result))),
+  /** OXJR 44 with a destination: fd, blob(bytes), flags (MSG_NOSIGNAL), blob(address); answers the bytes sent. */
+  sendTo: (fd: number, bytes: Uint8Array, destination: LinuxSocketAddress): LinuxOperation<number> =>
+    operation(44, new Writer().u64(fd).blob(bytes).u64(MSG_NOSIGNAL).blob(encodeAddress(destination)), result => {
+      const count = value(result); if (count > bytes.byteLength) protocol("Invalid datagram send result"); return count;
+    }),
+  /** OXJR 45: recvfrom(fd, count, flags); the reply is u32 address length, the address, then the datagram. */
+  receiveFrom: (fd: number, count: number, options: { readonly dontWait?: boolean; readonly peek?: boolean } = {}): LinuxOperation<ReceivedDatagram> =>
+    operation(45, new Writer().u64(fd).u64(integer(count, "datagram count", 0, 64 * 1024)).u64((options.dontWait === true ? MSG_DONTWAIT : 0) | (options.peek === true ? MSG_PEEK : 0)), result => {
+      const reader = new Reader(result.bytes), length = reader.u32();
+      if (length > 128) protocol("Oversized datagram source address");
+      const source = reader.raw(length), bytes = reader.raw(result.bytes.byteLength - 4 - length);
+      if (bytes.byteLength > count || result.value !== BigInt(bytes.byteLength)) protocol("Invalid datagram receive result");
+      return { bytes: bytes.slice(), source: length === 0 ? null : decodeAddress(source) };
+    }),
+} as const;

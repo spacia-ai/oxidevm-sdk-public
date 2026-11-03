@@ -9,7 +9,7 @@ import { sockets } from "./sockets.js";
 import { LinuxClient } from "./transport.js";
 
 /** Serve one trusted application-bundled worker as a Rust-owned Linux process. Its start message carries the
- * process's port, mailbox and signal words (JS process protocol 4); a module runner's `launch` is refused. */
+ * process's port, mailbox and signal buffer (JS process protocol 5); a module runner's `launch` is refused. */
 export function serveOwnedProcess(handler: (client: LinuxClient, context: LinuxProcessContext) => unknown): void {
   serve(false, (client, context) => handler(client, context));
 }

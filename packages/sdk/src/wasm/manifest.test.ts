@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { VMError } from "../runtime/errors.js";
 import { decodeDeclaration, decodeModuleManifest, decodeResolvedManifest, encodeModuleManifest, isServiceDecl, MAX_MANIFEST_BYTES } from "./manifest.js";
+import { CAPABILITY_MIN_API, manifestMinApi } from "./capabilities.js";
+import { moduleReach } from "./reach.js";
 
 const sha = "a".repeat(64);
 const command = {
@@ -294,5 +296,62 @@ describe("commands", () => {
     // Digests of both fixtures' canonical module.json, recorded before the commands field existed.
     expect(digest(encodeModuleManifest(decodeResolvedManifest(resolved(command))))).toBe("43acbde6ab5e59150e08dec2b562715e3b1787229c90d2bdf006ea2bb5c9eb72");
     expect(digest(encodeModuleManifest(decodeResolvedManifest(resolved(service))))).toBe("caf97b952eec9c1f16ecc285e68e977ba0cb40d346e15907310d9e33ca6d7b8f");
+  });
+});
+
+describe("the module networking standard (engine ADR 0029)", () => {
+  const withHost = (host: readonly string[], extra: Readonly<Record<string, unknown>> = {}) => ({ ...command, requires: { host }, ...extra });
+  const internet = (network: unknown) => withHost(["net.internet", "sockets.connect"], { network });
+
+  it("declares one reach: none, VM-only (net.vm) or internet (net.internet), each needing Userspace API 146", () => {
+    expect(moduleReach(decodeDeclaration(command).requires.host)).toBe("none");
+    expect(moduleReach(decodeDeclaration(withHost(["net.vm"])).requires.host)).toBe("vm");
+    expect(moduleReach(decodeDeclaration(withHost(["net.internet"])).requires.host)).toBe("internet");
+    expect([CAPABILITY_MIN_API["net.vm"], CAPABILITY_MIN_API["net.internet"]]).toEqual([146, 146]);
+    expect(manifestMinApi({ requires: { host: ["files.sync", "net.vm"] } })).toBe(146);
+    expectInvalid(() => decodeDeclaration(withHost(["net.vm", "net.internet"])), "both reach tokens", /at most one reach token.*net\.internet already includes/u);
+    expectInvalid(() => decodeResolvedManifest(resolved(withHost(["net.vm", "net.internet"]))), "both reach tokens in module.json", /at most one reach token/u);
+  });
+
+  it("reads a module.json from an earlier CLI with sockets.connect alone as VM-only, but refuses that declaration in a build", () => {
+    expect(moduleReach(decodeResolvedManifest(resolved(withHost(["sockets.connect"]))).requires.host)).toBe("vm");
+    expectInvalid(() => decodeDeclaration(withHost(["sockets.connect"])), "sockets.connect without a reach", /sockets\.connect needs a reach.*net\.vm.*net\.internet/u);
+    expect(decodeDeclaration(withHost(["net.vm", "sockets.connect"])).requires.host).toEqual(["net.vm", "sockets.connect"]);
+  });
+
+  it("discloses hosts and a purpose only with net.internet, after requires, and round-trips module.json byte for byte", () => {
+    const hosts = ["pypi.org", "*.pythonhosted.org", ...Array.from({ length: 30 }, (_, index) => `h${String(index)}.example.com`)];
+    const declared = decodeDeclaration(internet({ hosts, purpose: "p".repeat(200) }));
+    expect(declared.network?.hosts).toHaveLength(32);
+    expect(Object.keys(declared).indexOf("network")).toBe(Object.keys(declared).indexOf("requires") + 1);
+    const bytes = encodeModuleManifest(decodeResolvedManifest(resolved(internet({ purpose: "Python programs reach the internet through the VM", hosts: ["pypi.org", "*.pythonhosted.org"] }))));
+    const manifest = decodeModuleManifest(bytes);
+    expect(manifest.schemaVersion).toBe(1);
+    expect(manifest.network).toEqual({ hosts: ["*.pythonhosted.org", "pypi.org"], purpose: "Python programs reach the internet through the VM" });
+    expect(Buffer.from(encodeModuleManifest(manifest)).equals(Buffer.from(bytes))).toBe(true);
+    for (const [network, label] of [
+      [{ hosts: [...hosts, "one-more.example.com"] }, "33 hosts"], [{ hosts: ["exa mple.com"] }, "a malformed name"], [{ hosts: ["*.*.example.com"] }, "a double wildcard"],
+      [{ hosts: ["https://example.com"] }, "a URL"], [{ purpose: "p".repeat(201) }, "201 characters"], [{}, "nothing disclosed"],
+    ] as const) expectInvalid(() => decodeDeclaration(internet(network)), label, /network/u);
+    expectInvalid(() => decodeDeclaration(internet({ hosts: ["a.com"], extra: 1 })), "an unknown key", /extra/u);
+    expectInvalid(() => decodeDeclaration(withHost(["net.vm"], { network: { hosts: ["pypi.org"] } })), "network on a VM-only module", /network.*net\.internet/u);
+    expectInvalid(() => decodeResolvedManifest(resolved(withHost(["files.sync"], { network: { purpose: "x" } }))), "network without a reach", /network.*net\.internet/u);
+  });
+});
+
+describe("upstream components", () => {
+  // Pyodide ships 21 wheels, each its own upstream project; a release carries at most 64 artifacts, so 64 bounds it.
+  const components = (count: number) => Array.from({ length: count }, (_, index) => ({ name: `package-${String(index)}`, version: "1.0.0", source: `https://pypi.org/project/package-${String(index)}/` }));
+
+  it("accepts one upstream component per artifact a release may carry, in a declaration and in module.json", () => {
+    for (const count of [21, 64]) {
+      expect(decodeDeclaration({ ...service, upstream: components(count) }).upstream).toHaveLength(count);
+      expect(decodeResolvedManifest(resolved({ ...service, upstream: components(count) })).upstream).toHaveLength(count);
+    }
+  });
+
+  it("stays bounded: more components than a release can carry artifacts are refused", () => {
+    expectInvalid(() => decodeDeclaration({ ...service, upstream: components(65) }), "65 upstream components", /upstream: must be an array of at most 64 entries/u);
+    expectInvalid(() => decodeResolvedManifest(resolved({ ...service, upstream: components(65) })), "65 upstream components in module.json", /upstream/u);
   });
 });

@@ -1,12 +1,15 @@
 import type { ProcessExit, ProcessHandle } from "../../contracts.js";
 import { MODULE_EXIT, MODULE_EXIT_REASONS } from "../exit-codes.js";
 import type { EndpointDecl } from "../manifest-types.js";
+import type { ModuleReach } from "../reach.js";
 import { MAX_MESSAGE_LENGTH, WASM_TEST_PROPERTIES, type WasmPropertyResult, type WasmPropertyStatus, type WasmTestProperty } from "./report.js";
 
 /** What the properties need to know about the module under test. */
 export interface ConformanceSubject {
   readonly kind: "command" | "service";
   readonly endpoints: Readonly<Record<string, EndpointDecl>>;
+  /** The declared network reach (engine ADR 0029); the VM under test is never connected, so every run is offline. */
+  readonly reach: ModuleReach;
 }
 
 /** A started module. `stderr` resolves with everything it wrote once the process has exited. */
@@ -37,6 +40,30 @@ export interface ConformanceLimits {
 export const STOP_BUDGET_MS = 20_000;
 
 interface RunnerRecord { readonly oxidevm: string; readonly kind?: string; readonly fault?: string; readonly message?: string; readonly capabilities?: readonly string[] }
+
+/** What the runner reported about the network: browser network attempts (N-3) and destinations beyond the reach (N-1). */
+export interface NetworkDiagnostics { readonly direct: readonly string[]; readonly beyondReach: readonly string[] }
+
+const text = (value: unknown): string => typeof value === "string" || typeof value === "number" ? String(value) : "";
+
+/** The runner's `network-direct` and `network-reach` warnings on standard error, described one per line. */
+export function networkDiagnostics(stderr: string): NetworkDiagnostics {
+  const direct = new Set<string>(), beyondReach = new Set<string>();
+  for (const line of stderr.split("\n")) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(line); } catch { continue; }
+    if (typeof parsed !== "object" || parsed === null || Reflect.get(parsed, "oxidevm") !== "warning") continue;
+    const kind: unknown = Reflect.get(parsed, "kind");
+    if (kind === "network-direct") direct.add(`${text(Reflect.get(parsed, "api"))} ${text(Reflect.get(parsed, "target"))}`.trim());
+    if (kind === "network-reach") beyondReach.add(`${text(Reflect.get(parsed, "protocol"))} ${text(Reflect.get(parsed, "address"))}:${text(Reflect.get(parsed, "port"))}`);
+  }
+  return { direct: [...direct].sort(), beyondReach: [...beyondReach].sort() };
+}
+
+/** Whether a command wrote a line of its own (not a runner record) on standard error. */
+function wroteLine(stderr: string): boolean {
+  return stderr.split("\n").some(line => { if (line.trim() === "") return false; try { const parsed: unknown = JSON.parse(line); return !(typeof parsed === "object" && parsed !== null && "oxidevm" in parsed); } catch { return true; } });
+}
 
 /** Undeclared capabilities and the last fault, read from the runner's JSON records on standard error. */
 export function runnerDiagnostics(stderr: string): { readonly undeclared: readonly string[]; readonly failure: RunnerRecord | undefined } {
@@ -101,6 +128,10 @@ async function within<T>(work: Promise<T>, ms: number, onTimeout: () => Promise<
 class Results {
   private readonly entries = new Map<WasmTestProperty, WasmPropertyResult>();
   private readonly undeclared = new Set<string>();
+  private readonly direct = new Set<string>();
+  private readonly beyondReach = new Set<string>();
+  /** The last genuine command run's standard error, for network-offline. */
+  lastStderr = "";
   constructor(private readonly ports: ConformancePorts) {}
 
   set(property: WasmTestProperty, status: WasmPropertyStatus, started: number, message?: string): void {
@@ -114,8 +145,11 @@ class Results {
 
   /** Remembers what one finished run wrote, and returns its runner records. */
   async read(started: StartedModule): Promise<ReturnType<typeof runnerDiagnostics>> {
-    const diagnostics = runnerDiagnostics(await started.stderr);
+    const stderr = await started.stderr, diagnostics = runnerDiagnostics(stderr), network = networkDiagnostics(stderr);
     for (const capability of diagnostics.undeclared) this.undeclared.add(capability);
+    for (const attempt of network.direct) this.direct.add(attempt);
+    for (const destination of network.beyondReach) this.beyondReach.add(destination);
+    this.lastStderr = stderr;
     return diagnostics;
   }
 
@@ -123,6 +157,10 @@ class Results {
     const started = this.ports.now();
     if (this.undeclared.size === 0) this.set("declared-host", "passed", started);
     else this.set("declared-host", "failed", started, `the adapter reached for undeclared capabilities: ${[...this.undeclared].sort().join(", ")}; declare them in requires.host`);
+    if (this.direct.size === 0) this.set("network-direct", "passed", started);
+    else this.set("network-direct", "failed", started, `the module used the browser's own network, which module workers do not have: ${[...this.direct].join(", ")}; use fetch, WebSocket or host.net`);
+    if (this.beyondReach.size === 0) this.set("network-declared", "passed", started);
+    else this.set("network-declared", "failed", started, `the module connected beyond its declared reach: ${[...this.beyondReach].join(", ")}; declare net.vm or net.internet`);
     return WASM_TEST_PROPERTIES.map(property => this.entries.get(property) ?? { property, status: "not-applicable", message: "not reached", elapsedMs: 0 });
   }
 }
@@ -144,14 +182,31 @@ async function integrity(subject: ConformanceSubject, ports: ConformancePorts, r
   if (subject.kind === "service") results.set("exit-range", "not-applicable", ports.now(), "a service is stopped, not run to completion");
 }
 
-async function command(ports: ConformancePorts, results: Results, limits: ConformanceLimits): Promise<void> {
+/**
+ * network-offline for a command (N-9): the VM under test is local-only, so the run with the author's arguments is an
+ * offline run. It must end within its bound with a status from 0 to 119, and a failure must say why on standard error.
+ */
+function offline(subject: ConformanceSubject, results: Results, started: number, exit: ProcessExit | "expired"): void {
+  if (subject.reach === "none") { results.set("network-offline", "not-applicable", started, "the module declares no network reach"); return; }
+  if (exit === "expired") { results.set("network-offline", "failed", started, "offline, the command did not end within its bound; fail once with one line and exit 69"); return; }
+  if (exit.kind !== "exited" || exit.code > MODULE_EXIT.adapterMax) { results.set("network-offline", "failed", started, `offline, the command ended with ${describe(exit)}; print kit.net.describe(error) and exit 69`); return; }
+  if (exit.code !== 0 && !wroteLine(results.lastStderr)) { results.set("network-offline", "failed", started, `offline, the command exited ${String(exit.code)} without a line on standard error; print kit.net.describe(error)`); return; }
+  results.set("network-offline", "passed", started);
+}
+
+async function command(subject: ConformanceSubject, ports: ConformancePorts, results: Results, limits: ConformanceLimits): Promise<void> {
   results.skip(SERVICE_ONLY, "a command module runs to completion; the service properties do not apply");
   const started = ports.now();
   let run: StartedModule;
   try { run = await ports.start("genuine"); }
-  catch (error: unknown) { results.set("exit-range", "failed", started, `the command did not start: ${explain(error)}`); return; }
+  catch (error: unknown) {
+    results.set("exit-range", "failed", started, `the command did not start: ${explain(error)}`);
+    if (subject.reach !== "none") results.set("network-offline", "failed", started, `the command did not start: ${explain(error)}`);
+    return;
+  }
   const exit = await within(run.process.exit, limits.commandMs, () => run.process.kill("SIGKILL").catch(() => undefined));
   const { failure } = await results.read(run);
+  offline(subject, results, started, exit);
   if (exit === "expired") { results.set("exit-range", "failed", started, `the command did not exit within ${String(limits.commandMs)} ms and was killed`); return; }
   if (exit.kind !== "exited") { results.set("exit-range", "failed", started, `the command ended by ${describe(exit)}`); return; }
   if (exit.code <= MODULE_EXIT.adapterMax) { results.set("exit-range", "passed", started); return; }
@@ -183,12 +238,16 @@ async function service(subject: ConformanceSubject, ports: ConformancePorts, res
   try { first = await ports.start("genuine"); results.set("ready", "passed", started); }
   catch (error: unknown) {
     results.set("ready", "failed", started, `the service did not become ready: ${explain(error)}`);
+    if (subject.reach !== "none") results.set("network-offline", "failed", started, `offline, the service did not become ready: ${explain(error)}`);
     results.skip(SERVICE_ONLY, "the service never became ready");
     return;
   }
   started = ports.now();
   const refused = await ports.probe(subject.endpoints);
   results.set("endpoints", refused.length === 0 ? "passed" : "failed", started, `no connection to ${refused.join(", ")}`);
+  // A service that stays ready while the VM is local-only keeps serving its VM clients (N-9).
+  if (subject.reach === "none") results.set("network-offline", "not-applicable", started, "the module declares no network reach");
+  else results.set("network-offline", refused.length === 0 ? "passed" : "failed", started, `offline, the service stopped serving: no connection to ${refused.join(", ")}`);
   started = ports.now();
   try {
     const second = await ports.start("genuine");
@@ -229,7 +288,7 @@ async function service(subject: ConformanceSubject, ports: ConformancePorts, res
 export async function runProperties(subject: ConformanceSubject, ports: ConformancePorts, limits: ConformanceLimits): Promise<readonly WasmPropertyResult[]> {
   const results = new Results(ports);
   await integrity(subject, ports, results);
-  if (subject.kind === "command") await command(ports, results, limits);
+  if (subject.kind === "command") await command(subject, ports, results, limits);
   else await service(subject, ports, results);
   return results.finish();
 }

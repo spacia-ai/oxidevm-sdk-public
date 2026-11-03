@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModuleCommandProgram } from "../../userspace-command-abi.js";
 import { buildRelease, SERVICE_DECLARATION } from "../../../wasm/runner/fixtures.test-support.js";
 import { encodeLaunchArgument } from "../../../wasm/runner/descriptor.js";
-import { commandRelease, enableRequest, fakeTable, live, owner, server } from "./module-commands.test-support.js";
+import { commandRelease, enableRequest, fakeTable, gatedAdapter, live, owner } from "./module-commands.test-support.js";
 import type { ModuleCommands } from "./module-commands.js";
 
 afterEach(() => { vi.restoreAllMocks(); });
@@ -51,8 +51,8 @@ describe("re-applying the table", () => {
   });
 
   it("never applies before this VM's first enable, then applies the whole table to every replacement runtime", async () => {
-    const release = await commandRelease(), files = server(release), table = fakeTable();
-    const { commands } = owner(files.fetch, table);
+    const release = await commandRelease(), table = fakeTable();
+    const { commands } = owner(table);
     // VM start and runtime replacements before the first enable leave a stub of an earlier session in place.
     const earlier = fakeTable();
     commands.reapply(earlier.runtime); commands.reapply(earlier.runtime);
@@ -60,7 +60,7 @@ describe("re-applying the table", () => {
     const { registration } = await enable(commands, enableRequest(release, ["alpha"]));
     const replacement = fakeTable();
     commands.reapply(replacement.runtime);
-    expect(replacement.tables).toEqual([[{ registration, concurrency: 4, name: "alpha" }]]);
+    expect(replacement.tables).toEqual([[{ registration, concurrency: 4, reach: "none", name: "alpha" }]]);
     expect(replacement.stubs).toEqual(new Set(["alpha"]));
     // After the last disable a replacement runtime still gets the (empty) table, so its stubs go away.
     await disable(commands, registration);
@@ -70,8 +70,8 @@ describe("re-applying the table", () => {
   });
 
   it("an occupied path is skipped and reported", async () => {
-    const release = await commandRelease(), files = server(release), table = fakeTable(["beta"]);
-    const { commands } = owner(files.fetch, table);
+    const release = await commandRelease(), table = fakeTable(["beta"]);
+    const { commands } = owner(table);
     const enabled = await enable(commands, enableRequest(release));
     expect(enabled).toMatchObject({ commands: ["alpha", "beta"], skipped: [{ name: "beta", reason: "occupied" }] });
     await expect(status(commands, enabled.registration)).resolves.toEqual({ operation: "status", enabled: true, skipped: [{ name: "beta", reason: "occupied" }] });
@@ -90,19 +90,15 @@ describe("re-applying the table", () => {
 describe("registrations", () => {
   it("reservations, duplicates and stale ids", async () => {
     const release = await commandRelease(), other = await commandRelease(["beta", "gamma"]);
-    const served = new Map([...release.served, ...other.served]), gate = Promise.withResolvers<undefined>(), fetched: string[] = [];
-    const { commands, table } = owner(async url => {
-      fetched.push(url);
-      if (url === release.descriptor.adapter.url) await gate.promise;
-      const bytes = served.get(url);
-      return bytes === undefined ? new Response(null, { status: 404 }) : new Response(bytes.slice());
-    });
+    const gate = Promise.withResolvers<undefined>(), reads: string[] = [];
+    const { commands, table } = owner();
     const conflict = { code: "INVALID_ARGUMENT", detail: { reason: "wasm-module-command-conflict" } };
-    // The first enable reserves its names while it fetches; a second one naming beta fails at once, fetching nothing.
-    const first = enable(commands, enableRequest(release));
-    await vi.waitFor(() => { expect(fetched).toHaveLength(1); });
+    // The first enable reserves its names while its files are checked; a second one naming beta fails at once, reading nothing.
+    const first = enable(commands, enableRequest(release, undefined, undefined, gatedAdapter(release, gate.promise, () => { reads.push("adapter"); })));
+    await vi.waitFor(() => { expect(reads).toHaveLength(1); });
+    const hash = vi.spyOn(crypto.subtle, "digest");
     await expect(commands.request(enableRequest(other), live())).rejects.toMatchObject(conflict);
-    expect(fetched).toHaveLength(1);
+    expect([reads, hash.mock.calls]).toEqual([["adapter"], []]);
     gate.resolve(undefined);
     const { registration } = await first;
     // All or nothing: gamma is free, beta is not, so nothing of the second module is turned on.
@@ -122,8 +118,8 @@ describe("registrations", () => {
   });
 
   it("disable re-applies before dropping copies", async () => {
-    const release = await commandRelease(), files = server(release), table = fakeTable();
-    const { commands } = owner(files.fetch, table);
+    const release = await commandRelease(), table = fakeTable();
+    const { commands } = owner(table);
     const { registration } = await enable(commands, enableRequest(release));
     const running = commands.launch(program(registration, "alpha"));
     const seen: unknown[] = [];
@@ -145,8 +141,8 @@ describe("registrations", () => {
   });
 
   it("hands a launch the registration's verified copies, its invocation and the caller's terminals", async () => {
-    const release = await commandRelease(), files = server(release);
-    const { commands, ports } = owner(files.fetch);
+    const release = await commandRelease();
+    const { commands, ports } = owner();
     const { registration } = await enable(commands, enableRequest(release, ["beta"], 2));
     expect(ports.changed).toHaveBeenCalledOnce();
     const launch = commands.launch(program(registration, "beta"));
@@ -159,34 +155,34 @@ describe("registrations", () => {
 });
 
 describe("enable refusals", () => {
-  it("refuses a VM that cannot run commands before fetching anything", async () => {
-    const release = await commandRelease(), files = server(release), unavailable = { code: "FEATURE_NOT_AVAILABLE", detail: { reason: "wasm-module-command-unavailable" } };
+  it("refuses a VM that cannot run commands before reading anything", async () => {
+    const release = await commandRelease(), hash = vi.spyOn(crypto.subtle, "digest"), unavailable = { code: "FEATURE_NOT_AVAILABLE", detail: { reason: "wasm-module-command-unavailable" } };
     for (const overrides of [
       { environment: () => ({ crossOriginIsolated: false, initialUser: "user" as const }) },
       { environment: () => ({ crossOriginIsolated: true, initialUser: "root" as const }) },
       { runtime: () => undefined },
-    ]) await expect(owner(files.fetch, fakeTable(), overrides).commands.request(enableRequest(release), live())).rejects.toMatchObject(unavailable);
-    expect(files.fetched).toEqual([]);
+    ]) await expect(owner(fakeTable(), overrides).commands.request(enableRequest(release), live())).rejects.toMatchObject(unavailable);
+    expect(hash).not.toHaveBeenCalled();
   });
 
-  it("refuses a service, a module without commands, an undeclared name and bad options before fetching anything", async () => {
+  it("refuses a service, a module without commands, an undeclared name and bad options before reading anything", async () => {
     const service = await buildRelease({ adapter: "export default () => ({ protocols: {} });", declaration: { ...SERVICE_DECLARATION, requires: { host: ["files.sync"] } } });
     const plain = await commandRelease(undefined, { declaration: { id: "tool", version: "1.0.0", abi: "bindgen", process: { kind: "command" }, requires: { host: ["files.sync"] }, license: { spdx: "MIT" } } });
     const release = await commandRelease(), optioned = await commandRelease(["alpha"], { declaration: { id: "tool", version: "1.0.0", abi: "bindgen", process: { kind: "command" }, commands: ["alpha"], requires: { host: ["files.sync"] }, license: { spdx: "MIT" }, options: { mode: { type: "enum", values: ["a", "b"] } } } });
-    const fetched: string[] = [];
-    const { commands, table } = owner(url => { fetched.push(url); return Promise.resolve(new Response(null, { status: 404 })); });
+    const hash = vi.spyOn(crypto.subtle, "digest");
+    const { commands, table } = owner();
     const commandsError = { code: "INVALID_ARGUMENT", detail: { reason: "wasm-module-commands" } };
-    await expect(commands.request({ operation: "enable", descriptor: encodeLaunchArgument(service.descriptor), commands: ["alpha"], concurrency: 4 }, live())).rejects.toMatchObject(commandsError);
-    await expect(commands.request({ operation: "enable", descriptor: encodeLaunchArgument(plain.descriptor), commands: ["alpha"], concurrency: 4 }, live())).rejects.toMatchObject(commandsError);
+    await expect(commands.request({ operation: "enable", descriptor: encodeLaunchArgument(service.descriptor), commands: ["alpha"], concurrency: 4, files: {} }, live())).rejects.toMatchObject(commandsError);
+    await expect(commands.request({ operation: "enable", descriptor: encodeLaunchArgument(plain.descriptor), commands: ["alpha"], concurrency: 4, files: {} }, live())).rejects.toMatchObject(commandsError);
     await expect(commands.request(enableRequest(release, ["gamma"]), live())).rejects.toMatchObject(commandsError);
     await expect(commands.request(enableRequest(release, []), live())).rejects.toMatchObject(commandsError);
     await expect(commands.request(enableRequest(optioned), live())).rejects.toMatchObject({ code: "INVALID_ARGUMENT", detail: { reason: "wasm-module-options" } });
     await expect(commands.request({ ...enableRequest(release), descriptor: "{}" }, live())).rejects.toMatchObject({ code: "INVALID_ARGUMENT", detail: { reason: "wasm-manifest-invalid" } });
-    expect([fetched, table.tables]).toEqual([[], []]);
+    expect([hash.mock.calls, table.tables]).toEqual([[], []]);
   });
 
   it("maps a refused application to a typed error and registers nothing", async () => {
-    const release = await commandRelease(), files = server(release);
+    const release = await commandRelease();
     for (const [refusal, expected] of [
       [{ outcome: 7 }, { code: "STORAGE_ERROR", detail: { outcome: "busy" } }],
       [{ outcome: 6 }, { code: "STORAGE_ERROR", detail: { outcome: "directory-unavailable" } }],
@@ -196,7 +192,7 @@ describe("enable refusals", () => {
     ] as const) {
       const table = fakeTable();
       table.state.refuse = refusal;
-      const { commands, ports } = owner(files.fetch, table);
+      const { commands, ports } = owner(table);
       await expect(commands.request(enableRequest(release), live()), JSON.stringify(refusal)).rejects.toMatchObject(expected);
       expect(commands.launch(program(1, "alpha"))).toBeUndefined();
       expect(ports.changed).toHaveBeenCalledTimes("changed" in refusal ? 1 : 0);
@@ -208,14 +204,14 @@ describe("enable refusals", () => {
   });
 
   it("registers nothing when the enable is cancelled or the VM is disposed", async () => {
-    const release = await commandRelease(), files = server(release), table = fakeTable();
-    const { commands } = owner(files.fetch, table), controller = new AbortController();
+    const release = await commandRelease(), table = fakeTable();
+    const { commands } = owner(table), controller = new AbortController();
     controller.abort(new Error("cancelled by the page"));
     await expect(commands.request(enableRequest(release), controller.signal)).rejects.toMatchObject({ code: "ABORTED" });
-    // Cancelled while a file is being fetched.
-    const fetching = new AbortController(), slow = owner((_url, init) => new Promise<Response>((_resolve, reject) => { init.signal.addEventListener("abort", () => { reject(new Error("fetch stopped")); }); }), table);
-    const pending = slow.commands.request(enableRequest(release), fetching.signal);
-    fetching.abort();
+    // Cancelled while a file is being checked.
+    const checking = new AbortController(), slow = owner(table);
+    const pending = slow.commands.request(enableRequest(release, undefined, undefined, gatedAdapter(release, new Promise<never>(() => undefined))), checking.signal);
+    checking.abort();
     await expect(pending).rejects.toMatchObject({ code: "ABORTED" });
     expect(table.tables).toEqual([]);
     const { registration } = await enable(commands, enableRequest(release));

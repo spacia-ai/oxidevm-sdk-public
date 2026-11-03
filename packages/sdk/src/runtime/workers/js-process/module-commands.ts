@@ -8,14 +8,13 @@ import { assertUserspaceStatus, callUserspaceU32 as call } from "../userspace-ex
 import { readFileRecord } from "../userspace-files.js";
 import { isServiceDecl } from "../../../wasm/manifest.js";
 import { resolveOptions } from "../../../wasm/options.js";
+import { moduleReach, type ModuleReach } from "../../../wasm/reach.js";
 import { parseLaunchArgument } from "../../../wasm/runner/descriptor.js";
-import type { Fetcher } from "../../../wasm/runner/pinned.js";
-import { pinnedBytes, verifyModuleFiles, type VerifiedModuleFiles } from "./module-artifacts.js";
+import { assertRunsInModuleFrame, holdModuleFiles, suppliedFiles, type VerifiedModuleFiles } from "./module-artifacts.js";
+import type { ModuleCopies } from "./module-copies.js";
 
 /** Registrations one VM holds at once. */
 export const MODULE_COMMAND_REGISTRATIONS = 16;
-/** Verified bytes one VM holds at once, across its registrations. */
-export const MODULE_COMMAND_VERIFIED_BYTES = 512 * 1024 ** 2;
 
 /** A mounted runtime's `oxidevm_userspace_module_commands_apply`: an OXMC v1 table in, its OXMA v1 record out. */
 export interface ModuleCommandTableRuntime { applyTable(request: Uint8Array<ArrayBuffer>): Uint8Array }
@@ -36,9 +35,8 @@ export interface ModuleCommandsPorts {
   /** The runtime the table applies to: mounted, published and ready; undefined otherwise. */
   readonly runtime: () => ModuleCommandTableRuntime | undefined;
   readonly environment: () => { readonly crossOriginIsolated: boolean; readonly initialUser: "user" | "root" };
-  readonly fetch: Fetcher;
-  /** The browser's compiler unless a test supplies one. */
-  readonly compile?: (bytes: Uint8Array<ArrayBuffer>) => Promise<WebAssembly.Module>;
+  /** The VM's verified copies and their budget (`module-copies.ts`), shared with `spawnModule`. */
+  readonly copies: ModuleCopies;
   /** An application changed `/usr/local/bin`: persist the system files and let waiting guest programs see it. */
   readonly changed: () => void;
 }
@@ -48,14 +46,16 @@ interface Registration {
   /** Sorted, as the manifest declares them. */
   readonly names: readonly string[];
   readonly concurrency: number;
+  /** The network reach its module declared (engine ADR 0029), which Rust gives each of its command processes. */
+  readonly reach: ModuleReach;
   readonly descriptor: string;
   readonly files: VerifiedModuleFiles;
   /** Names the last application left without a stub. */
   skipped: ReadonlyMap<string, ModuleCommandSkipReason>;
 }
 
-/** Names, a registration slot and verified bytes held by an enable that is still fetching. */
-interface Reservation { readonly names: readonly string[]; readonly bytes: number }
+/** Names and a registration slot held by an enable that is still fetching. */
+interface Reservation { readonly names: readonly string[] }
 
 const fail = (code: ConstructorParameters<typeof VMError>[0], reason: string, message: string): VMError => new VMError(code, message, { reason });
 /** Read through a call, because the signal changes while an enable awaits its files. */
@@ -104,10 +104,10 @@ export class ModuleCommands {
   launch(program: ModuleCommandProgram): RunnerCommandLaunch | undefined {
     const registration = this.#registrations.get(program.registration);
     if (registration === undefined || !registration.names.includes(program.name) || program.path !== moduleCommandPath(program.name)) return undefined;
-    return { kind: "module-command", invocation: { name: program.name, path: program.path }, terminals: program.terminals, descriptor: registration.descriptor, adapter: registration.files.adapter, artifacts: registration.files.artifacts };
+    return { kind: "module-command", invocation: { name: program.name, path: program.path }, terminals: program.terminals, descriptor: registration.descriptor, adapter: registration.files.adapter, artifacts: registration.files.artifacts, tls: registration.files.tls };
   }
 
-  /** The VM is going away: drop every registration and its copies. Runs already started keep theirs. */
+  /** The VM is going away: drop every registration; the worker disposes of the copies. Runs already started keep theirs. */
   dispose(): void { this.#registrations.clear(); this.#pending.clear(); }
 
   #available(): ModuleCommandTableRuntime {
@@ -130,18 +130,23 @@ export class ModuleCommands {
     if (undeclared !== undefined) throw fail("INVALID_ARGUMENT", REASONS.commands, `${undeclared} is not a command of ${manifest.id}`);
     // Options are fixed when commands are turned on, because a guest cannot pass any.
     resolveOptions(manifest.options, descriptor.options);
-    const names = declared.filter(name => request.commands.includes(name)), reservation = { names, bytes: pinnedBytes(descriptor) };
+    assertRunsInModuleFrame(manifest);
+    const names = declared.filter(name => request.commands.includes(name)), reservation = { names };
     this.#reserve(reservation);
+    const id = ++this.#last, holder = { kind: "registration", id } as const, { copies } = this.#ports;
     try {
-      const files = await verifyModuleFiles(descriptor, this.#ports, signal);
+      const files = await holdModuleFiles(descriptor, holder, { copies, supply: suppliedFiles(request.files) }, signal);
       if (cancelled(signal)) throw cancellation();
       const runtime = this.#available();
-      const registration: Registration = { id: ++this.#last, names, concurrency: request.concurrency, descriptor: request.descriptor, files, skipped: new Map() };
+      const registration: Registration = { id, names, concurrency: request.concurrency, reach: moduleReach(manifest.requires.host), descriptor: request.descriptor, files, skipped: new Map() };
       this.#apply(runtime, [...this.#registrations.values(), registration]);
       this.#registrations.set(registration.id, registration);
       this.#applied = true;
       return { registration: registration.id, commands: names, skipped: skippedOf(registration) };
     } catch (error: unknown) {
+      copies.release(holder);
+      // A refused enable registered nothing: its id goes back unless a later enable was issued one meanwhile.
+      if (this.#last === id) this.#last = id - 1;
       if (cancelled(signal) && !(error instanceof VMError && error.code === "ABORTED")) throw cancellation();
       throw error;
     } finally { this.#pending.delete(reservation); }
@@ -152,10 +157,9 @@ export class ModuleCommands {
     const held = [...this.#registrations.values(), ...this.#pending];
     const taken = reservation.names.find(name => held.some(other => other.names.includes(name)));
     if (taken !== undefined) throw fail("INVALID_ARGUMENT", REASONS.conflict, `${taken} is already turned on in this VM by another registration`);
-    const bytes = held.reduce((total, other) => total + ("files" in other ? other.files.bytes : other.bytes), reservation.bytes);
     const names = held.reduce((total, other) => total + other.names.length, reservation.names.length);
-    if (held.length >= MODULE_COMMAND_REGISTRATIONS || names > MODULE_COMMAND_MAX_NAMES || bytes > MODULE_COMMAND_VERIFIED_BYTES) {
-      throw new VMError("QUOTA_EXCEEDED", `A VM holds at most ${String(MODULE_COMMAND_REGISTRATIONS)} registrations, ${String(MODULE_COMMAND_MAX_NAMES)} commands and ${String(MODULE_COMMAND_VERIFIED_BYTES / 1024 ** 2)} MiB of module files`, { reason: REASONS.limit });
+    if (held.length >= MODULE_COMMAND_REGISTRATIONS || names > MODULE_COMMAND_MAX_NAMES) {
+      throw new VMError("QUOTA_EXCEEDED", `A VM holds at most ${String(MODULE_COMMAND_REGISTRATIONS)} registrations and ${String(MODULE_COMMAND_MAX_NAMES)} commands`, { reason: REASONS.limit });
     }
     this.#pending.add(reservation);
   }
@@ -167,11 +171,12 @@ export class ModuleCommands {
     const runtime = this.#ports.runtime();
     if (runtime !== undefined) this.#apply(runtime, [...this.#registrations.values()].filter(other => other !== registration));
     this.#registrations.delete(id);
+    this.#ports.copies.release({ kind: "registration", id });
   }
 
   /** Applies `registrations` as the whole table and records what each one's names got; throws a typed error when refused. */
   #apply(runtime: ModuleCommandTableRuntime, registrations: readonly Registration[]): void {
-    const entries = registrations.flatMap(registration => registration.names.map((name): ModuleCommandEntry => ({ registration: registration.id, concurrency: registration.concurrency, name })));
+    const entries = registrations.flatMap(registration => registration.names.map((name): ModuleCommandEntry => ({ registration: registration.id, concurrency: registration.concurrency, reach: registration.reach, name })));
     const application = decodeModuleCommandApplication(runtime.applyTable(encodeModuleCommandTable(entries)), entries.length);
     if ((application.outcome === "applied" || application.outcome === "filesystem") && application.changed) this.#ports.changed();
     if (application.outcome !== "applied") throw refusal(application, entries);

@@ -38,9 +38,9 @@ export function attachUserspaceExecution(nextPort: MessagePort, snapshotPort?: M
         return;
       }
       if (request.type !== "cancel") owner.requests.add(request.id);
-      const transfer: Transferable[] = request.type === "attach-process" ? [request.port] : request.type === "spawn"
+      const transfer: Transferable[] = request.type === "attach-process" || request.type === "attach-module-frame" ? [request.port] : request.type === "spawn"
         ? [request.elf.buffer, request.rootfs.buffer, request.port]
-        : request.type === "spawn-managed" || request.type === "spawn-js"
+        : request.type === "spawn-managed" || request.type === "spawn-js" || request.type === "spawn-module"
           ? [request.rootfs.buffer, request.port]
         : request.type === "initialize"
           ? [request.storagePort, request.networkPort, request.nativeExecutionPort].filter(

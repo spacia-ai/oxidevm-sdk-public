@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-const OVERRIDES = { "oxidevm_core.wasm": "OXIDEVM_CORE_WASM", "oxidevm_userspace.wasm": "OXIDEVM_USERSPACE_WASM" } as const;
+const OVERRIDES = { "oxidevm_core.wasm": "OXIDEVM_CORE_WASM", "oxidevm_userspace.wasm": "OXIDEVM_USERSPACE_WASM", "oxidevm_tls.wasm": "OXIDEVM_TLS_WASM" } as const;
 
 /**
  * The engine module a core test executes. The SDK contains no engine binaries: a local engine

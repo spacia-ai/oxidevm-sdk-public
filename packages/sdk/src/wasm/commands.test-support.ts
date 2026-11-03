@@ -3,6 +3,8 @@ import { PROTOCOL_VERSION } from "../runtime/protocol/common.js";
 import { decodeModuleCommandsResult, type ModuleCommandsRequest, type ModuleCommandsResult } from "../runtime/protocol/userspace-module-commands.js";
 import { decodeUserspaceRequest } from "../runtime/userspace-protocol.js";
 import type { ModuleCommands as Registrations } from "../runtime/workers/js-process/module-commands.js";
+import type { ModuleCopies } from "../runtime/workers/js-process/module-copies.js";
+import { decodeMissingKeys } from "../runtime/protocol/userspace-module-files.js";
 import type { OwnedModuleCommands } from "../vm-adapter.js";
 import type { LaunchPins } from "./handle.js";
 import type { Release } from "./runner/fixtures.test-support.js";
@@ -19,7 +21,7 @@ export function pinsOf(release: Release): LaunchPins {
  * cancellation reaches the owner while the page waits for its answer (`cancellation: "settled"`). `hold` keeps the next
  * requests from reaching the owner until it settles; `dispose` ends the VM, failing requests that are still on their way.
  */
-export function relay(registrations: Registrations) {
+export function relay(registrations: Registrations, copies: ModuleCopies) {
   const lifetime = new AbortController(), requests: ModuleCommandsRequest[] = [], answers: ModuleCommandsResult[] = [];
   const ended = new Promise<never>((_resolve, reject) => { lifetime.signal.addEventListener("abort", () => { reject(new VMError("ABORTED", "worker was disposed")); }, { once: true }); });
   ended.catch(() => undefined);
@@ -49,6 +51,13 @@ export function relay(registrations: Registrations) {
       return Promise.race([forward(sent, signal), ended]);
     },
     disposed: lifetime.signal,
+    // The store's answer, decoded as the page decodes a module-files result.
+    missing: pins => {
+      if (lifetime.signal.aborted) return Promise.reject(new VMError("PROTOCOL_ERROR", "VM has been disposed"));
+      const decoded = decodeUserspaceRequest(structuredClone({ id: ++state.id, version: PROTOCOL_VERSION, type: "module-files", pins }));
+      if (decoded.type !== "module-files") throw new Error("Expected a module-files request");
+      return Promise.resolve(decodeMissingKeys(structuredClone({ missing: copies.missing(decoded.pins) })).missing);
+    },
   };
   return {
     owned, requests, answers,

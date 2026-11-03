@@ -2,17 +2,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LinuxSignal, PipeJSProcessSpec, ProcessExit, ProcessHandle } from "../contracts.js";
 import { decodeProcessId } from "../values.js";
 import { VMError } from "../runtime/errors.js";
-import type { RunnerHostLaunch } from "../runtime/js-process/launch.js";
+import type { ModuleStart } from "../runtime/vm-types.js";
+import { ModuleCopies } from "../runtime/workers/js-process/module-copies.js";
+import { prepareModuleStart } from "../runtime/workers/js-process/module-artifacts.js";
+import { fakeLocks } from "../runtime/workers/js-process/module-commands.test-support.js";
+import type { ModuleSpawnSpec, OwnedModules } from "../vm-adapter.js";
 import { moduleHandle } from "./handle.js";
 import { COMMAND_DECLARATION, SERVICE_DECLARATION, buildRelease, type Release } from "./runner/fixtures.test-support.js";
 import { parseLaunchArgument } from "./runner/descriptor.js";
 import { spawnModule, stopModule, type ModuleVM } from "./spawn.js";
 
-/** The VM's owner record, which starts the runner with its launch in the start message (engine ADR 0027). */
-const owner = vi.hoisted(() => ({ start: vi.fn<(vm: object, spec: PipeJSProcessSpec, launch: RunnerHostLaunch) => Promise<ProcessHandle>>() }));
-vi.mock("../vm-adapter.js", () => ({ spawnOwnedModuleProcess: owner.start }));
+/** The VM's owner record, which starts the runner from the VM's verified copies (engine ADR 0027 and ADR 0028). */
+const owner = vi.hoisted(() => ({ modules: vi.fn<(vm: object) => OwnedModules>() }));
+vi.mock("../vm-adapter.js", () => ({ ownedModules: owner.modules }));
 
-afterEach(() => { vi.useRealTimers(); owner.start.mockReset(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); owner.modules.mockReset(); });
 
 const encoder = new TextEncoder();
 const pid = decodeProcessId(42);
@@ -43,15 +47,36 @@ function fakeProcess() {
   };
 }
 
-/** A VM whose owner starts `process`. Its public `spawnJS` never runs: a launch description in argv would reach `/proc/<pid>/cmdline`. */
-function fakeVM(process: ProcessHandle) {
-  const specs: PipeJSProcessSpec[] = [], launches: RunnerHostLaunch[] = [];
-  const vm: ModuleVM = { spawnJS: () => Promise.reject(new Error("spawnModule must not start through the public spawnJS")) };
-  owner.start.mockImplementation((target, spec, launch) => {
-    if (target !== vm) return Promise.reject(new Error("started through another VM"));
-    specs.push(spec); launches.push(launch); return Promise.resolve(process);
+/** The application's server for `release`'s pinned files, counting each request; `served` may change later. */
+function serve(release: Release) {
+  const served = new Map(release.served), fetched: string[] = [];
+  vi.stubGlobal("fetch", (url: string) => {
+    fetched.push(url);
+    const bytes = served.get(url);
+    return Promise.resolve(bytes === undefined ? new Response(null, { status: 404 }) : new Response(bytes.slice()));
   });
-  return { vm, specs, launches };
+  return { served, fetched };
+}
+
+/**
+ * A VM whose owner starts `process` once the VM's real verified-copy store has checked the supplied files (ADR 0028).
+ * Its public `spawnJS` never runs: a launch description in argv would reach `/proc/<pid>/cmdline`.
+ */
+function fakeVM(process: ProcessHandle, copies = new ModuleCopies()) {
+  const specs: ModuleSpawnSpec[] = [], launches: ModuleStart[] = [];
+  const vm: ModuleVM = { spawnJS: () => Promise.reject(new Error("spawnModule must not start through the public spawnJS")) };
+  owner.modules.mockImplementation(target => {
+    if (target !== vm) throw new Error("started through another VM");
+    return {
+      missing: pins => Promise.resolve(copies.missing(pins)),
+      spawn: async (spec, start) => {
+        // A start the test never ends keeps no lease, so every test may start the same exclusive service again.
+        (await prepareModuleStart(start.descriptor, start.files, { copies, locks: fakeLocks().locks }, new AbortController().signal)).lease?.release();
+        specs.push(spec); launches.push(start); return process;
+      },
+    };
+  });
+  return { vm, specs, launches, copies };
 }
 
 const handleFor = (release: Release) => moduleHandle(release.manifest, { release: release.descriptor.release, adapter: release.descriptor.adapter, artifacts: release.descriptor.artifacts });
@@ -62,6 +87,7 @@ const commandRelease = () => buildRelease({ adapter: "export default () => ({ ma
 describe("spawning a command module", () => {
   it("passes the descriptor in the runner's start message and only the command's own arguments, working directory and environment as the process's", async () => {
     const release = await commandRelease(), process = fakeProcess(), { vm, specs, launches } = fakeVM(process.handle);
+    serve(release);
     const signal = new AbortController().signal;
     const handle = handleFor(release);
     const started = await spawnModule(vm, handle, { args: ["in.md", "out.html"], cwd: "/workspace", env: { MODE: "fast" }, options: { mode: "b" }, signal });
@@ -69,11 +95,9 @@ describe("spawning a command module", () => {
     expect(specs).toHaveLength(1);
     const spec = specs[0];
     expect(spec).toMatchObject({ cwd: "/workspace", env: { MODE: "fast" }, signal });
-    expect(spec?.worker.pathname.endsWith("/assets/module-runner/runner.worker.js")).toBe(true);
     // argv, and so /proc/<pid>/cmdline, holds the caller's arguments and nothing of the descriptor or its options.
     expect(spec?.args).toEqual(["in.md", "out.html"]);
     expect(launches).toHaveLength(1);
-    expect(launches[0]?.kind).toBe("host");
     const descriptor = parseLaunchArgument(launches[0]?.descriptor);
     expect(descriptor.options).toEqual({ mode: "b" });
     expect(descriptor.manifest.id).toBe("tool");
@@ -82,6 +106,7 @@ describe("spawning a command module", () => {
 
   it("sends defaults explicitly and starts with no options and no arguments at all", async () => {
     const release = await commandRelease(), { vm, specs, launches } = fakeVM(fakeProcess().handle);
+    serve(release);
     await spawnModule(vm, handleFor(release));
     expect(parseLaunchArgument(launches[0]?.descriptor).options).toEqual({ mode: "a" });
     expect(specs[0]?.args).toEqual([]);
@@ -106,6 +131,7 @@ describe("spawning a command module", () => {
 describe("spawning a service module", () => {
   it("resolves when the ready line arrives and exposes the declared endpoints and the adapter's info", async () => {
     const release = await serviceRelease(), process = fakeProcess(), { vm, launches } = fakeVM(process.handle);
+    serve(release);
     const pending = spawnModule(vm, handleFor(release), { workspaceId: "ws" });
     process.err("warming up\n");
     process.out(READY({ version: "18.6", ready: true }));
@@ -124,6 +150,7 @@ describe("spawning a service module", () => {
 
   it("accepts a ready line delivered in pieces", async () => {
     const release = await serviceRelease(), process = fakeProcess(), { vm } = fakeVM(process.handle);
+    serve(release);
     const pending = spawnModule(vm, handleFor(release), { workspaceId: "ws" });
     const line = READY();
     process.out(line.slice(0, 10)); await Promise.resolve(); process.out(line.slice(10));
@@ -132,14 +159,17 @@ describe("spawning a service module", () => {
 
   it("requires a workspace id for an exclusive service", async () => {
     const release = await serviceRelease(), { vm, specs } = fakeVM(fakeProcess().handle);
+    serve(release);
     await expect(spawnModule(vm, handleFor(release), {})).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
     expect(specs).toEqual([]);
   });
 
   it("explains an early exit with the runner's own message and maps each status to its error", async () => {
     const release = await serviceRelease();
+    serve(release);
     const cases: readonly (readonly [number, string, string])[] = [
-      [120, "GUEST_CRASH", "wasm-module-launch"], [121, "GUEST_CRASH", "wasm-module-integrity"], [122, "FEATURE_NOT_AVAILABLE", "wasm-module-prerequisite"],
+      // Files are checked before the process exists (ADR 0028), so 121 is an adapter's own status like any other.
+      [120, "GUEST_CRASH", "wasm-module-launch"], [121, "GUEST_CRASH", "wasm-module-adapter"], [122, "FEATURE_NOT_AVAILABLE", "wasm-module-prerequisite"],
       [123, "GUEST_CRASH", "wasm-module-adapter"], [124, "QUOTA_EXCEEDED", "wasm-module-busy"], [3, "GUEST_CRASH", "wasm-module-adapter"],
     ];
     for (const [status, code, reason] of cases) {
@@ -151,16 +181,10 @@ describe("spawning a service module", () => {
     }
   });
 
-  it("reports a pinned file the runner could not fetch as CORE_LOAD_FAILED wasm-module-artifact", async () => {
-    const release = await serviceRelease(), process = fakeProcess(), { vm } = fakeVM(process.handle);
-    const pending = spawnModule(vm, handleFor(release), { workspaceId: "ws" });
-    process.err(`${JSON.stringify({ oxidevm: "error", v: 1, kind: "launch", message: "Artifact db.wasm is unavailable (HTTP 404)", reason: "wasm-module-artifact" })}\n`);
-    process.exits(120);
-    await expect(pending).rejects.toMatchObject({ code: "CORE_LOAD_FAILED", detail: { reason: "wasm-module-artifact", status: 120 }, message: expect.stringContaining("Artifact db.wasm is unavailable (HTTP 404)") as unknown });
-  });
 
   it("falls back to the end of standard error when the runner left no report, and handles a crash by signal", async () => {
     const release = await serviceRelease(), first = fakeProcess();
+    serve(release);
     const pending = spawnModule(fakeVM(first.handle).vm, handleFor(release), { workspaceId: "ws" });
     first.err("native crash details\n");
     first.exitsBySignal();
@@ -169,6 +193,7 @@ describe("spawning a service module", () => {
 
   it("kills a service whose ready line is wrong, and reports a protocol failure", async () => {
     const release = await serviceRelease();
+    serve(release);
     const bad: readonly string[] = ["not json\n", READY({}, 7), `${JSON.stringify({ oxidevm: "ready", v: 2, pid: 42, info: {} })}\n`, READY({ nested: {} }), `${JSON.stringify({ oxidevm: "ready", v: 1, pid: 42, info: {}, extra: 1 })}\n`, "[]\n"];
     for (const line of bad) {
       const process = fakeProcess(), { vm } = fakeVM(process.handle);
@@ -180,11 +205,16 @@ describe("spawning a service module", () => {
   });
 
   it("kills the process when the startup deadline passes, using the manifest's limit when it has one", async () => {
-    vi.useFakeTimers();
     const release = await buildRelease({ adapter: "export default () => ({ protocols: {} });", declaration: { ...SERVICE_DECLARATION, limits: { startupMs: 3000 } }, workspaceId: "ws" });
-    const process = fakeProcess(), { vm } = fakeVM(process.handle);
+    const process = fakeProcess(), { vm, specs } = fakeVM(process.handle);
+    serve(release);
+    // Only the deadline's timers: reading and hashing the supplied files settle in real time, and the deadline starts
+    // once the process exists.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const pending = spawnModule(vm, handleFor(release), { workspaceId: "ws" });
     const outcome = expect(pending).rejects.toMatchObject({ code: "GUEST_CRASH", message: expect.stringContaining("not ready within 3000 ms") as unknown });
+    // vi.waitFor would advance the fake clock; setImmediate is not faked.
+    while (specs.length === 0) await new Promise<void>(resolve => { setImmediate(resolve); });
     await vi.advanceTimersByTimeAsync(2999);
     expect(process.kills).toEqual([]);
     await vi.advanceTimersByTimeAsync(2);
@@ -194,6 +224,7 @@ describe("spawning a service module", () => {
 
   it("kills the process and reports ABORTED when the caller cancels while it starts", async () => {
     const release = await serviceRelease(), process = fakeProcess(), { vm } = fakeVM(process.handle);
+    serve(release);
     const controller = new AbortController();
     const pending = spawnModule(vm, handleFor(release), { workspaceId: "ws", signal: controller.signal });
     await Promise.resolve();
@@ -231,9 +262,48 @@ describe("a VM that cannot start the runner", () => {
     const failure = new VMError("FEATURE_NOT_AVAILABLE", "JS processes require self-hosted Userspace");
     const calls: PipeJSProcessSpec[] = [];
     const vm: ModuleVM = { spawnJS: spec => { calls.push(spec); return Promise.reject(new Error("unused")); } };
-    owner.start.mockRejectedValue(failure);
+    owner.modules.mockImplementation(() => { throw failure; });
     await expect(spawnModule(vm, handleFor(release))).rejects.toBe(failure);
-    expect(owner.start).toHaveBeenCalledOnce();
+    expect(owner.modules).toHaveBeenCalledOnce();
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("verify-once starts (ADR 0028)", () => {
+  it("a second start fetches nothing", async () => {
+    const release = await commandRelease(), { vm, launches } = fakeVM(fakeProcess().handle), server = serve(release);
+    await spawnModule(vm, handleFor(release));
+    expect([...server.fetched].sort()).toEqual([...release.served.keys()].sort());
+    await spawnModule(vm, handleFor(release), { options: { mode: "b" } });
+    expect(server.fetched).toHaveLength(release.served.size);
+    expect(launches.map(start => Object.keys(start.files).length)).toEqual([release.served.size, 0]);
+  });
+
+  it("an altered file rejects before a process exists", async () => {
+    const release = await commandRelease(), { vm, specs, copies } = fakeVM(fakeProcess().handle), server = serve(release);
+    server.served.set(release.descriptor.adapter.url, new TextEncoder().encode("export default () => ({ main: () => 1 });"));
+    await expect(spawnModule(vm, handleFor(release))).rejects.toMatchObject({ code: "GUEST_CRASH", detail: { reason: "wasm-module-integrity", file: "adapter.mjs" } });
+    expect(specs).toEqual([]);
+    expect(copies.bytes).toBe(0);
+  });
+
+  it("a file the page cannot read is CORE_LOAD_FAILED wasm-module-artifact before a process exists", async () => {
+    const release = await serviceRelease(), { vm, specs } = fakeVM(fakeProcess().handle), server = serve(release);
+    server.served.delete(release.descriptor.adapter.url);
+    await expect(spawnModule(vm, handleFor(release), { workspaceId: "ws" })).rejects.toMatchObject({ code: "CORE_LOAD_FAILED", detail: { reason: "wasm-module-artifact", file: "adapter.mjs" } });
+    expect(specs).toEqual([]);
+  });
+
+  it("sends a file again when the VM dropped it between the question and the start", async () => {
+    const release = await commandRelease(), process = fakeProcess(), copies = new ModuleCopies(), server = serve(release);
+    const { vm } = fakeVM(process.handle, copies);
+    // The store answers that it holds everything, then refuses the start that supplies nothing; the retry supplies all.
+    const owned = owner.modules.getMockImplementation()?.(vm);
+    if (owned === undefined) throw new Error("no owner");
+    let asked = 0;
+    owner.modules.mockImplementation(() => ({ ...owned, missing: pins => Promise.resolve(++asked === 1 ? [] : copies.missing(pins)) }));
+    await expect(spawnModule(vm, handleFor(release))).resolves.toBe(process.handle);
+    expect(asked).toBe(2);
+    expect(server.fetched).toHaveLength(release.served.size);
   });
 });

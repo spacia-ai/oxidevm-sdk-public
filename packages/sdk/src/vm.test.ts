@@ -49,6 +49,7 @@ vi.mock("./engine-assets.js", async importOriginal => ({
   loadEngineAssets: (): Promise<LoadedEngineAssets> => Promise.resolve({
     urls: new Map(["oxidevm_core.wasm", "oxidevm_core_shared.wasm", "oxidevm_netstack.wasm", "oxidevm_userspace.wasm"].map(name => [name, `blob:${name}`])),
     compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))),
+    lazy: () => Promise.reject(new Error("unused")),
     dispose: () => { fake.assetsDisposed += 1; },
   }),
 }));

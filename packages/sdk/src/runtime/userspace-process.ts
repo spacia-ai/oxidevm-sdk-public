@@ -9,7 +9,8 @@ import {
   userspaceResponseDecoders,
 } from "./userspace-protocol.js";
 import type { AccelerationNotice } from "./js-process/late-failure.js";
-import type { RunnerHostLaunch } from "./js-process/launch.js";
+import type { CopyKey, ModulePin } from "./protocol/userspace-module-files.js";
+import type { ModuleStart } from "./vm-types.js";
 import type { ModuleCommandsRequest, ModuleCommandsResult } from "./protocol/userspace-module-commands.js";
 import type { UserspaceSyscallTraceSnapshot } from "./userspace-abi.js";
 import type { ListeningPortsRead } from "./listening-ports.js";
@@ -20,10 +21,14 @@ import { controlResponseDecoders, PROTOCOL_VERSION, type ControlOperations } fro
 import type {NativeSpawnResult} from "./userspace-protocol.js";
 import { WorkerClient, workerClientForPort } from "./worker-client.js";
 
-/** A JS process for the Userspace worker to admit. `launch` is the module runner's private start input (ADR 0027). */
+/** A JS process for the Userspace worker to admit. */
 export interface JSProcessStart {
   readonly worker: string; readonly args: readonly string[]; readonly env: Readonly<Record<string, string>>; readonly cwd: string;
-  readonly terminal?: UserspaceTerminalSize; readonly signal?: AbortSignal; readonly launch?: RunnerHostLaunch;
+  readonly terminal?: UserspaceTerminalSize; readonly signal?: AbortSignal;
+}
+/** `spawnModule`'s start (ADR 0028): the Userspace worker chooses the runner and builds its launch from its copies. */
+export interface ModuleProcessStart extends ModuleStart {
+  readonly args: readonly string[]; readonly env: Readonly<Record<string, string>>; readonly cwd: string; readonly signal?: AbortSignal;
 }
 
 export class UserspaceProcessBackend {
@@ -130,8 +135,29 @@ export class UserspaceProcessBackend {
   }
 
   spawnJS(rootfs: PreparedUserspaceRootfs, start: JSProcessStart): Promise<ProcessHandle & { readonly pid: number }> {
-    const metadata = rootfs.metadata.slice(), { terminal, launch } = start;
-    return this.#spawn(start.signal, port => this.#client.request("spawn-js", { rootTreeSha256: rootfs.rootTreeSha256, workspaceBaseSha256: rootfs.workspaceBaseSha256 ?? rootfs.rootTreeSha256, cpuProfile: rootfs.cpuProfile, worker: start.worker, arguments: start.args, environment: encodeEnvironment(start.env), cwd: start.cwd, rootfs: metadata, port, ...(terminal === undefined ? {} : { terminal }), ...(launch === undefined ? {} : { launch }) }, { transfer: [metadata.buffer, port] }), terminal !== undefined);
+    const metadata = rootfs.metadata.slice(), { terminal } = start;
+    return this.#spawn(start.signal, port => this.#client.request("spawn-js", { rootTreeSha256: rootfs.rootTreeSha256, workspaceBaseSha256: rootfs.workspaceBaseSha256 ?? rootfs.rootTreeSha256, cpuProfile: rootfs.cpuProfile, worker: start.worker, arguments: start.args, environment: encodeEnvironment(start.env), cwd: start.cwd, rootfs: metadata, port, ...(terminal === undefined ? {} : { terminal }) }, { transfer: [metadata.buffer, port] }), terminal !== undefined);
+  }
+
+  spawnModule(rootfs: PreparedUserspaceRootfs, start: ModuleProcessStart): Promise<ProcessHandle & { readonly pid: number }> {
+    const metadata = rootfs.metadata.slice();
+    return this.#spawn(start.signal, port => this.#client.request("spawn-module", { rootTreeSha256: rootfs.rootTreeSha256, workspaceBaseSha256: rootfs.workspaceBaseSha256 ?? rootfs.rootTreeSha256, cpuProfile: rootfs.cpuProfile, descriptor: start.descriptor, files: start.files, arguments: start.args, environment: encodeEnvironment(start.env), cwd: start.cwd, rootfs: metadata, port }, { transfer: [metadata.buffer, port] }), false);
+  }
+
+  async attachModuleFrame(port: MessagePort): Promise<void> {
+    if (this.#disposed) throw new VMError("PROTOCOL_ERROR", "Userspace backend is disposed");
+    await this.#client.request("attach-module-frame", { port }, { transfer: [port] });
+  }
+
+  async detachModuleFrame(): Promise<void> {
+    if (this.#disposed) throw new VMError("PROTOCOL_ERROR", "Userspace backend is disposed");
+    await this.#client.request("detach-module-frame", undefined);
+  }
+
+  /** ADR 0028: the keys of `pins` the VM's verified-copy store lacks. */
+  async moduleFiles(pins: readonly ModulePin[], signal?: AbortSignal): Promise<readonly CopyKey[]> {
+    if (this.#disposed) throw new VMError("PROTOCOL_ERROR", "Userspace backend is disposed");
+    return (await this.#client.request("module-files", { pins: pins.map(pin => ({ sha256: pin.sha256, bytes: pin.bytes })) }, { signal })).missing;
   }
 
   async #spawn(

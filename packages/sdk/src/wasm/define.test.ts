@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ProcessSignals, SignalTrap, TrappableSignal } from "./capabilities.js";
+import type { NetConnectOptions, NetHost, ProcessSignals, RealtimeArrival, SignalTrap, TrappableSignal } from "./capabilities.js";
+import type { RealtimeSignalNumber, SignalName } from "../runtime/process-signals.js";
 import { defineModule } from "./define.js";
 import type { CommandIO, Invocation, Terminals } from "./define.js";
 import { moduleHandle } from "./handle.js";
@@ -63,6 +64,34 @@ const commanded = defineModule({
           break;
         }
         await trap.untrap();
+        // Real-time signals by name or number: a standard signal yields its name, a real-time one its arrival.
+        const mixed = await signals.trap(["SIGINT", "SIGRTMIN+1", 40]);
+        const listed: readonly (TrappableSignal | RealtimeSignalNumber)[] = mixed.signals;
+        for await (const arrival of mixed) {
+          if (typeof arrival === "string") {
+            const standard: "SIGINT" = arrival;
+            // @ts-expect-error a standard signal carries no value; only a real-time arrival does
+            void arrival.value;
+            void standard;
+          } else {
+            const queued: RealtimeArrival = arrival;
+            const value: bigint = arrival.value;
+            void queued; void value;
+          }
+          break;
+        }
+        // @ts-expect-error SIGKILL can never be caught
+        await signals.trap(["SIGKILL"]);
+        // @ts-expect-error SIGSTOP can never be caught
+        await signals.trap(["SIGSTOP"]);
+        // @ts-expect-error SIGRTMIN+30 is past SIGRTMAX (64)
+        await signals.trap(["SIGRTMIN+30"]);
+        // @ts-expect-error SIGKILL can never be blocked
+        await signals.block(["SIGKILL"]);
+        const previous: ReadonlySet<SignalName> = await signals.block(["SIGINT", "SIGRTMAX"]);
+        await signals.unblock([...previous].filter(name => name === "SIGINT"));
+        const waiting: ReadonlySet<SignalName> = await signals.pending();
+        void listed; void waiting;
         if (terminals.stdin && io.args.length === 0) await signals.raise("SIGINT");
         return usage.length + interrupt.length + trapped.length + (name === undefined ? 0 : 1);
       },
@@ -122,8 +151,32 @@ export function typeContract(): void {
       void host.files;
       // @ts-expect-error artifact names are checked against the manifest
       void host.artifacts.url("unknown.wasm");
+      // @ts-expect-error no reach token (net.vm or net.internet) was declared, so host.net does not exist
+      void host.net;
       return { main: () => 0 };
     },
+  });
+  // A reach token gives host.net; net.internet may disclose its hosts and purpose (engine ADR 0029).
+  defineModule({
+    manifest: {
+      id: "fetcher", version: "1.0.0", abi: "raw", artifacts: [], process: { kind: "command" }, requires: { host: ["net.internet", "sockets.connect"] },
+      network: { hosts: ["pypi.org"], purpose: "Downloads packages" }, license: { spdx: "MIT" },
+    },
+    adapter: host => {
+      const net: NetHost = host.net;
+      const options: NetConnectOptions = { host: "pypi.org", port: 443, tls: true, alpn: ["http/1.1"] };
+      void net.connect(options);
+      void host.sockets;
+      return { main: () => 0 };
+    },
+  });
+  defineModule({
+    manifest: {
+      id: "vmonly", version: "1.0.0", abi: "raw", artifacts: [], process: { kind: "command" }, requires: { host: ["net.vm"] },
+      // @ts-expect-error only a module with net.internet discloses network use
+      network: { hosts: ["pypi.org"] }, license: { spdx: "MIT" },
+    },
+    adapter: () => ({ main: () => 0 }),
   });
   defineModule({
     manifest: {

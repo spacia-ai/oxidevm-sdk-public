@@ -1,10 +1,10 @@
 import type { RuntimeMode, SHA256, VMErrorCode } from "@oxidevm/sdk";
-import type { ImageDistribution, ImageInspection, ImagePackReport, ImageTestReport,SnapshotBuildResult,SnapshotTestReport,SnapshotInspectResult, WasmAddResult, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult, WasmTestReport } from "@oxidevm/sdk/image-builder";
+import type { ImageDistribution, ImageInspection, ImagePackReport, ImageTestReport, ProjectLockChange,SnapshotBuildResult,SnapshotTestReport,SnapshotInspectResult, WasmAddResult, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult, WasmTestReport } from "@oxidevm/sdk/image-builder";
 
 export type DoctorCheck =
   | "secure-context" | "cross-origin-isolation" | "wasm-features" | "worker-load"
   | "asset-integrity" | "wasm-mime" | "content-security-policy" | "storage"
-  | "preview-origin";
+  | "preview-origin" | "lock";
 
 export interface DoctorReport {
   readonly result: "passed" | "failed";
@@ -12,7 +12,7 @@ export interface DoctorReport {
   readonly checks: readonly (
     | { readonly check: DoctorCheck; readonly status: "passed" }
     | { readonly check: DoctorCheck; readonly status: "failed"; readonly message: string }
-    | { readonly check: "preview-origin"; readonly status: "not-configured" }
+    | { readonly check: "preview-origin" | "lock"; readonly status: "not-configured" }
   )[];
 }
 
@@ -21,6 +21,8 @@ export interface WasmInitResult {
   readonly id: string;
   readonly kind: "command" | "service";
   readonly abi: string;
+  /** The network reach module.ts declares (engine ADR 0029): `wasm init --network`. */
+  readonly network: "none" | "vm" | "internet";
   /** Every file created, relative to the directory and sorted. */
   readonly files: readonly string[];
   /**
@@ -53,7 +55,7 @@ export interface CliResultMap {
   readonly "snapshot test":SnapshotTestReport;
   readonly "snapshot inspect":SnapshotInspectResult;
   readonly init: { readonly directory: string; readonly mode: RuntimeMode; readonly assets: "installed" | "skipped" };
-  readonly "assets install": { readonly publicDir: string; readonly files: number; readonly referencePath: string | null };
+  readonly "assets install": { readonly publicDir: string; readonly files: number; readonly referencePath: string | null; readonly lock: ProjectLockChange };
   readonly doctor: DoctorReport;
   readonly "image init": { readonly directory: string; readonly recipePath: string; readonly mode: RuntimeMode };
   readonly "image keygen": { readonly privateKeyPath: string; readonly publicKeyPath: string; readonly keyId: string };
@@ -73,13 +75,13 @@ export interface CliResultMap {
 export type CliCommand = keyof CliResultMap;
 export type CliReport = {
   readonly [K in CliCommand]: {
-    readonly schemaVersion: 2;
+    readonly schemaVersion: 3;
     readonly kind: "result";
     readonly command: K;
     readonly result: CliResultMap[K];
   };
 }[CliCommand] | {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly kind: "error";
   readonly command: CliCommand | null;
   readonly error: {

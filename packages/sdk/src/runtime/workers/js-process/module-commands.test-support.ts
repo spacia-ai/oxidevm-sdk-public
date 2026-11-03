@@ -4,6 +4,9 @@ import type { ModuleCommandEntry } from "../../userspace-module-commands-abi.js"
 import { encodeLaunchArgument } from "../../../wasm/runner/descriptor.js";
 import { buildRelease, COMMAND_DECLARATION, type Release } from "../../../wasm/runner/fixtures.test-support.js";
 import type { Fetcher } from "../../../wasm/runner/pinned.js";
+import { copyKey, type CopyKey } from "../../protocol/userspace-module-files.js";
+import { ModuleCopies } from "./module-copies.js";
+import type { LeaseLocks } from "./module-leases.js";
 import { ModuleCommands, type ModuleCommandsPorts, type ModuleCommandTableRuntime } from "./module-commands.js";
 
 /** The smallest WebAssembly core module: magic and version 1. */
@@ -19,9 +22,15 @@ export function commandRelease(commands: readonly string[] = ["alpha", "beta"], 
   });
 }
 
-/** The page's enable request for `release`, all of its commands unless named. */
-export function enableRequest(release: Release, commands: readonly string[] = release.manifest.commands ?? [], concurrency = 4) {
-  return { operation: "enable", descriptor: encodeLaunchArgument(release.descriptor), commands, concurrency } as const;
+/** Every pinned file of `release` as the page read it from its server (tampered bytes included), by key. */
+export function suppliedOf(release: Release): Readonly<Record<CopyKey, Blob>> {
+  const { descriptor, served } = release, pins = [descriptor.adapter, ...Object.values(descriptor.artifacts)];
+  return Object.fromEntries(pins.map(pin => [copyKey(pin), new Blob([served.get(pin.url) ?? new Uint8Array()])]));
+}
+
+/** The page's enable request for `release`, all of its commands unless named, supplying every file unless told. */
+export function enableRequest(release: Release, commands: readonly string[] = release.manifest.commands ?? [], concurrency = 4, files: Readonly<Record<CopyKey, Blob>> = suppliedOf(release)) {
+  return { operation: "enable", descriptor: encodeLaunchArgument(release.descriptor), commands, concurrency, files } as const;
 }
 
 /** A server for the release's files that counts fetches per URL; `served` may be changed later to model a new deployment. */
@@ -54,8 +63,12 @@ export function fakeTable(occupied: Iterable<string> = []) {
   const runtime: ModuleCommandTableRuntime = {
     applyTable(request) {
       const r = new Reader(request);
-      if (new TextDecoder().decode(r.raw(4)) !== "OXMC" || r.u32() !== 1) throw new Error("not an OXMC v1 table");
-      const entries = Array.from({ length: r.u32() }, (): ModuleCommandEntry => ({ registration: r.u32(), concurrency: r.u32(), name: new TextDecoder().decode(r.raw(r.u32())) }));
+      if (new TextDecoder().decode(r.raw(4)) !== "OXMC" || r.u32() !== 2) throw new Error("not an OXMC v2 table");
+      const entries = Array.from({ length: r.u32() }, (): ModuleCommandEntry => {
+        const registration = r.u32(), concurrency = r.u32(), reach = (["none", "vm", "internet"] as const)[r.u8()];
+        if (reach === undefined) throw new Error("unknown OXMC reach");
+        return { registration, concurrency, reach, name: new TextDecoder().decode(r.raw(r.u32())) };
+      });
       r.end();
       tables.push(entries);
       if (state.refuse !== undefined) return answer(state.refuse);
@@ -73,11 +86,11 @@ export function fakeTable(occupied: Iterable<string> = []) {
 }
 
 /** An owner with a mounted runtime in a cross-origin isolated page, its ports spied on. */
-export function owner(fetch: Fetcher, table = fakeTable(), overrides: Partial<ModuleCommandsPorts> = {}) {
+export function owner(table = fakeTable(), overrides: Partial<ModuleCommandsPorts> = {}) {
   const ports = {
     runtime: vi.fn((): ModuleCommandTableRuntime | undefined => table.runtime),
     environment: vi.fn(() => ({ crossOriginIsolated: true, initialUser: "user" as const })),
-    fetch,
+    copies: new ModuleCopies(),
     changed: vi.fn(),
     ...overrides,
   } satisfies ModuleCommandsPorts;
@@ -86,3 +99,32 @@ export function owner(fetch: Fetcher, table = fakeTable(), overrides: Partial<Mo
 
 /** Runs `request` without cancellation. */
 export const live = (): AbortSignal => new AbortController().signal;
+
+/** `blob`, whose bytes are read only once `gate` settles; `read` is called when the store starts reading it. */
+export function gatedBlob(blob: Blob, gate: Promise<unknown>, read: () => void = () => undefined): Blob {
+  const gated = new Blob([blob]);
+  Reflect.set(gated, "arrayBuffer", async () => { read(); await gate; return blob.arrayBuffer(); });
+  return gated;
+}
+
+/** The supplied files of `release` with the adapter's read held until `gate` settles. */
+export function gatedAdapter(release: Release, gate: Promise<unknown>, read?: () => void): Readonly<Record<CopyKey, Blob>> {
+  const files = { ...suppliedOf(release) }, key = copyKey(release.descriptor.adapter);
+  files[key] = gatedBlob(files[key] ?? new Blob(), gate, read);
+  return files;
+}
+
+/** Web Locks with `ifAvailable` semantics: a held name yields `null` to the callback. */
+export function fakeLocks(held = new Set<string>()): { readonly held: Set<string>; readonly locks: LeaseLocks } {
+  const locks: LeaseLocks = {
+    request: async (name: string, ...rest: unknown[]): Promise<unknown> => {
+      const callback = rest.at(-1);
+      if (typeof callback !== "function") throw new Error("a lock callback is required");
+      if (held.has(name)) return Reflect.apply(callback, undefined, [null]);
+      held.add(name);
+      try { return await Reflect.apply(callback, undefined, [{ name, mode: "exclusive" }]); } finally { held.delete(name); }
+    },
+  };
+  return { held, locks };
+}
+

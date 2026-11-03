@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
+import { record, string } from "../runtime/decode.js";
 import { VMError } from "../runtime/errors.js";
 import { MAX_ARTIFACT_BYTES } from "../wasm/manifest-parts.js";
 import {isolatedHeaders,serveStaticFile} from "./static-files.js";
@@ -20,8 +21,35 @@ interface ImageTestServingOptions {
   readonly entry?: "client.js" | "wasm-client.js";
   /** A built module release served at /module/, and again at /module-tampered/ with the first byte of `tamper` inverted. */
   readonly module?: { readonly directory: string; readonly tamper: string };
+  /**
+   * The SDK's built module frame (engine ADR 0028), served at `/oxidevm/runtime/module-frame/`, where the page's
+   * `<runtime.baseUrl>module-frame/` resolves, with the headers its `frame.json` names instead of the page's.
+   */
+  readonly moduleFrameDir?: string;
 }
 export interface ImageTestServer { readonly origin: string; close(): Promise<void> }
+
+const MODULE_FRAME_PREFIX = "/oxidevm/runtime/module-frame/", MODULE_FRAME_FILES: ReadonlySet<string> = new Set(["index.html", "broker.js", "runner.js"]);
+const MAX_FRAME_JSON_BYTES = 64 * 1024, HEADER_NAME = /^[A-Za-z][A-Za-z0-9-]{0,63}$/u, MAX_FRAME_HEADERS = 16;
+
+/** The response headers a built module frame directory must be served with, from its `frame.json`. */
+async function moduleFrameHeaders(directory: string): Promise<Readonly<Record<string, string>>> {
+  try {
+    const bytes = await readFile(join(directory, "frame.json"));
+    if (bytes.length > MAX_FRAME_JSON_BYTES) throw new VMError("CORE_LOAD_FAILED", "module frame frame.json is too large");
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    const listed = Object.entries(record(record(parsed, "module frame frame.json")["headers"], "module frame headers"));
+    if (listed.length === 0 || listed.length > MAX_FRAME_HEADERS) throw new VMError("CORE_LOAD_FAILED", "module frame frame.json names no headers or too many");
+    return Object.fromEntries(listed.map(([name, value]) => {
+      const text = string(value, `module frame header ${name}`);
+      if (!HEADER_NAME.test(name) || /[\r\n]/u.test(text) || text.length > 4096) throw new VMError("CORE_LOAD_FAILED", `module frame header ${name} is invalid`);
+      return [name, text];
+    }));
+  } catch (error: unknown) {
+    if (error instanceof VMError && error.code === "CORE_LOAD_FAILED") throw error;
+    throw new VMError("CORE_LOAD_FAILED", `the module frame at ${directory} has no valid frame.json: build the SDK`, { reason: "module-frame-asset", cause: error instanceof Error ? error.message : "unknown" });
+  }
+}
 
 export async function startImageTestServer(options: ImageTestServingOptions): Promise<ImageTestServer> {
   const { bundleDir, manifestPath } = options;
@@ -32,6 +60,7 @@ export async function startImageTestServer(options: ImageTestServingOptions): Pr
   const entry = options.entry ?? "client.js", module = options.module;
   const compliance = options.engineCompliance;
   if (compliance !== undefined && !/^[a-f0-9]{64}$/u.test(compliance.sha256)) throw new VMError("PROTOCOL_ERROR", "invalid engine compliance serving revision");
+  const frameDir = options.moduleFrameDir, frameHeaders = frameDir === undefined ? undefined : await moduleFrameHeaders(frameDir);
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     isolatedHeaders(response);
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -44,6 +73,14 @@ export async function startImageTestServer(options: ImageTestServingOptions): Pr
       bytes[0] = (bytes[0] ?? 0) ^ 0xff;
       response.setHeader("Content-Type", "application/octet-stream");
       response.end(request.method === "HEAD" ? undefined : bytes); return;
+    }
+    if (frameDir !== undefined && frameHeaders !== undefined && url.pathname.startsWith(MODULE_FRAME_PREFIX)) {
+      const name = decodeURIComponent(url.pathname.slice(MODULE_FRAME_PREFIX.length)) || "index.html";
+      if (!MODULE_FRAME_FILES.has(name)) { response.writeHead(404); response.end(); return; }
+      // The frame's own headers (its sandboxing CSP, CORP cross-origin), never the page's opener policy.
+      response.removeHeader("Cross-Origin-Opener-Policy");
+      for (const [header, value] of Object.entries(frameHeaders)) response.setHeader(header, value);
+      await serveStaticFile(request, response, frameDir, name); return;
     }
     const compliancePrefix = compliance === undefined ? undefined : `/oxidevm/runtime/compliance/${compliance.sha256}/`;
     const route = compliancePrefix !== undefined && compliance !== undefined && url.pathname.startsWith(compliancePrefix) ? { prefix: compliancePrefix, directory: compliance.directory }

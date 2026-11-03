@@ -1,8 +1,8 @@
 import { exactKeys, record } from "../runtime/decode.js";
 import { canonicalBytes, choice, decoding, invalid, parseJSON, plainStrings, sameBytes, text } from "./decode-support.js";
 import {
-  decodeCommands, decodeDeclaredArtifacts, decodeExpose, decodeGuestFiles, decodeLicense, decodeLimits, decodeMounts, decodeOptions, decodePin,
-  decodeProcess, decodeRequires, decodeResolvedArtifacts, decodeState, decodeUpstream, rejectOwnCommands,
+  decodeCommands, decodeDeclaredArtifacts, decodeExpose, decodeGuestFiles, decodeLicense, decodeLimits, decodeMounts, decodeNetwork, decodeOptions, decodePin,
+  decodeProcess, decodeRequires, decodeResolvedArtifacts, decodeState, decodeUpstream, rejectOwnCommands, requireDeclaredReach,
 } from "./manifest-parts.js";
 import type { AbiKind, ArtifactDecl, CommonDecl, EndpointDecl, ModuleDecl, ResolvedArtifact, ResolvedManifest, ServiceDecl } from "./manifest-types.js";
 
@@ -10,7 +10,7 @@ export const MAX_MANIFEST_BYTES = 256 * 1024;
 const ID = /^[a-z][a-z0-9-]{0,62}$/u;
 const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 const ABIS = ["wasi", "component", "emscripten", "bindgen", "raw"] as const satisfies readonly AbiKind[];
-const OPTIONAL = ["commands", "expose", "mounts", "limits", "state", "guestFiles", "options", "upstream"] as const;
+const OPTIONAL = ["commands", "expose", "network", "mounts", "limits", "state", "guestFiles", "options", "upstream"] as const;
 
 /** The discriminant is nested (`process.kind`), so TypeScript cannot narrow a ModuleDecl by it; this guard can. */
 export function isServiceDecl(manifest: ModuleDecl): manifest is ServiceDecl {
@@ -45,13 +45,16 @@ function decodeBody(input: Readonly<Record<string, unknown>>, artifactNames: Rea
   const guestFiles = input["guestFiles"] === undefined ? undefined : decodeGuestFiles(input["guestFiles"], artifactNames);
   const options = input["options"] === undefined ? undefined : decodeOptions(input["options"]);
   const upstream = input["upstream"] === undefined ? undefined : decodeUpstream(input["upstream"]);
+  const requires = decodeRequires(input["requires"]);
+  const network = input["network"] === undefined ? undefined : decodeNetwork(input["network"], requires.host);
   const decoded: Decoded = {
     head: { id: text(input["id"], "id", ID, 63), version: text(input["version"], "version", SEMVER, 128), abi: choice(input["abi"], "abi", ABIS) },
     process,
     commands,
     expose,
     tail: {
-      requires: decodeRequires(input["requires"]),
+      requires,
+      ...(network === undefined ? {} : { network }),
       ...(mounts === undefined ? {} : { mounts }),
       ...(limits === undefined ? {} : { limits }),
       ...(state === undefined ? {} : { state }),
@@ -86,6 +89,7 @@ export function decodeDeclaration(value: unknown): ModuleDecl {
     const input = record(value, "module declaration");
     exactKeys(input, ["id", "version", "abi", "artifacts", "process", "requires", "license"], OPTIONAL);
     const artifacts = decodeDeclaredArtifacts(input["artifacts"]);
+    requireDeclaredReach(decodeRequires(input["requires"]).host);
     return shapeDeclared(decodeBody(input, new Set(artifacts.map(artifact => artifact.name))), artifacts);
   });
 }

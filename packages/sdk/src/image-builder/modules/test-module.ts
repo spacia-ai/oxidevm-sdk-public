@@ -73,6 +73,8 @@ export async function testModule(directory: string, options: ModuleTestOptions):
       ...(served === undefined ? {} : { bundleDir: served.bundle, manifestPath: served.base.pathname }),
       engineDir, ...(engineCompliance === undefined ? {} : { engineCompliance }),
       browserDir: fileURLToPath(new URL("../../../assets/qualification/", import.meta.url)), entry: "wasm-client.js",
+      // Every property that starts the module needs the module frame (engine ADR 0028) beside the runtime.
+      moduleFrameDir: fileURLToPath(new URL("../../../assets/module-frame/", import.meta.url)),
       module: { directory: release.directory, tamper: "adapter.mjs" },
       configure: origin => ({
         image: { manifestUrl, manifestSHA256: image.manifestSHA256, trust: image.trust },

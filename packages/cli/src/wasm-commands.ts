@@ -44,14 +44,14 @@ export async function runWasmCommand(invocation: WasmCLIInvocation, io: CLIEnvir
     case "wasm inspect": {
       const file = resolve(io.directory, invocation.file);
       const report = await inspectWasm(new Uint8Array(await readFile(file)));
-      return { schemaVersion: 2, kind: "result", command, result: { file: invocation.file, ...report } };
+      return { schemaVersion: 3, kind: "result", command, result: { file: invocation.file, ...report } };
     }
-    case "wasm build": return { schemaVersion: 2, kind: "result", command, result: await buildFor(invocation, io, invocation.check) };
+    case "wasm build": return { schemaVersion: 3, kind: "result", command, result: await buildFor(invocation, io, invocation.check) };
     case "wasm release": {
       const build = await buildFor(invocation, io, false);
-      return { schemaVersion: 2, kind: "result", command, result: { build, ...releasePlan(build, { directory: build.directory ?? "dist", ...(invocation.repo === undefined ? {} : { repo: invocation.repo }) }) } };
+      return { schemaVersion: 3, kind: "result", command, result: { build, ...releasePlan(build, { directory: build.directory ?? "dist", ...(invocation.repo === undefined ? {} : { repo: invocation.repo }) }) } };
     }
-    case "wasm init": return { schemaVersion: 2, kind: "result", command, result: await initializeModule(resolve(io.directory, invocation.directory), { kind: invocation.moduleKind, ...(invocation.id === undefined ? {} : { id: invocation.id }), ...(invocation.from === undefined ? {} : { from: resolve(io.directory, invocation.from) }) }) };
+    case "wasm init": return { schemaVersion: 3, kind: "result", command, result: await initializeModule(resolve(io.directory, invocation.directory), { kind: invocation.moduleKind, network: invocation.network, ...(invocation.id === undefined ? {} : { id: invocation.id }), ...(invocation.from === undefined ? {} : { from: resolve(io.directory, invocation.from) }) }) };
     case "wasm test": {
       const projectDir = resolve(io.directory, invocation.project);
       const module = resolve(projectDir, invocation.module ?? "dist");
@@ -61,13 +61,13 @@ export async function runWasmCommand(invocation: WasmCLIInvocation, io: CLIEnvir
       if (image === undefined) throw new VMError("INVALID_ARGUMENT", "this CLI pins no public starter image; pass --image <bundle> --image-trust <A.public.json>", { reason: "wasm-test-image" });
       const report = await testModule(module, { image, args: invocation.args, options: invocation.options, browser: invocation.browser, signal: io.signal,
         ...(invocation.engineDir === undefined ? {} : { engineDir: resolve(io.directory, invocation.engineDir) }), ...(invocation.timeoutMs === undefined ? {} : { commandMs: invocation.timeoutMs }) });
-      return { schemaVersion: 2, kind: "result", command, result: report };
+      return { schemaVersion: 3, kind: "result", command, result: report };
     }
-    case "wasm doctor": return { schemaVersion: 2, kind: "result", command, result: await doctorModules(resolve(io.directory, invocation.project), { signal: io.signal }) };
+    case "wasm doctor": return { schemaVersion: 3, kind: "result", command, result: await doctorModules(resolve(io.directory, invocation.project), { signal: io.signal }) };
     case "wasm stage": {
       const projectDir = resolve(io.directory, invocation.project);
       const result = await stageProject(projectDir, await context(projectDir, invocation, io));
-      return { schemaVersion: 2, kind: "result", command, result: { modules: result.staged.map(entry => ({ id: entry.id, release: entry.release, rebuilt: entry.rebuilt })), vendored: result.vendored, removed: result.removed, generatedFile: invocation.project === "." ? result.generatedFile.replace(`${projectDir}/`, "") : result.generatedFile } };
+      return { schemaVersion: 3, kind: "result", command, result: { modules: result.staged.map(entry => ({ id: entry.id, release: entry.release, rebuilt: entry.rebuilt })), vendored: result.vendored, removed: result.removed, generatedFile: invocation.project === "." ? result.generatedFile.replace(`${projectDir}/`, "") : result.generatedFile } };
     }
     case "wasm add": {
       const projectDir = resolve(io.directory, invocation.project), base = await context(projectDir, invocation, io);
@@ -75,11 +75,14 @@ export async function runWasmCommand(invocation: WasmCLIInvocation, io: CLIEnvir
       const consent = await consentFor(invocation, preview, io);
       const added = await commitAdd(projectDir, preview, base);
       const { card } = preview;
-      return { schemaVersion: 2, kind: "result", command, result: {
+      return { schemaVersion: 3, kind: "result", command, result: {
         id: card.id, version: card.version, source: card.source, release: card.release, status: added.status, consent,
         license: { spdx: card.license.spdx, copyleft: card.license.copyleft }, capabilities: card.capabilities,
         // Only a module that declares commands adds the key, so other results keep their shape.
-        ...(card.commands.length === 0 ? {} : { commands: card.commands.map(command => command.name) }), added: preview.added, removed: preview.removed,
+        ...(card.commands.length === 0 ? {} : { commands: card.commands.map(command => command.name) }),
+        // Likewise only a module with a network reach adds `network` (engine ADR 0029).
+        ...(card.network.reach === "none" ? {} : { network: { reach: card.network.reach, hosts: card.network.hosts, ...(card.network.purpose === undefined ? {} : { purpose: card.network.purpose }) } }),
+        added: preview.added, removed: preview.removed,
         generatedFile: added.stage.generatedFile.replace(`${projectDir}/`, ""),
       } };
     }

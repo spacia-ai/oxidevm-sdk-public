@@ -9,18 +9,29 @@ export const RUNNER_LAUNCH_DESCRIPTOR_BYTES = 512 * 1024;
 const MAX_ARTIFACTS = 64;
 
 /**
- * What the SDK's module runner starts with (engine ADR 0027), in its start message (JS process protocol 4) rather than
- * the process's argv, so `/proc/<pid>/cmdline` shows only the caller's arguments. Only the runner's bootstrap accepts
- * it; a worker served with `serveProcess` refuses it. Internal: never a public type.
+ * What the SDK's module runner starts with (engine ADR 0027, amended by ADR 0028), in its start message (JS process
+ * protocol 5) rather than the process's argv, so `/proc/<pid>/cmdline` shows only the caller's arguments. Only the
+ * runner's bootstrap accepts it; a worker served with `serveProcess` refuses it. Internal: never a public type.
  *
- * `host` is `spawnModule`'s start: the runner fetches and checks every pinned file. `module-command` is a program in the
- * VM that ran an enabled command: the Userspace worker's registration owner hands over the copies it verified when the
- * commands were turned on, so this run fetches and hashes nothing.
+ * Both kinds carry the copies the VM's verified-copy store checked before the process existed, so the runner fetches
+ * and hashes nothing. `host` is `spawnModule`'s start. `module-command` is a program in the VM that ran an enabled
+ * command, held by the command's registration.
  */
-export interface RunnerHostLaunch { readonly kind: "host"; readonly descriptor: string }
 /** One verified file: its bytes, and its compiled module when it is a WebAssembly core module that compiles. */
 export interface RunnerVerifiedFile { readonly blob: Blob; readonly module: WebAssembly.Module | null }
-export interface RunnerCommandLaunch {
+/** The verified copies of a release: the adapter bundle and every artifact by its declared name. */
+export interface RunnerCopies {
+  readonly adapter: Blob;
+  readonly artifacts: Readonly<Record<string, RunnerVerifiedFile>>;
+  /** The engine's TLS module for a module with a network reach (engine ADR 0029), compiled by the broker; else null. */
+  readonly tls: RunnerVerifiedFile | null;
+}
+export interface RunnerHostLaunch extends RunnerCopies {
+  readonly kind: "host";
+  /** `spawnModule`'s launch description, with the consumer's options resolved. */
+  readonly descriptor: string;
+}
+export interface RunnerCommandLaunch extends RunnerCopies {
   readonly kind: "module-command";
   /** The enabled name the program ran and its stub's canonical path. */
   readonly invocation: { readonly name: string; readonly path: string };
@@ -28,8 +39,6 @@ export interface RunnerCommandLaunch {
   readonly terminals: ModuleCommandTerminals;
   /** The application's launch description, exactly as it turned the commands on. */
   readonly descriptor: string;
-  readonly adapter: Blob;
-  readonly artifacts: Readonly<Record<string, RunnerVerifiedFile>>;
 }
 export type RunnerLaunch = RunnerHostLaunch | RunnerCommandLaunch;
 
@@ -39,13 +48,6 @@ function descriptorText(value: unknown): string {
   return descriptor;
 }
 
-/** What a page may ask the Userspace worker to start a runner with: `spawnModule`'s description, nothing else. */
-export function decodeRunnerHostLaunch(value: unknown): RunnerHostLaunch {
-  const launch = record(value, "module runner launch"); exactKeys(launch, ["kind", "descriptor"]);
-  if (launch["kind"] !== "host") protocol("Unknown module runner launch");
-  return { kind: "host", descriptor: descriptorText(launch["descriptor"]) };
-}
-
 function verifiedFile(value: unknown): RunnerVerifiedFile {
   const file = record(value, "verified module file"); exactKeys(file, ["blob", "module"]);
   const blob = file["blob"], module = file["module"];
@@ -53,21 +55,28 @@ function verifiedFile(value: unknown): RunnerVerifiedFile {
   return { blob, module };
 }
 
+function copies(launch: Readonly<Record<string, unknown>>): RunnerCopies {
+  const adapter = launch["adapter"], files = record(launch["artifacts"], "verified module files");
+  if (!(adapter instanceof Blob) || Object.keys(files).length > MAX_ARTIFACTS) protocol("Invalid verified module files");
+  return { adapter, artifacts: Object.fromEntries(Object.entries(files).map(([artifact, file]) => [artifact, verifiedFile(file)])), tls: launch["tls"] === null ? null : verifiedFile(launch["tls"]) };
+}
+
 /** Checks the transport shape of the runner's launch; the runner checks the description and the copies against each other. */
 export function decodeRunnerLaunch(value: unknown): RunnerLaunch {
   const launch = record(value, "module runner launch");
-  if (launch["kind"] !== "module-command") return decodeRunnerHostLaunch(launch);
-  exactKeys(launch, ["kind", "invocation", "terminals", "descriptor", "adapter", "artifacts"]);
+  if (launch["kind"] === "host") {
+    exactKeys(launch, ["kind", "descriptor", "adapter", "artifacts", "tls"]);
+    return { kind: "host", descriptor: descriptorText(launch["descriptor"]), ...copies(launch) };
+  }
+  if (launch["kind"] !== "module-command") protocol("Unknown module runner launch");
+  exactKeys(launch, ["kind", "invocation", "terminals", "descriptor", "adapter", "artifacts", "tls"]);
   const invocation = record(launch["invocation"], "module command invocation"); exactKeys(invocation, ["name", "path"]);
   const name = string(invocation["name"], "module command name");
   if (!isModuleCommandName(name) || invocation["path"] !== moduleCommandPath(name)) protocol("Invalid module command invocation");
   const terminals = record(launch["terminals"], "module command terminals"); exactKeys(terminals, ["stdin", "stdout", "stderr"]);
-  const adapter = launch["adapter"], files = record(launch["artifacts"], "verified module files");
-  if (!(adapter instanceof Blob) || Object.keys(files).length > MAX_ARTIFACTS) protocol("Invalid verified module files");
   return {
     kind: "module-command", invocation: { name, path: moduleCommandPath(name) },
     terminals: { stdin: boolean(terminals["stdin"], "stdin terminal"), stdout: boolean(terminals["stdout"], "stdout terminal"), stderr: boolean(terminals["stderr"], "stderr terminal") },
-    descriptor: descriptorText(launch["descriptor"]), adapter,
-    artifacts: Object.fromEntries(Object.entries(files).map(([artifact, file]) => [artifact, verifiedFile(file)])),
+    descriptor: descriptorText(launch["descriptor"]), ...copies(launch),
   };
 }

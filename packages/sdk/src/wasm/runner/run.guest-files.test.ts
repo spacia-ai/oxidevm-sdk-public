@@ -1,18 +1,30 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { COMMAND_DECLARATION, buildRelease, type Release } from "./fixtures.test-support.js";
 import { launch, records } from "./harness.test-support.js";
 
 const wasm = Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 0);
 const script = new TextEncoder().encode("print('hello from the module')\n");
 const TARGET = "/workspace/_oxidevm/py/client.py";
-const TEMPORARY = new RegExp(`^${TARGET.replaceAll(".", "\\.")}\\.[0-9a-f-]{36}\\.tmp$`, "u");
+const TEMPORARY = new RegExp(`^${TARGET.replaceAll(".", "\\.")}\\.[0-9a-f]{32}\\.tmp$`, "u");
 
-function release(guestFiles: readonly { readonly artifact: string; readonly to: string; readonly mode?: number }[] = [{ artifact: "client.py", to: TARGET, mode: 0o640 }], tamper: Record<string, Uint8Array<ArrayBuffer>> = {}): Promise<Release> {
-  return buildRelease({ adapter: "export default () => ({ main: () => 0 });", artifacts: { "tool.wasm": wasm, "client.py": script }, declaration: { ...COMMAND_DECLARATION, guestFiles }, tamper });
+function release(guestFiles: readonly { readonly artifact: string; readonly to: string; readonly mode?: number }[] = [{ artifact: "client.py", to: TARGET, mode: 0o640 }]): Promise<Release> {
+  return buildRelease({ adapter: "export default () => ({ main: () => 0 });", artifacts: { "tool.wasm": wasm, "client.py": script }, declaration: { ...COMMAND_DECLARATION, guestFiles } });
 }
 const changes = (operations: readonly string[]): string[] => operations.filter(operation => !operation.startsWith("mkdir"));
 
+afterEach(() => { vi.unstubAllGlobals(); });
+
 describe("guest files", () => {
+  it("writes them in an opaque-origin module worker, which has crypto.getRandomValues but no randomUUID or subtle", async () => {
+    const built = await release();
+    // Chromium's workers of an opaque origin are not secure contexts (engine ADR 0028, WebCrypto).
+    const random = globalThis.crypto;
+    vi.stubGlobal("crypto", { getRandomValues: (array: Uint8Array<ArrayBuffer>) => random.getRandomValues(array) });
+    const running = launch({ release: built });
+    await expect(running.done).resolves.toBe(0);
+    expect(running.linux.written.get(TARGET)).toMatchObject({ bytes: script, mode: 0o640 });
+  });
+
   it("writes each declared artifact to its place with its mode, creating the directories above it", async () => {
     const running = launch({ release: await release() });
     await expect(running.done).resolves.toBe(0);
@@ -70,16 +82,6 @@ describe("guest files", () => {
     await expect(running.done).resolves.toBe(120);
     expect(running.imports.count).toBe(0);
     expect(JSON.stringify(records(running.linux.stderrLines))).toContain(TARGET);
-  });
-
-  it("writes nothing when any pinned file was altered, the guest file itself or another: everything is verified first", async () => {
-    const forgeries: readonly (readonly [string, Uint8Array<ArrayBuffer>])[] = [["client.py", Uint8Array.from(new TextEncoder().encode("print('forged')\n"))], ["tool.wasm", Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 1)]];
-    for (const [name, bytes] of forgeries) {
-      const running = launch({ release: await release(undefined, { [name]: bytes }) });
-      await expect(running.done, name).resolves.toBe(121);
-      expect(running.linux.written.size, name).toBe(0);
-      expect(running.imports.count, name).toBe(0);
-    }
   });
 
   it("does nothing for a module that declares none", async () => {

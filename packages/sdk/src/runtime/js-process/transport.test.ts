@@ -4,6 +4,7 @@ import { JS_MAILBOX_BYTES, JS_PROCESS_PROTOCOL_VERSION, LinuxError, descriptor, 
 import { record, integer } from "../decode.js";
 import { VMError } from "../errors.js";
 import { asyncFiles } from "./files.js";
+import { deliverArrival, signalBuffer, SIGNAL_BUFFER_BYTES, type SignalArrival } from "./signals.js";
 
 it("correlates asynchronous completions and keeps Linux errno distinct from transport failures", async () => {
   const channel = new MessageChannel(), client = new LinuxClient(channel.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES));
@@ -113,8 +114,9 @@ it("rejects a reply from a peer on the previous JS process protocol", async () =
   finally { client.dispose(); channel.port2.close(); }
 });
 
-/** The driver's side of the signal words: what `markSignalPending` does. */
+/** The driver's side of the signal buffer: standard signals without details. */
 function pend(words: Int32Array, ...signals: readonly number[]): void { for (const signal of signals) Atomics.or(words, 0, 1 << (signal - 1)); }
+const signalSignals = (arrivals: readonly SignalArrival[]) => arrivals.map(arrival => arrival.signal);
 /** Resolves once every message posted to the client before it has been delivered: the reply to a later request. */
 async function settle(client: LinuxClient, peer: MessagePort): Promise<void> {
   peer.onmessage = (event: MessageEvent<unknown>) => {
@@ -125,11 +127,11 @@ async function settle(client: LinuxClient, peer: MessagePort): Promise<void> {
 }
 
 it("hands each signal Rust caught to the listener exactly once, lowest first, at once and after each nudge", async () => {
-  const channel = new MessageChannel(), buffer = new SharedArrayBuffer(8), words = new Int32Array(buffer);
+  const channel = new MessageChannel(), buffer = new SharedArrayBuffer(SIGNAL_BUFFER_BYTES), words = new Int32Array(buffer);
   const client = new LinuxClient(channel.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES), buffer), delivered: number[][] = [];
   try {
     pend(words, 15);
-    client.listenForSignals(signals => { delivered.push([...signals]); });
+    client.listenForSignals(arrivals => { delivered.push(signalSignals(arrivals)); });
     expect(delivered).toEqual([[15]]);
     pend(words, 10, 2, 1);
     // Two nudges for the same bits: the first takes them all, the second finds nothing to deliver.
@@ -145,14 +147,30 @@ it("hands each signal Rust caught to the listener exactly once, lowest first, at
   } finally { client.dispose(); channel.port2.close(); }
 });
 
+it("carries real-time arrivals to the listener in order with their details (protocol 5)", async () => {
+  const channel = new MessageChannel(), buffer = new SharedArrayBuffer(SIGNAL_BUFFER_BYTES), target = signalBuffer(buffer);
+  const client = new LinuxClient(channel.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES), buffer), delivered: SignalArrival[][] = [];
+  try {
+    client.listenForSignals(arrivals => { delivered.push([...arrivals]); });
+    const details = (value: bigint) => ({ code: -1, sender: 4, uid: 1000, value });
+    deliverArrival(target, { signal: 36, details: details(3n) });
+    deliverArrival(target, { signal: 35, details: details(1n) });
+    deliverArrival(target, { signal: 2, details: null });
+    channel.port2.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "signal" });
+    await settle(client, channel.port2);
+    expect(delivered).toEqual([[{ signal: 2, details: null }, { signal: 36, details: details(3n) }, { signal: 35, details: details(1n) }]]);
+  } finally { client.dispose(); channel.port2.close(); }
+});
+
 it("keeps the interrupt word for the module and refuses a second listener, untrappable bits and a stale nudge", async () => {
-  const channel = new MessageChannel(), buffer = new SharedArrayBuffer(8), words = new Int32Array(buffer);
+  const channel = new MessageChannel(), buffer = new SharedArrayBuffer(SIGNAL_BUFFER_BYTES), words = new Int32Array(buffer);
   const client = new LinuxClient(channel.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES), buffer);
   try {
-    Atomics.store(words, 1, 2);
+    // The interrupt word is the Int32 at byte 8.
+    Atomics.store(words, 2, 2);
     expect(client.interruptWord[0]).toBe(2);
     client.interruptWord[0] = 0;
-    expect(Atomics.load(words, 1)).toBe(0);
+    expect(Atomics.load(words, 2)).toBe(0);
     client.listenForSignals(() => {});
     expect(() => { client.listenForSignals(() => {}); }).toThrow(VMError);
     // SIGKILL's bit can never be pending: the transport fails instead of inventing a delivery.
@@ -161,7 +179,7 @@ it("keeps the interrupt word for the module and refuses a second listener, untra
     await expect(settle(client, channel.port2)).rejects.toBeInstanceOf(VMError);
   } finally { client.dispose(); channel.port2.close(); }
   for (const nudge of [{ version: JS_PROCESS_PROTOCOL_VERSION - 1, type: "signal" }, { version: JS_PROCESS_PROTOCOL_VERSION, type: "signal", signal: 2 }]) {
-    const stale = new MessageChannel(), other = new LinuxClient(stale.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES), new SharedArrayBuffer(8));
+    const stale = new MessageChannel(), other = new LinuxClient(stale.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES), new SharedArrayBuffer(SIGNAL_BUFFER_BYTES));
     try {
       stale.port2.postMessage(nudge);
       await expect(settle(other, stale.port2)).rejects.toMatchObject({ code: expect.stringMatching(/PROTOCOL_ERROR|ABORTED/u) as unknown });
@@ -180,7 +198,7 @@ it("keeps the interrupt word for the module and refuses a second listener, untra
 
 it("reports the end of its process by a trappable signal, counted like a request", async () => {
   const channel = new MessageChannel(), mailbox = new SharedArrayBuffer(JS_MAILBOX_BYTES);
-  const client = new LinuxClient(channel.port1, mailbox, new SharedArrayBuffer(8)), attention = jsMailboxAttention(mailbox);
+  const client = new LinuxClient(channel.port1, mailbox, new SharedArrayBuffer(SIGNAL_BUFFER_BYTES)), attention = jsMailboxAttention(mailbox);
   try {
     const received = new Promise<{ readonly data: unknown; readonly counted: number }>(resolve => { channel.port2.onmessage = (event: MessageEvent<unknown>) => { resolve({ data: event.data, counted: Atomics.load(attention, 0) }); }; });
     client.signaled(2);

@@ -1,7 +1,9 @@
 import type { FileDescriptor, LinuxFiles, LinuxProcesses, LinuxSockets, LinuxSyncFiles } from "../../js-process-types.js";
 import { VMError } from "../../runtime/errors.js";
-import type { Capability, ClientSockets, ProcessSignals } from "../capabilities.js";
+import type { Capability, ClientSockets, NetHost, ProcessSignals } from "../capabilities.js";
 import type { HostArtifacts } from "../define.js";
+import { LinuxError } from "../../runtime/js-process/codec.js";
+import type { ReachRefusal } from "../net/surface.js";
 import { kit } from "../kit/index.js";
 import type { ResolvedOptionValues } from "../options.js";
 
@@ -34,13 +36,17 @@ export interface HostInputs {
   readonly signals: ProcessSignals;
   /** Told about each read of an undeclared member; the member itself stays absent. */
   readonly undeclared?: (access: UndeclaredAccess) => void;
+  /** `host.net` of a module with a network reach: the module process's own VM network (engine ADR 0029). */
+  readonly net?: NetHost;
+  /** Told about each raw `host.sockets` connection Rust refused as beyond the module's reach (EACCES). */
+  readonly refused?: (destination: ReachRefusal) => void;
 }
 
 /** The capabilities that fill `process`. */
 const PROCESS_MEMBER: readonly Capability[] = ["process.info", "process.spawn", "process.signals"];
 /** Which capabilities provide each host member, and each function of `process`. */
 const MEMBER_CAPABILITIES: Readonly<Record<string, readonly Capability[]>> = {
-  fs: ["files.sync"], files: ["files.async"], sockets: ["sockets.connect"], process: PROCESS_MEMBER,
+  fs: ["files.sync"], files: ["files.async"], sockets: ["sockets.connect"], process: PROCESS_MEMBER, net: ["net.vm", "net.internet"],
 };
 const PROCESS_CAPABILITIES: Readonly<Record<string, Capability>> = {
   info: "process.info", cwd: "process.info", spawn: "process.spawn", wait: "process.spawn", signal: "process.spawn", signals: "process.signals",
@@ -73,19 +79,27 @@ function boundedLine(line: string): Uint8Array<ArrayBuffer> {
 }
 
 /** Client socket operations only; listening belongs to the runner. */
-function clientSockets(sockets: LinuxSockets): ClientSockets {
+function clientSockets(sockets: LinuxSockets, refused: ((destination: ReachRefusal) => void) | undefined): ClientSockets {
+  const connect: ClientSockets["connect"] = async (fd, address, options) => {
+    try { await sockets.connect(fd, address, options); }
+    catch (error: unknown) {
+      if (error instanceof LinuxError && error.errno === 13 && address.family !== "unix") refused?.({ address: address.address, port: address.port, protocol: "tcp" });
+      throw error;
+    }
+  };
   return Object.freeze({
-    socket: sockets.socket.bind(sockets), connect: sockets.connect.bind(sockets), address: sockets.address.bind(sockets),
+    socket: sockets.socket.bind(sockets), connect, address: sockets.address.bind(sockets),
     read: sockets.read.bind(sockets), write: sockets.write.bind(sockets), close: sockets.close.bind(sockets), shutdown: sockets.shutdown.bind(sockets),
   });
 }
 
 /** The members the declared capabilities contribute. `process.info`, `process.spawn` and `process.signals` all fill `process`, so they merge. */
-function members(capabilities: readonly Capability[], linux: LinuxParts, signals: ProcessSignals): Readonly<Record<string, unknown>> {
+function members(capabilities: readonly Capability[], linux: LinuxParts, signals: ProcessSignals, net: NetHost | undefined, refused: ((destination: ReachRefusal) => void) | undefined): Readonly<Record<string, unknown>> {
   const granted: Record<string, unknown> = {};
   if (capabilities.includes("files.sync")) granted["fs"] = linux.filesSync;
   if (capabilities.includes("files.async")) granted["files"] = linux.files;
-  if (capabilities.includes("sockets.connect")) granted["sockets"] = clientSockets(linux.sockets);
+  if (capabilities.includes("sockets.connect")) granted["sockets"] = clientSockets(linux.sockets, refused);
+  if ((capabilities.includes("net.vm") || capabilities.includes("net.internet")) && net !== undefined) granted["net"] = net;
   const { process } = linux;
   const info = capabilities.includes("process.info") ? { info: process.info.bind(process), cwd: process.cwd.bind(process) } : {};
   const spawn = capabilities.includes("process.spawn") ? { spawn: process.spawn.bind(process), wait: process.wait.bind(process), signal: process.signal.bind(process) } : {};
@@ -115,7 +129,7 @@ export function buildHost(inputs: HostInputs): { readonly host: Readonly<Record<
       log(message);
       return status;
     },
-    ...members(inputs.capabilities, linux, inputs.signals),
+    ...members(inputs.capabilities, linux, inputs.signals, inputs.net, inputs.refused),
   });
   const report = inputs.undeclared;
   if (report === undefined) return { host, log };

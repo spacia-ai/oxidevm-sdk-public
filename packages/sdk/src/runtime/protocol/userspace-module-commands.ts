@@ -3,9 +3,10 @@ import { VMError } from "../errors.js";
 import { RUNNER_LAUNCH_DESCRIPTOR_BYTES } from "../js-process/launch.js";
 import { isModuleCommandName } from "../module-command-names.js";
 import { MODULE_COMMAND_MAX_CONCURRENCY } from "../userspace-module-commands-abi.js";
+import { decodeSuppliedFiles, type CopyKey } from "./userspace-module-files.js";
 
 /**
- * The `module-commands` request of worker protocol 177 (engine ADR 0027): the page turns a command module's declared
+ * The `module-commands` request of worker protocol 178 (engine ADR 0027, amended by ADR 0028): the page turns a command module's declared
  * commands on for its VM, turns them off, or asks how they stand. The Userspace worker's registration owner
  * (`workers/js-process/module-commands.ts`) answers; the control worker relays both directions unchanged.
  */
@@ -26,7 +27,8 @@ export const MODULE_COMMAND_REASONS = {
 export const MODULE_COMMANDS_PER_REGISTRATION = 16;
 
 export type ModuleCommandsRequest =
-  | { readonly operation: "enable"; readonly descriptor: string; readonly commands: readonly string[]; readonly concurrency: number }
+  /** `files` holds the copies the VM's store lacked, by key (ADR 0028); the store checks them before anything is placed. */
+  | { readonly operation: "enable"; readonly descriptor: string; readonly commands: readonly string[]; readonly concurrency: number; readonly files: Readonly<Record<CopyKey, Blob>> }
   | { readonly operation: "disable" | "status"; readonly registration: number };
 
 /**
@@ -54,19 +56,19 @@ function names(value: unknown, label: string, allowEmpty = false): readonly stri
   return decoded;
 }
 
-/** The fields after `id`, `version` and `type`, exactly. */
-export function decodeModuleCommandsRequest(request: Readonly<Record<string, unknown>>): ModuleCommandsRequest {
+/** The fields after the envelope (`id`, `version` and `type` of a worker request by default), exactly. */
+export function decodeModuleCommandsRequest(request: Readonly<Record<string, unknown>>, envelope: readonly string[] = ["id", "version", "type"]): ModuleCommandsRequest {
   const operation = request["operation"];
   switch (operation) {
     case "enable": {
-      exactKeys(request, ["id", "version", "type", "operation", "descriptor", "commands", "concurrency"]);
+      exactKeys(request, [...envelope, "operation", "descriptor", "commands", "concurrency", "files"]);
       const descriptor = string(request["descriptor"], "module command launch description");
       if (descriptor.length > RUNNER_LAUNCH_DESCRIPTOR_BYTES || new TextEncoder().encode(descriptor).byteLength > RUNNER_LAUNCH_DESCRIPTOR_BYTES) throw new VMError("PROTOCOL_ERROR", "Module command launch description exceeds its limit");
-      return { operation, descriptor, commands: names(request["commands"], "module commands"), concurrency: integer(request["concurrency"], "module command concurrency", 1, MODULE_COMMAND_MAX_CONCURRENCY) };
+      return { operation, descriptor, commands: names(request["commands"], "module commands"), concurrency: integer(request["concurrency"], "module command concurrency", 1, MODULE_COMMAND_MAX_CONCURRENCY), files: decodeSuppliedFiles(request["files"]) };
     }
     case "disable":
     case "status":
-      exactKeys(request, ["id", "version", "type", "operation", "registration"]);
+      exactKeys(request, [...envelope, "operation", "registration"]);
       return { operation, registration: registrationId(request["registration"]) };
     default:
       throw new VMError("PROTOCOL_ERROR", "Unknown module-commands operation");

@@ -47,6 +47,6 @@ export default defineConfig(
   { files: ["examples/snapshot-authoring/*/prepare.ts", "examples/snapshot-authoring/*/verify.ts", "examples/snapshot-authoring/*/checks.ts", "packages/sdk/src/browser-test/**/*.ts", "examples/*/src/**/*.ts", "examples/*/src/**/*.tsx", "tests/diagnostics/**/*.ts", "packages/sdk/asset-source/preview/src/**/*.ts"], languageOptions: { globals: { ...globals.browser, ...globals.serviceworker } } },
   { files: ["packages/sdk/src/browser-tools/**/*.ts", "packages/sdk/src/image-builder/**/*.ts", "packages/cli/src/**/*.ts"], languageOptions: { globals: globals.node } },
   { files: ["packages/sdk/asset-source/native-process/entry.ts"], languageOptions: { globals: globals.browser, parserOptions: { project: ["./packages/sdk/tsconfig.native-process.json"] } } },
-  { files: ["packages/sdk/asset-source/module-runner/entry.ts"], languageOptions: { globals: globals.browser, parserOptions: { project: ["./packages/sdk/tsconfig.module-runner.json"] } } },
+  { files: ["packages/sdk/asset-source/module-runner/entry.ts", "packages/sdk/asset-source/module-frame/bootstrap.ts"], languageOptions: { globals: globals.browser, parserOptions: { project: ["./packages/sdk/tsconfig.module-runner.json"] } } },
   { files: ["tests/fixtures/native-addon/*.cjs", "tests/fixtures/nextjs-process-state.cjs"], languageOptions: { globals: globals.node } },
 );

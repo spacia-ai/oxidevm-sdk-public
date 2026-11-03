@@ -5,7 +5,7 @@ import { decodeWasmAddResult, decodeWasmDoctorReport, decodeWasmInspectResult, d
 const sha = "a".repeat(64);
 const add = { id: "tool", version: "1.0.0", source: "github:acme/tool@v1", release: sha, status: "added", consent: "approved", license: { spdx: "MIT", copyleft: false }, capabilities: ["files.sync"], added: ["host:files.sync"], removed: [], generatedFile: "src/oxidevm.modules.generated.ts" };
 const stage = { modules: [{ id: "tool", release: sha, rebuilt: true }], vendored: ["tool"], removed: [], generatedFile: "src/oxidevm.modules.generated.ts" };
-const checks = ["declaration", "lock", "vendored", "staged", "generated", "engine-api", "license", "commands", "hosting"];
+const checks = ["declaration", "lock", "vendored", "staged", "generated", "engine-api", "license", "commands", "network", "hosting"];
 const doctor = { result: "passed", modules: ["tool"], checks: checks.map(check => ({ check, status: "passed" })) };
 const inspect = { file: "a.wasm", kind: "module", bytes: 8, imports: [{ module: "env", names: 2 }], exports: ["run"], customSections: [], memories: [{ minPages: 1, maxPages: null, shared: false, memory64: false }], abi: "raw", evidence: ["x"], targetFeatures: false };
 
@@ -27,6 +27,14 @@ describe("wasm command results", () => {
     expect(Object.keys(decodeWasmAddResult(add))).toEqual(["id", "version", "source", "release", "status", "consent", "license", "capabilities", "added", "removed", "generatedFile"]);
     for (const commands of [[], ["Python"], ["oxidevm-x"], "python", [1], ["a", "a"], Array.from({ length: 17 }, (_, index) => `c${String(index)}`)]) {
       expect(() => decodeWasmAddResult({ ...add, commands }), JSON.stringify(commands)).toThrow(VMError);
+    }
+  });
+  it("decode a module's network reach in an add result (engine ADR 0029), absent for a module without one", () => {
+    const network = { reach: "internet", hosts: ["pypi.org"], purpose: "Downloads packages" };
+    expect(decodeWasmAddResult({ ...add, network }).network).toEqual(network);
+    expect(decodeWasmAddResult({ ...add, network: { reach: "vm", hosts: [] } }).network).toEqual({ reach: "vm", hosts: [] });
+    for (const bad of [{ reach: "none", hosts: [] }, { reach: "vm" }, { reach: "vm", hosts: [], extra: 1 }, { reach: "internet", hosts: "pypi.org" }]) {
+      expect(() => decodeWasmAddResult({ ...add, network: bad }), JSON.stringify(bad)).toThrow(VMError);
     }
   });
   it("decode only exact stage results", () => {

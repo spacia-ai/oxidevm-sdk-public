@@ -1,13 +1,14 @@
 import { exactKeys, record, string } from "../runtime/decode.js";
 import { VMError } from "../runtime/errors.js";
 
-export type DoctorCheck = "secure-context" | "cross-origin-isolation" | "wasm-features" | "worker-load" | "asset-integrity" | "wasm-mime" | "content-security-policy" | "storage" | "preview-origin";
+/** `lock` compares the project's `oxidevm.lock.json` with the installed SDK; it runs in Node, not in the page. */
+export type DoctorCheck = "secure-context" | "cross-origin-isolation" | "wasm-features" | "worker-load" | "asset-integrity" | "wasm-mime" | "content-security-policy" | "storage" | "preview-origin" | "lock";
 export interface DoctorReport {
   readonly result: "passed" | "failed";
   readonly url: string;
-  readonly checks: readonly ({ readonly check: DoctorCheck; readonly status: "passed" } | { readonly check: DoctorCheck; readonly status: "failed"; readonly message: string } | { readonly check: "preview-origin"; readonly status: "not-configured" })[];
+  readonly checks: readonly ({ readonly check: DoctorCheck; readonly status: "passed" } | { readonly check: DoctorCheck; readonly status: "failed"; readonly message: string } | { readonly check: "preview-origin" | "lock"; readonly status: "not-configured" })[];
 }
-export const DOCTOR_CHECKS: readonly DoctorCheck[] = ["secure-context", "cross-origin-isolation", "wasm-features", "worker-load", "asset-integrity", "wasm-mime", "content-security-policy", "storage", "preview-origin"];
+export const DOCTOR_CHECKS: readonly DoctorCheck[] = ["secure-context", "cross-origin-isolation", "wasm-features", "worker-load", "asset-integrity", "wasm-mime", "content-security-policy", "storage", "preview-origin", "lock"];
 
 function text(value: unknown): string {
   const result = string(value, "doctor text");
@@ -30,7 +31,7 @@ export function decodeDoctorReport(value: unknown): DoctorReport {
     if (item["status"] === "passed") { exactKeys(item, ["check", "status"]); return { check, status: "passed" }; }
     if (item["status"] === "failed") { exactKeys(item, ["check", "status", "message"]); return { check, status: "failed", message: text(item["message"]) }; }
     exactKeys(item, ["check", "status"]);
-    if (check !== "preview-origin" || item["status"] !== "not-configured") throw new VMError("PROTOCOL_ERROR", "mandatory doctor check cannot be omitted");
+    if (check !== "preview-origin" && check !== "lock" || item["status"] !== "not-configured") throw new VMError("PROTOCOL_ERROR", "mandatory doctor check cannot be omitted");
     return { check, status: "not-configured" };
   });
   if (new Set(checks.map(item => item.check)).size !== checks.length || (input["result"] === "failed") !== checks.some(item => item.status === "failed")) throw new VMError("PROTOCOL_ERROR", "contradictory doctor report");

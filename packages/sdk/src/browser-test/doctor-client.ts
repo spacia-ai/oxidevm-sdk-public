@@ -8,7 +8,7 @@ import { doctorAssetBase } from "../contracts/doctor-url.js";
 const node = document.createElement("output"); node.id = "oxidevm-doctor"; document.body.append(node);
 const checks: DoctorReport["checks"][number][] = [];
 const base = doctorAssetBase(import.meta.url);
-async function check(name: Exclude<DoctorReport["checks"][number]["check"], "preview-origin">, work: () => void | Promise<void>): Promise<void> {
+async function check(name: Exclude<DoctorReport["checks"][number]["check"], "preview-origin" | "lock">, work: () => void | Promise<void>): Promise<void> {
   try { await work(); checks.push({ check: name, status: "passed" }); }
   catch { checks.push({ check: name, status: "failed", message: `${name} probe failed on the deployed origin` }); }
 }

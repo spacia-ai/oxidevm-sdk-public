@@ -160,7 +160,7 @@ describe("the module doctor", () => {
     const plainEntry = status(await doctorModules((await installed()).dir), "hosting");
     const plain = plainEntry?.status === "note" ? plainEntry.message : "";
     expect(plain).not.toContain("needs");
-    expect(plain).toContain("self-hosted runtime");
+    expect(plain).toContain("self-hosted or in the hosted runtime frame");
   });
 
   it("fails when the modules need a newer Userspace API than the SDK provides", async () => {
@@ -240,5 +240,24 @@ describe("the doctor and module commands", () => {
     const { dir } = await installed({ commands: ["tool"] });
     expect(status(await doctorModules(dir, { engineApi: 144 }), "engine-api")).toMatchObject({ status: "failed", message: expect.stringContaining("tool needs Userspace API 145; this SDK provides 144") as unknown });
     expect(status(await doctorModules(dir, { engineApi: 145 }), "engine-api")).toMatchObject({ status: "passed" });
+  });
+});
+
+describe("the doctor and network reach (engine ADR 0029)", () => {
+  it("passes the closed network check when no module reaches the network", async () => {
+    expect(status(await doctorModules((await installed()).dir), "network")).toEqual({ check: "network", status: "passed" });
+  });
+
+  it("notes each module's reach and disclosure, and what an internet module needs from the application", async () => {
+    const fetcher = buildReleaseFiles({ id: "fetcher", host: ["net.internet", "sockets.connect"], extra: { network: { hosts: ["pypi.org"], purpose: "Downloads packages" } } });
+    const client = buildReleaseFiles({ id: "client", host: ["net.vm"] });
+    const report = await doctorModules(await installedAll([fetcher, client]), { engineApi: 146 });
+    const entry = status(report, "network");
+    expect(entry?.status).toBe("note");
+    const message = entry?.status === "note" ? entry.message : "";
+    expect(message).toContain("fetcher reaches the internet through the VM's connection (it contacts pypi.org by default; purpose: Downloads packages).");
+    expect(message).toContain("client reaches programs in this VM only.");
+    expect(message).toContain("connects the VM with vm.network.connect");
+    expect(status(await doctorModules(await installedAll([fetcher]), { engineApi: 145 }), "engine-api")).toMatchObject({ status: "failed", message: expect.stringContaining("fetcher needs Userspace API 146") as unknown });
   });
 });

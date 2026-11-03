@@ -216,9 +216,9 @@ describe("engine release staging", () => {
     const source = join(root, "release"); await writeSyntheticRelease(source, release);
     for (const name of await readdir(source)) await chmod(join(source, name), 0o600);
     const target = join(root, "staged");
-    await expect(copyEngineRelease(source, target, localOnly)).resolves.toBe(6);
+    await expect(copyEngineRelease(source, target, localOnly)).resolves.toBe(7);
     const modes = await Promise.all((await readdir(target)).map(async name => [name, (await stat(join(target, name))).mode & 0o777] as const));
-    expect(modes).toHaveLength(6);
+    expect(modes).toHaveLength(7);
     expect(modes.filter(([, mode]) => mode !== 0o644)).toEqual([]);
   });
 

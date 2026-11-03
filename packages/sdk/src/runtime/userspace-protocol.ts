@@ -3,7 +3,7 @@ import { decodeUserspaceJitProfile, type UserspaceJitProfile } from "./protocol/
 import { decodeMessagePort } from "./protocol/request-base.js";
 import { decodeFileMount, decodeFileRequestBytes, decodeFileResponseBytes, decodeChangeCursor, type FileMount } from "./protocol/userspace-files.js";
 import { exactKeys, integer, record, string } from "./decode.js";
-import { decodeRunnerHostLaunch, type RunnerHostLaunch } from "./js-process/launch.js";
+import { decodeMissingKeys, decodeModuleDescriptor, decodeModulePins, decodeSuppliedFiles, type CopyKey, type ModulePin } from "./protocol/userspace-module-files.js";
 import { decodeUserspaceJitTier, type UserspaceJitTier } from "./jit-tier-option.js";
 import { VMError } from "./errors.js";
 import { decodeAgentSpawnResult, decodeStringArray, type AgentSpawnResult } from "./protocol/agent.js";
@@ -174,8 +174,16 @@ export interface UserspaceOperations {
   readonly "js-trace": Operation<{ readonly capacity?: number }, Uint8Array>;
   /** ADR 0026: a port that carries each late fast-path failure until the page closes it. */
   readonly "acceleration-notices": Operation<undefined, MessagePort>;
-  /** `launch` is the module runner's start input (ADR 0027); the driver hands it only to the worker of this launch. */
-  readonly "spawn-js": Operation<FileMount & { readonly worker: string; readonly arguments: readonly string[]; readonly environment: readonly string[]; readonly cwd: string; readonly port: MessagePort; readonly terminal?: UserspaceTerminalSize; readonly launch?: RunnerHostLaunch }, NativeSpawnResult>;
+  readonly "spawn-js": Operation<FileMount & { readonly worker: string; readonly arguments: readonly string[]; readonly environment: readonly string[]; readonly cwd: string; readonly port: MessagePort; readonly terminal?: UserspaceTerminalSize }, NativeSpawnResult>;
+  /** ADR 0028: the VM's module frame broker, opened by the page; every module process runs behind it. A later
+   * attachment replaces it; `detach-module-frame` reports it lost, which ends the module processes with status 125. */
+  readonly "attach-module-frame": Operation<{ readonly port: MessagePort }, undefined>;
+  readonly "detach-module-frame": Operation<undefined, undefined>;
+  /** ADR 0028: which of a module's pinned files the VM's verified-copy store lacks. */
+  readonly "module-files": Operation<{ readonly pins: readonly ModulePin[] }, { readonly missing: readonly CopyKey[] }>;
+  /** ADR 0028: `spawnModule`'s start. The worker starts the SDK's module runner with the description and the copies its
+   * store holds, checking `files` (exactly the ones it lacked) first; the description never reaches argv. */
+  readonly "spawn-module": Operation<FileMount & { readonly descriptor: string; readonly files: Readonly<Record<CopyKey, Blob>>; readonly arguments: readonly string[]; readonly environment: readonly string[]; readonly cwd: string; readonly port: MessagePort }, NativeSpawnResult>;
   /** ADR 0027: turn a command module's commands on for this VM, turn them off, or read how they stand. */
   readonly "module-commands": Operation<ModuleCommandsRequest, ModuleCommandsResult>;
   readonly files: Operation<{ readonly request: Uint8Array; readonly mount?: FileMount }, Uint8Array>;
@@ -234,6 +242,10 @@ export const userspaceResponseDecoders: OperationDecoders<UserspaceOperations> =
   "js-trace": decodeFileResponseBytes,
   "acceleration-notices": value => decodeMessagePort(value, "acceleration notice port"),
   "spawn-js": decodeNativeSpawnResult,
+  "module-files": decodeMissingKeys,
+  "attach-module-frame": decodeUndefined,
+  "detach-module-frame": decodeUndefined,
+  "spawn-module": decodeNativeSpawnResult,
   "module-commands": decodeModuleCommandsResult,
   files: decodeFileResponseBytes,
   "file-changes": decodeFileResponseBytes,
@@ -263,6 +275,10 @@ interface RequestBase {
 export type UserspaceRequest =
   | (RequestBase & { readonly type: "js-trace"; readonly capacity?: number })
   | (RequestBase & { readonly type: "spawn-js" } & UserspaceOperations["spawn-js"]["request"])
+  | (RequestBase & { readonly type: "module-files" } & UserspaceOperations["module-files"]["request"])
+  | (RequestBase & { readonly type: "attach-module-frame"; readonly port: MessagePort })
+  | (RequestBase & { readonly type: "detach-module-frame" })
+  | (RequestBase & { readonly type: "spawn-module" } & UserspaceOperations["spawn-module"]["request"])
   | (RequestBase & { readonly type: "module-commands" } & ModuleCommandsRequest)
   | (RequestBase & { readonly type: "signal-named"; readonly pid: number; readonly sessionId: number; readonly signal: LinuxSignal; readonly scope: SignalScope })
   | (RequestBase & { readonly type: "terminal-resize"; readonly pid: number; readonly sessionId: number; readonly terminal: UserspaceTerminalSize })
@@ -344,11 +360,25 @@ export function decodeUserspaceRequest(value: unknown): UserspaceRequest | Users
       exactKeys(request, ["id", "version", "type"], ["capacity"]);
       return { ...base, type, ...(request["capacity"] === undefined ? {} : { capacity: integer(request["capacity"], "JS trace capacity", 0, 4096) }) };
     case "spawn-js": {
-      exactKeys(request, ["id", "version", "type", "rootTreeSha256", "workspaceBaseSha256", "cpuProfile", "worker", "arguments", "environment", "cwd", "rootfs", "port"], ["terminal", "launch"]);
+      exactKeys(request, ["id", "version", "type", "rootTreeSha256", "workspaceBaseSha256", "cpuProfile", "worker", "arguments", "environment", "cwd", "rootfs", "port"], ["terminal"]);
       const mount = decodeFileMount({ rootTreeSha256: request["rootTreeSha256"], workspaceBaseSha256: request["workspaceBaseSha256"], cpuProfile: request["cpuProfile"], rootfs: request["rootfs"] });
       const worker = string(request["worker"], "JS process worker");
       if (worker.length > 4096 || worker.includes("\0")) throw new VMError("PROTOCOL_ERROR", "JS worker URL is invalid");
-      return { ...base, ...mount, type, worker, arguments: decodeStringArray(request["arguments"], "JS arguments"), environment: decodeStringArray(request["environment"], "JS environment"), cwd: decodeAbsolutePath(request["cwd"], "JS cwd"), port: decodeMessagePort(request["port"], "JS process port"), ...(request["terminal"] === undefined ? {} : { terminal: decodeTerminalSize(request["terminal"]) }), ...(request["launch"] === undefined ? {} : { launch: decodeRunnerHostLaunch(request["launch"]) }) };
+      return { ...base, ...mount, type, worker, arguments: decodeStringArray(request["arguments"], "JS arguments"), environment: decodeStringArray(request["environment"], "JS environment"), cwd: decodeAbsolutePath(request["cwd"], "JS cwd"), port: decodeMessagePort(request["port"], "JS process port"), ...(request["terminal"] === undefined ? {} : { terminal: decodeTerminalSize(request["terminal"]) }) };
+    }
+    case "attach-module-frame":
+      exactKeys(request, ["id", "version", "type", "port"]);
+      return { ...base, type, port: decodeMessagePort(request["port"], "module frame port") };
+    case "detach-module-frame":
+      exactKeys(request, ["id", "version", "type"]);
+      return { ...base, type };
+    case "module-files":
+      exactKeys(request, ["id", "version", "type", "pins"]);
+      return { ...base, type, pins: decodeModulePins(request["pins"]) };
+    case "spawn-module": {
+      exactKeys(request, ["id", "version", "type", "rootTreeSha256", "workspaceBaseSha256", "cpuProfile", "descriptor", "files", "arguments", "environment", "cwd", "rootfs", "port"]);
+      const mount = decodeFileMount({ rootTreeSha256: request["rootTreeSha256"], workspaceBaseSha256: request["workspaceBaseSha256"], cpuProfile: request["cpuProfile"], rootfs: request["rootfs"] });
+      return { ...base, ...mount, type, descriptor: decodeModuleDescriptor(request["descriptor"]), files: decodeSuppliedFiles(request["files"]), arguments: decodeStringArray(request["arguments"], "JS arguments"), environment: decodeStringArray(request["environment"], "JS environment"), cwd: decodeAbsolutePath(request["cwd"], "JS cwd"), port: decodeMessagePort(request["port"], "JS process port") };
     }
     case "module-commands":
       return { ...base, type, ...decodeModuleCommandsRequest(request) };

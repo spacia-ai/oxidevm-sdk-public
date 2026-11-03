@@ -1,5 +1,8 @@
 import { JsProcessWorkers } from "./js-process/driver.js";
 import { ModuleCommands, nativeModuleCommandTable } from "./js-process/module-commands.js";
+import { ModuleCopies } from "./js-process/module-copies.js";
+import { prepareModuleStart, type ModuleStart } from "./js-process/module-artifacts.js";
+import { isolationUnavailable } from "../protocol/module-frame.js";
 import { nativePromiseCapability } from "../promise-brand.js";
 import { nativeErrorCapability } from "../error-brand.js";
 import { captureUserspaceJitProfileForRuntime } from "./userspace-jit-profile.js";
@@ -125,6 +128,8 @@ let mount: UserspaceMountSettings = UNCONFIGURED_MOUNT;
 let memoryMiB = 512;
 let interceptors: readonly CommandInterceptorRecord[] | undefined;
 let nativeExecutionPort: MessagePort | undefined;
+/** ADR 0028: the VM's module frame broker, attached by the page once it opened the frame. */
+let moduleFrame: MessagePort | undefined;
 /** ADR 0026: remembered fast-path failures, imported before every acceleration enable. */
 let accelerationKnowledge: UserspaceAccelerationKnowledge | undefined;
 let executionTiming: ExecutionTimingMode = { kind: "disabled" };
@@ -141,7 +146,8 @@ const previewRuntime = new UserspacePreviewRuntime({
   opened: pid => { previewReferences.set(pid, (previewReferences.get(pid) ?? 0) + 1); }, closed: releasePreviewReference,
 });
 const attachments = new UserspaceWorkerAttachments();
-const moduleCommands = new ModuleCommands({ runtime: () => runtimeState?.startup === "ready" ? nativeModuleCommandTable(runtimeState) : undefined, fetch: (url, init) => fetch(url, { signal: init.signal }),
+const moduleCopies = new ModuleCopies();
+const moduleCommands = new ModuleCommands({ copies: moduleCopies, runtime: () => runtimeState?.startup === "ready" ? nativeModuleCommandTable(runtimeState) : undefined,
   environment: () => ({ crossOriginIsolated: globalThis.crossOriginIsolated, initialUser: mount.initialUser }), changed: () => { void scheduleWorkspaceCommit(); if (runtimeState !== undefined) scheduleRun(runtimeState); } });
 let checkpointPort: UserspaceCheckpointPort | undefined;
 let checkpointSession: UserspaceWorkerCheckpoints | undefined;
@@ -280,7 +286,7 @@ async function handle(request: UserspaceRequest): Promise<unknown> {
       if (isDisposing() || canceled.has(request.id)) throw new VMError("ABORTED", "JS process creation cancelled");
       const workers = runtime.jsProcesses;
       if (workers === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "JS process transport is unavailable");
-      const token = workers.register(request.worker, request.launch);
+      const token = workers.register(request.worker);
       try {
         const pid = admitJSProcess(runtime, token, request.arguments, request.environment, request.cwd, request.terminal);
         const process = connectSpawnedProcess(runtime, pid, request.port, "js-process", request.terminal);
@@ -289,7 +295,40 @@ async function handle(request: UserspaceRequest): Promise<unknown> {
         return process;
       } catch (error) { workers.retireLaunch(token); throw error; }
     }
-    case "module-commands": { const cancellation = new AbortController(); admissionReads.set(request.id, cancellation); try { return await moduleCommands.request(request, cancellation.signal); } finally { admissionReads.delete(request.id); } }
+    case "attach-module-frame":
+      moduleFrame?.close(); moduleFrame = request.port;
+      return undefined;
+    case "detach-module-frame":
+      moduleFrame?.close(); moduleFrame = undefined; runtimeState?.jsProcesses?.moduleFrameLost();
+      return undefined;
+    case "module-files":
+      return { missing: moduleCopies.missing(request.pins) };
+    case "spawn-module": {
+      if (mount.initialUser !== "user") throw new VMError("FEATURE_NOT_AVAILABLE", "JS processes require ordinary uid/gid 1000");
+      // ADR 0028: modules run only in the module frame the page attached; there is no page-origin fallback.
+      if (moduleFrame === undefined) throw isolationUnavailable("module-frame-lost", "The module frame is not open");
+      const cancellation = new AbortController(); admissionReads.set(request.id, cancellation);
+      // An exclusive service's workspace lease first, then the copies (ADR 0028): a busy one reads nothing.
+      let start: ModuleStart;
+      try { start = await prepareModuleStart(request.descriptor, request.files, { copies: moduleCopies, locks: "locks" in navigator ? navigator.locks : undefined }, cancellation.signal); } finally { admissionReads.delete(request.id); }
+      // A lease ends with its process; until the launch is registered, this case owns it.
+      let admitted: { readonly runtime: RuntimeState; readonly workers: JsProcessWorkers; readonly token: number };
+      try {
+        const runtime = await ensureManagedRuntime(request), workers = runtime.jsProcesses;
+        if (isDisposing() || canceled.has(request.id)) throw new VMError("ABORTED", "JS process creation cancelled");
+        if (workers === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "JS process transport is unavailable");
+        admitted = { runtime, workers, token: workers.registerModule(start.launch, start.lease) };
+      } catch (error) { start.lease?.release(); throw error; }
+      try {
+        const pid = admitJSProcess(admitted.runtime, admitted.token, request.arguments, request.environment, request.cwd, undefined, start.reach);
+        const process = connectSpawnedProcess(admitted.runtime, pid, request.port, "js-process");
+        serviceHostRequests(admitted.runtime);
+        return process;
+      } catch (error) { admitted.workers.retireLaunch(admitted.token); throw error; }
+    }
+    case "module-commands": {
+      if (request.operation === "enable" && moduleFrame === undefined) throw isolationUnavailable("module-frame-lost", "The module frame is not open");
+      const cancellation = new AbortController(); admissionReads.set(request.id, cancellation); try { return await moduleCommands.request(request, cancellation.signal); } finally { admissionReads.delete(request.id); } }
     case "spawn-managed": {
       const client = storage;
       if (client === undefined) throw filesUnavailable("no-root-filesystem");
@@ -407,7 +446,7 @@ async function handle(request: UserspaceRequest): Promise<unknown> {
     case "dispose": {
       disposing = true;
       for (const admission of admissionReads.values()) admission.abort();
-      checkpointGate.close(); checkpointPort?.close(); checkpointSession?.close(); attachments.clear(); accelerationKnowledge?.close(); moduleCommands.dispose();
+      checkpointGate.close(); checkpointPort?.close(); checkpointSession?.close(); attachments.clear(); accelerationKnowledge?.close(); moduleCommands.dispose(); moduleCopies.dispose(); moduleFrame?.close(); moduleFrame = undefined;
       runtimeMountingCancellation?.abort();
       runtimeWakeTimer.cancel(); runtimeRunScheduled = false;
       let disposalFailure: Error | undefined;
@@ -591,6 +630,7 @@ function configureRuntimeRoot(runtime:RuntimeState):void {runtime.rootPersistenc
 function bindRuntimeServices(runtime: RuntimeState, previous?: RuntimeState, origin:"restored"|"remounted"="restored", workspace:"now"|"later"="now"): void {
   runtime.jsProcesses = new JsProcessWorkers({ runtime, commands: moduleCommands, ...(interceptors?.[0] === undefined ? {} : { interceptor: interceptors[0].worker }),
     ...(nativeExecutionPort === undefined ? {} : { nativeExecution: nativeExecutionPort }),
+    moduleFrame: () => moduleFrame,
     attention: { watch: counter => hostAttention.watch("js-process", counter) },
     knowledge: { remember: (notice, failure) => { void accelerationKnowledge?.remember(notice, failure); } },
     active: () => runtimeState === runtime && !disposing, wake: () => scheduleRun(runtime) });

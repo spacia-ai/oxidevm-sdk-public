@@ -105,6 +105,8 @@ const PROJECTS = [
   { label: "the add example", id: "my-tool", from: false, sources: ["module.ts", "src/command.ts", "src/operands.ts"], tests: ["test/command.test.ts", "test/module.test.ts", "test/operands.test.ts"] },
   { label: "the add example with a reserved id", id: "oxidevm-tools", from: false, sources: ["module.ts", "src/command.ts", "src/operands.ts"], tests: ["test/command.test.ts", "test/module.test.ts", "test/operands.test.ts"] },
   { label: "a --from skeleton", id: "wrapped", from: true, sources: ["module.ts"], tests: ["test/module.test.ts"] },
+  { label: "the add example reaching its VM", id: "vm-tool", from: false, network: "vm", sources: ["module.ts", "src/command.ts", "src/net.ts", "src/operands.ts"], tests: ["test/command.test.ts", "test/module.test.ts", "test/net.test.ts", "test/operands.test.ts"] },
+  { label: "the add example reaching the internet", id: "net-tool", from: false, network: "internet", sources: ["module.ts", "src/command.ts", "src/net.ts", "src/operands.ts"], tests: ["test/command.test.ts", "test/module.test.ts", "test/net.test.ts", "test/operands.test.ts"] },
 ] as const;
 
 /** Generates one of PROJECTS, linked to this SDK and this repository's tools. */
@@ -112,11 +114,39 @@ async function generatedProject(entry: (typeof PROJECTS)[number]): Promise<strin
   const root = await temporary();
   if (entry.from) await writeFile(join(root, "mine.wasm"), ADD_WASM);
   const project = join(root, entry.id);
-  await initializeModule(project, { kind: "command", id: entry.id, ...(entry.from ? { from: join(root, "mine.wasm") } : {}) });
+  await initializeModule(project, { kind: "command", id: entry.id, ...(entry.from ? { from: join(root, "mine.wasm") } : {}), ...("network" in entry ? { network: entry.network } : {}) });
   await linkDependencies(project);
   // Tools report the paths they find from their working directory, which is the physical one.
   return await realpath(project);
 }
+
+// Engine ADR 0029: `wasm init --network` puts the module networking standard into every generated module.
+describe("initializeModule --network", () => {
+  it.each(["none", "vm", "internet"] as const)("declares reach %s with its README section, AGENTS rules and tests", async network => {
+    const project = join(await temporary(), "tool");
+    const result = await initializeModule(project, { kind: "command", id: "tool", network });
+    const extra = network === "none" ? [] : ["src/net.ts", "test/net.test.ts"];
+    expect(result.files).toEqual(await expectedFiles(["src/command.ts", "src/operands.ts", "test/command.test.ts", "test/operands.test.ts", ...extra]));
+    expect(result.network).toBe(network);
+    const manifest = extractManifest(await readFile(join(project, "module.ts"), "utf8"), "module.ts");
+    const tokens = manifest.requires.host.filter(token => token.startsWith("net."));
+    expect(tokens).toEqual(network === "none" ? [] : [network === "vm" ? "net.vm" : "net.internet"]);
+    expect("network" in manifest).toBe(network === "internet");
+    const readme = await readFile(join(project, "README.md"), "utf8"), agents = await readFile(join(project, "AGENTS.md"), "utf8");
+    expect(readme).toContain("## Network");
+    expect(readme).toContain(network === "none" ? "declares no network reach" : network === "vm" ? "`net.vm`" : "exits 69");
+    expect(agents).toContain("## Networking rules");
+    expect(await readFile(join(project, "test/module.test.ts"), "utf8")).toContain("startsWith(\"net.\")");
+  });
+
+  it("builds every variant with no findings", async () => {
+    for (const network of ["vm", "internet"] as const) for (const kind of ["command", "service"] as const) {
+      const project = join(await temporary(), `tool-${network}`);
+      await initializeModule(project, { kind, id: `tool-${network}`, network });
+      expect(await buildModule(project)).toMatchObject({ result: "built", findings: [] });
+    }
+  });
+});
 
 describe("moduleIdFor", () => {
   it.each([
@@ -144,7 +174,7 @@ describe("initializeModule", () => {
     const result = await initializeModule(join(root, "add-service"), { kind: "service", id: "adder" });
     expect(result).toMatchObject({ id: "adder", kind: "service" });
     // A service is not a program, so its result and its project say nothing about commands, exactly as before commands existed.
-    expect(Object.keys(result)).toEqual(["directory", "id", "kind", "abi", "files"]);
+    expect(Object.keys(result)).toEqual(["directory", "id", "kind", "abi", "network", "files"]);
     expect(result.files).toEqual(await expectedFiles(["src/operands.ts", "test/operands.test.ts"]));
     expect(extractManifest(await readFile(join(root, "add-service", "module.ts"), "utf8"), "module.ts")).toMatchObject({
       id: "adder", process: { kind: "service" }, expose: { add: { kind: "unix", path: "/workspace/_oxidevm/adder.sock", protocol: "adder/1" } },

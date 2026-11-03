@@ -45,6 +45,8 @@ import { serveRestoreStream } from "./snapshot-restore-stream.js";
 import { serveSnapshotStorage } from "./snapshot-storage-server.js";
 import { SYSTEM_CLOCK } from "./snapshot-retention.js";
 import { SnapshotStore } from "./snapshot-store.js";
+import { NativeColdFiles } from "./native-cold-files.js";
+import { isNativeColdRequest, nativeColdStarts, requireSnapshotStore, retainedReadId } from "./native-start-storage.js";
 import { type ArchiveRun, clearStagedExports, exportBackup, importBackup, inspectBackup } from "./snapshot-archive-jobs.js";
 import { shippedError } from "./snapshot-archive/shipped.js";
 import { fetchBounded, installShipped } from "./shipped-install.js";
@@ -83,6 +85,8 @@ let managedDisk: ManagedDisk | undefined;
 /** Shared base packs of every disk generation this worker opens. */
 const managedBases = new ManagedBases();
 let snapshotStore: SnapshotStore | undefined;
+/** The Userspace cold-start owner where there is no snapshot store (the IndexedDB fallback); otherwise the store owns it. */
+let fallbackColdStarts: NativeColdFiles | undefined;
 let snapshotChannel: ReturnType<typeof serveSnapshotStorage> | undefined;
 /**
  * The managed image last prepared: its profile, which restore points must share to resume, and
@@ -217,11 +221,11 @@ async function handle(request: StorageRequest): Promise<unknown> {
       return current.kind === "opfs" ? "opfs" : "indexeddb";
     }
     case "abort-userspace-files":
-      try {await requireSnapshotStore().abortNativeFiles(request.sourceId);}
+      try {await nativeColdStarts(snapshotStore, fallbackColdStarts).abort(request.sourceId);}
       finally {rootfsStore?.retireWorkspaceBase();}
       return undefined;
     case "select-userspace-files":
-      return requireSnapshotStore().selectNativeFiles(request,active.get(request.id)?.controller.signal??AbortSignal.abort());
+      return nativeColdStarts(snapshotStore, fallbackColdStarts).select(request,active.get(request.id)?.controller.signal??AbortSignal.abort());
     case "current-system-image": {
       const current=requireStorage();if(current.kind!=="opfs"||managedDisk===undefined)throw new VMError("FEATURE_NOT_AVAILABLE","No managed system disk is active");
       return currentSystemImage(await current.oxidevm.getDirectoryHandle("managed-images"),managedDisk.image,systemImageTrust,systemRequestedImage);
@@ -290,36 +294,36 @@ async function handle(request: StorageRequest): Promise<unknown> {
       return prepared.image;
     }
     case "snapshot-list":
-      return requireSnapshotStore().list();
+      return requireSnapshotStore(snapshotStore).list();
     case "snapshot-rename":
-      return requireSnapshotStore().rename(request.snapshot, request.label);
+      return requireSnapshotStore(snapshotStore).rename(request.snapshot, request.label);
     case "snapshot-delete":
-      await requireSnapshotStore().delete(request.snapshot);
+      await requireSnapshotStore(snapshotStore).delete(request.snapshot);
       // What the deletion freed goes to the guest's disk reserve first.
       await managedDisk?.holdReserve();
       await workspaceReserve?.hold();
       return undefined;
     case "snapshot-usage":
-      return requireSnapshotStore().usage();
+      return requireSnapshotStore(snapshotStore).usage();
     case "snapshot-resume-candidates":
-      return requireSnapshotStore().resumeCandidates();
+      return requireSnapshotStore(snapshotStore).resumeCandidates();
     case "snapshot-export":
       try {
         const target = request.destination === undefined
           ? { kind: "staged" as const, directory: await stagedExports() }
           : { kind: "handle" as const, handle: request.destination };
-        return await exportBackup(requireSnapshotStore(), request.snapshot, target, archiveRun(request.id, request.progress));
+        return await exportBackup(requireSnapshotStore(snapshotStore), request.snapshot, target, archiveRun(request.id, request.progress));
       } finally {
         request.progress.close();
       }
     case "snapshot-import":
       try {
-        return await importBackup(requireSnapshotStore(), request.file, archiveRun(request.id, request.progress));
+        return await importBackup(requireSnapshotStore(snapshotStore), request.file, archiveRun(request.id, request.progress));
       } finally {
         request.progress.close();
       }
     case "snapshot-inspect":
-      return inspectBackup(requireSnapshotStore(), request.file, Date.now(),active.get(request.id)?.controller.signal);
+      return inspectBackup(requireSnapshotStore(snapshotStore), request.file, Date.now(),active.get(request.id)?.controller.signal);
     case "snapshot-install-shipped":
       try {
         const image=preparedUserspace!==undefined
@@ -331,7 +335,7 @@ async function handle(request: StorageRequest): Promise<unknown> {
         const resolved=resolveShippedSource(request.source??{kind:"listed",name:request.name},image,{keyId:request.trustedKeyId,publicKey:new Uint8Array(request.trustedPublicKey)});
         const run = archiveRun(request.id, request.progress), images = rootfsStore;
         return await installShipped(
-          requireSnapshotStore(),
+          requireSnapshotStore(snapshotStore),
           resolved.listing,
           resolved.expectation,
           { ...run, fetchBytes: fetchBounded, backoff: (attempt) => new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 2))),
@@ -493,6 +497,10 @@ async function initialize(request: Extract<StorageRequest, { readonly type: "ini
       if (rootfsNetworkPort !== undefined) {
         rootfsStore = RootfsStore.indexedDb(new RootfsNetworkClient(rootfsNetworkPort));
       }
+      // No restore points without OPFS, but a Userspace cold start needs only the workspace selections and the image.
+      if (nextUserspaceStoragePort !== undefined && rootfsStore !== undefined) {
+        fallbackColdStarts = new NativeColdFiles({ workspaceId, selections: workspaceSelections, rootfs: rootfsStore });
+      }
       openSnapshotChannel(nextSnapshotPort);
       if (nextUserspaceStoragePort !== undefined) openUserspaceStorageChannel(nextUserspaceStoragePort);
       return;
@@ -591,7 +599,7 @@ async function handleUserspaceStorage(request: UserspaceStorageRequest, signal: 
       if(request.request.type==="inspect-workspace-base"){
         if(rootfsStore===undefined)throw new VMError("FEATURE_NOT_AVAILABLE","Verified workspace base is unavailable");return rootfsStore.workspaceBaseMetadata(request.request.workspaceBaseSha256);
       }
-      return workspacePublications.handle(workspaceStore,request.request,signal,(selection,base,signal)=>checkpointWorkspaceRead(rootfsStore,workspaceSelections,selection.kind==="retained"?{...selection,id:requireSnapshotStore().retainedNativeReadId(selection.id)}:selection,base,signal));
+      return workspacePublications.handle(workspaceStore,request.request,signal,readWorkspaceSelection);
     }
     case "open-root-overlay":
     case "read-root-overlay":
@@ -686,13 +694,27 @@ async function handleSnapshot(request: SnapshotStorageRequest, signal: AbortSign
   if (request.type === "stage-workspace-streams") return workspacePublications.stage(workspaceStore, request.publication, signal);
   if (request.type === "finish-workspace-stage") return workspacePublications.finishStage(request.identity, request.decision);
   if (request.type === "commit-workspace-streams" || request.type === "open-workspace-read" || request.type === "read-workspace-frame"
-    || request.type === "retire-workspace-source" || request.type === "retire-workspace-read") return workspacePublications.handle(workspaceStore,request,signal,(selection,base,signal)=>checkpointWorkspaceRead(rootfsStore,workspaceSelections,selection.kind==="retained"?{...selection,id:requireSnapshotStore().retainedNativeReadId(selection.id)}:selection,base,signal));
+    || request.type === "retire-workspace-source" || request.type === "retire-workspace-read") return workspacePublications.handle(workspaceStore,request,signal,readWorkspaceSelection);
   if (request.type === "cancel-workspace-operation") throw new VMError("PROTOCOL_ERROR", "workspace cancellation must bypass the storage queue");
   if (request.type !== "abort") workspacePublications.assertActive();
-  const store = requireSnapshotStore();
+  if (request.type === "inspect-workspace-base") {
+    if(rootfsStore===undefined)throw new VMError("FEATURE_NOT_AVAILABLE","Verified workspace base is unavailable");return rootfsStore.workspaceBaseMetadata(request.workspaceBaseSha256);
+  }
+  if (isNativeColdRequest(request)) {
+    const result = await nativeColdStarts(snapshotStore, fallbackColdStarts).handle(request, signal);
+    if (request.type === "complete-native-cold") {
+      rootfsStore?.retireWorkspaceBase();
+      if (snapshotStore !== undefined) scheduleSnapshotMaintenance(snapshotStore);
+    }
+    return result;
+  }
+  if (request.type === "abort" && snapshotStore === undefined) {
+    try {await fallbackColdStarts?.abort();}
+    finally {rootfsStore?.retireWorkspaceBase();}
+    return undefined;
+  }
+  const store = requireSnapshotStore(snapshotStore);
   switch (request.type) {
-    case "inspect-workspace-base":
-      if(rootfsStore===undefined)throw new VMError("FEATURE_NOT_AVAILABLE","Verified workspace base is unavailable");return rootfsStore.workspaceBaseMetadata(request.workspaceBaseSha256);
     case "native-payload-round-open":
     case "native-payload-round-put":
     case "native-payload-round-seal":
@@ -703,9 +725,6 @@ async function handleSnapshot(request: SnapshotStorageRequest, signal: AbortSign
     case "seal-native-capture":
     case "put-native-chunk":
     case "commit-native-capture":
-    case "stage-native-cold-workspace":
-    case "publish-native-cold":
-    case "complete-native-cold":
     case "stage-native-workspace":
     case "prepare-native-restore":
     case "stream-native-restore":
@@ -717,9 +736,8 @@ async function handleSnapshot(request: SnapshotStorageRequest, signal: AbortSign
     case "native-session":
     case "retire-native-recovery": {
       const result = await store.handleNative(request, signal, progress);
-      if(request.type==="complete-native-cold")rootfsStore?.retireWorkspaceBase();
       if(request.type==="complete-native-restore"&&rootfsStore!==undefined)preparedUserspace=rootfsStore.currentRootfs();
-      if (request.type === "complete-native-cold" || request.type === "commit-native-capture" || request.type === "complete-native-restore" || request.type === "retire-native-recovery") scheduleSnapshotMaintenance(store);
+      if (request.type === "commit-native-capture" || request.type === "complete-native-restore" || request.type === "retire-native-recovery") scheduleSnapshotMaintenance(store);
       return result;
     }
     case "remember-boot":
@@ -797,9 +815,8 @@ async function stagedExports(): Promise<FileSystemDirectoryHandle> {
   return storage.root.getDirectoryHandle("exports", { create: true });
 }
 
-function requireSnapshotStore(): SnapshotStore {
-  if (snapshotStore === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "snapshots require OPFS");
-  return snapshotStore;
+function readWorkspaceSelection(selection: Parameters<typeof checkpointWorkspaceRead>[2], base: string, signal: AbortSignal): ReturnType<typeof checkpointWorkspaceRead> {
+  return checkpointWorkspaceRead(rootfsStore, workspaceSelections, selection.kind === "retained" ? { ...selection, id: retainedReadId(snapshotStore, selection.id) } : selection, base, signal);
 }
 
 function scheduleSnapshotMaintenance(store: SnapshotStore): void {
@@ -819,6 +836,8 @@ async function closeSnapshotChannel(): Promise<void> {
   snapshotChannel = undefined;
   await snapshotStore?.abort();
   snapshotStore = undefined;
+  await fallbackColdStarts?.abort();
+  fallbackColdStarts = undefined;
 }
 
 function closeDiskBridge(): void {

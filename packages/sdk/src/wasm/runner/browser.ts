@@ -1,5 +1,9 @@
+import type { ProcessId } from "../../values.js";
 import type { LinuxClient } from "../../runtime/js-process/transport.js";
-import { dispositionOperation } from "../../runtime/js-process/signals.js";
+import type { RunnerLaunch } from "../../runtime/js-process/launch.js";
+import { processNetPorts } from "./net-ports.js";
+import { dispositionOperation, maskOperation, pendingOperation } from "../../runtime/js-process/signals.js";
+import { process } from "../../runtime/js-process/process.js";
 import type { LinuxParts } from "./host.js";
 import type { BrowserProbe } from "./prerequisites.js";
 import type { RunnerContext } from "./run.js";
@@ -34,24 +38,34 @@ export async function importAdapterFromBlob(bundle: Blob): Promise<unknown> {
   }
 }
 
-/** The process's signal words and OXJR 65550, through its Linux client (JS process protocol 4, engine ADR 0027). */
+/** The process's signal buffer and OXJR 65550, through its Linux client (JS process protocol 5, engine ADR 0027). */
 export function clientSignals(client: LinuxClient): SignalTransport {
+  const linux = process(client);
+  let pid: Promise<ProcessId> | undefined;
   return {
     setDisposition: (signal, disposition) => client.call(dispositionOperation(signal, disposition)),
     listen: listener => { client.listenForSignals(listener); },
     get interruptWord() { return client.interruptWord; },
-    signaled: signal => { client.signaled(signal); },
+    mask: (how, set) => client.call(maskOperation(how, set)),
+    pending: () => client.call(pendingOperation()),
+    kill: async signal => {
+      pid ??= linux.info().then(info => info.pid);
+      await linux.signal(await pid, signal);
+    },
   };
 }
 
-/** Binds the runner to this worker's `fetch`, `navigator.locks`, dynamic `import` and its process's signals. */
-export function browserContext(linux: LinuxParts, client: LinuxClient): RunnerContext {
+/**
+ * Binds the runner to this worker's dynamic `import`, its process's signals and its process's VM network (with the TLS
+ * module its start carried); it fetches nothing and holds no lock.
+ */
+export function browserContext(linux: LinuxParts, client: LinuxClient, launch: RunnerLaunch | undefined): RunnerContext {
+  const local = globalThis.fetch.bind(globalThis);
   return {
     ...linux,
-    fetch: (url, init) => fetch(url, { signal: init.signal }),
-    locks: "locks" in navigator ? navigator.locks : undefined,
     browser: probeBrowser(globalThis),
     importAdapter: importAdapterFromBlob,
     signals: clientSignals(client),
+    network: { ports: processNetPorts(client, linux.files, linux.filesSync, launch?.tls?.module ?? null), scope: globalThis, local },
   };
 }

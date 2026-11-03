@@ -115,4 +115,4 @@ export { RELAY_VERSION } from "./runtime/workers/relay-generated.js";
 /** Generated ISA identities used by instruction entropy records and engine compatibility checks. */
 export { instructionIdentities } from "./runtime/isa-identities.generated.js";
 export { configureJSProcessTrace, readJSProcessTrace, watchAccelerationNotices } from "./js-process-diagnostics.js";
-export type { JSProcessTrace, JSProcessTraceEvent, JSProcessPlacementEvent, JSProcessLateFailureEvent, AccelerationRejectionReason, AccelerationEnvironmentRejection, AccelerationNotice } from "./js-process-diagnostics.js";
+export type { JSProcessTrace, JSProcessTraceEvent, JSProcessPlacementEvent, JSProcessLateFailureEvent, JSProcessRefusalEvent, AccelerationRejectionReason, AccelerationEnvironmentRejection, AccelerationNotice } from "./js-process-diagnostics.js";

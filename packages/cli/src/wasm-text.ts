@@ -24,16 +24,30 @@ const safeCard = (card: ConsentCard): ConsentCard => ({
   browser: card.browser.map(field), guestExecutables: card.guestExecutables.map(field), mounts: card.mounts.map(field), endpoints: card.endpoints.map(field),
   guestFiles: card.guestFiles.map(field), durablePaths: card.durablePaths.map(field), options: card.options.map(field), capabilities: card.capabilities.map(field),
   commands: card.commands.map(command => ({ name: field(command.name), path: field(command.path) })),
+  network: { ...card.network, hosts: card.network.hosts.map(field), ...(card.network.purpose === undefined ? {} : { purpose: field(card.network.purpose) }) },
 });
+
+/** The network row (engine ADR 0029): the reach, then what the module discloses, which is never enforced. */
+function networkLines(network: ConsentCard["network"]): readonly string[] {
+  const reach = network.reach === "none" ? "none: it opens no network connections of its own"
+    : network.reach === "vm" ? "this VM only: programs in the VM, not the internet"
+    : "the internet, through the VM's connection (TCP 80 and 443, and DNS), once your application connects the VM and the user allows it";
+  return [
+    reach,
+    ...network.hosts.length === 0 ? [] : [`contacts by default: ${network.hosts.join(", ")} (disclosed by the module, not enforced)`],
+    ...network.purpose === undefined ? [] : [`purpose: ${network.purpose}`],
+    ...network.children ? ["programs it starts follow the VM's own network policy, not this reach"] : [],
+  ];
+}
 
 /** What turning a module's commands on means (engine ADR 0027), said once under their names. */
 const COMMANDS_NOTE: readonly string[] = [
   "Your application turns them on per VM; then any program in the VM can run them as /usr/local/bin/<name>,",
-  "with its own arguments and input, and the module does that work in a worker of your page.",
+  "with its own arguments and input, and the module does that work in the VM's module frame, apart from your page.",
   "/usr/local/bin comes before /usr/bin on PATH: they take the place of image programs with these names,",
   "including scripts that start with #!/usr/bin/env <name>.",
-  "A module that runs code it is given (an interpreter such as Python) lets those programs run code in",
-  "your page's origin.",
+  "A module that runs code it is given (an interpreter such as Python) lets those programs use everything",
+  "it declares: its host operations and its network reach. That code runs in the module frame, not in your page.",
 ];
 
 /** What the card needs of a preview: the release's declarations and how it differs from what is installed. */
@@ -56,6 +70,7 @@ export function consentText(preview: ConsentView): string {
     ...row("browser", [card.browser.join(", ")]),
     ...row("guest", card.guestExecutables),
     ...row("mounts", card.mounts),
+    ...row("network", networkLines(card.network)),
     ...row("listens", card.endpoints),
     ...row("commands", card.commands.length === 0 ? [] : [card.commands.map(command => command.name).join(", "), ...COMMANDS_NOTE]),
     ...row("writes", [...card.guestFiles, ...card.durablePaths.map(path => `${path} (durable)`)]),
@@ -64,7 +79,7 @@ export function consentText(preview: ConsentView): string {
   ];
   // A first install has nothing installed to compare with: the rows above are everything it asks for.
   if (preview.status === "updated" && (preview.added.length > 0 || preview.removed.length > 0)) lines.push("", "Compared with the installed release:", ...preview.added.map(item => `  + ${field(item)}`), ...preview.removed.map(item => `  - ${field(item)}`));
-  lines.push("", "This is what the module declares. Its code runs in a worker of your page with that authority; it is not sandboxed from your application.");
+  lines.push("", "This is what the module declares. Its code runs with that authority in the VM's module frame, an opaque origin apart from your page; it is not a sandbox for the programs that run it.");
   // A directory in the project was chosen by the person running the command; "trusted" lists GitHub owners.
   if (preview.consent.reasons.includes("untrusted-source") && card.source.startsWith("github:")) lines.push(`Its source is not in "trusted" in oxidevm.modules.json.`);
   return `${lines.join("\n")}\n`;

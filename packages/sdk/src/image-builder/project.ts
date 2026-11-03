@@ -6,12 +6,12 @@ import { engineRelease, engineReleaseId } from "../engine.generated.js";
 import { defaultImage } from "../default-image.js";
 import { decodeImageLocation, decodeTrustedImageKey, defineImage } from "../image.js";
 import type { ImageLocation, ImageRef } from "../image.js";
-import type { RuntimeMode } from "../values.js";
+import { decodeSHA256 } from "../values.js";
+import type { RuntimeMode, SHA256 } from "../values.js";
 import { exactKeys, record, string } from "../runtime/decode.js";
 import { VMError } from "../runtime/errors.js";
-import type { ProjectConfig } from "./contracts.js";
+import type { ProjectConfig, ProjectLockIdentity } from "./contracts.js";
 import { decodeBundleJSON } from "./bundle-files.js";
-import { hash } from "./files.js";
 
 export interface ProjectLock {
   readonly schemaVersion: 2;
@@ -69,14 +69,71 @@ export function createProjectLock(input: ProjectConfig): ProjectLock {
   return { schemaVersion: 2, mode: config.mode, sdkVersion: release.sdkVersion, cliVersion: release.sdkVersion, engine: release.engine, engineRelease: release.engineRelease,
     image: { mode: reference.mode, manifestUrl: reference.manifestUrl, manifestSHA256: reference.manifestSHA256, trust: reference.trust }, staging: { publicDir: config.publicDir, assetBaseUrl: config.assetBaseUrl } };
 }
-export function validateProjectLock(value: unknown, input: ProjectConfig): ProjectLock {
+/** The command that stages this release's assets and then rewrites a lock written for another release. */
+const UPDATE_LOCK_COMMAND = "npx oxidevm assets install --update-lock";
+const LOCKED_VERSION = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/u;
+const LOCKED_ENGINE = /^sha256:[0-9a-f]{64}$/u;
+
+/** An existing lock's exact structure and the release it pins. Its other values are compared, never trusted. */
+interface LockFields {
+  readonly lock: Readonly<Record<string, unknown>>;
+  readonly image: Readonly<Record<string, unknown>>;
+  readonly trust: Readonly<Record<string, unknown>>;
+  readonly staging: Readonly<Record<string, unknown>>;
+  readonly identity: ProjectLockIdentity;
+}
+function lockedText(value: unknown, pattern: RegExp, label: string): string {
+  if (typeof value !== "string" || !pattern.test(value)) throw new VMError("PROTOCOL_ERROR", `project lock ${label} is invalid`);
+  return value;
+}
+function lockedDigest(value: unknown): SHA256 {
+  try { return decodeSHA256(value, "image digest"); } catch { throw new VMError("PROTOCOL_ERROR", "project lock image digest is invalid"); }
+}
+function readLock(value: unknown): LockFields {
   const lock = record(value, "project lock"); exactKeys(lock, ["schemaVersion", "mode", "sdkVersion", "cliVersion", "engine", "engineRelease", "image", "staging"]);
-  const expected = createProjectLock(input);
   const image = record(lock["image"], "locked image"); exactKeys(image, ["mode", "manifestUrl", "manifestSHA256", "trust"]);
-  const trust = record(image["trust"], "locked image trust"); const staging = record(lock["staging"], "locked staging");
-  if (lock["schemaVersion"] !== 2 || lock["mode"] !== expected.mode || lock["sdkVersion"] !== expected.sdkVersion || lock["cliVersion"] !== expected.cliVersion || lock["engineRelease"] !== expected.engineRelease
-    || hash(JSON.stringify(lock["engine"])) !== hash(JSON.stringify(expected.engine)) || image["mode"] !== expected.image.mode || image["manifestUrl"] !== expected.image.manifestUrl || image["manifestSHA256"] !== expected.image.manifestSHA256
-    || trust["algorithm"] !== expected.image.trust.algorithm || trust["keyId"] !== expected.image.trust.keyId || trust["publicKey"] !== expected.image.trust.publicKey || Object.keys(trust).length !== 3
-    || staging["publicDir"] !== expected.staging.publicDir || staging["assetBaseUrl"] !== expected.staging.assetBaseUrl || Object.keys(staging).length !== 2) throw new VMError("INVALID_ARGUMENT", "project lock differs from this exact SDK release; explicitly update the project dependency and lock");
+  const trust = record(image["trust"], "locked image trust"); exactKeys(trust, ["algorithm", "keyId", "publicKey"]);
+  const staging = record(lock["staging"], "locked staging"); exactKeys(staging, ["publicDir", "assetBaseUrl"]);
+  // Only these values reach messages and reports, so they are decoded exactly first.
+  const identity = { sdkVersion: lockedText(lock["sdkVersion"], LOCKED_VERSION, "SDK version"), engineRelease: lockedText(lock["engineRelease"], LOCKED_ENGINE, "engine release"), manifestSHA256: lockedDigest(image["manifestSHA256"]) };
+  return { lock, image, trust, staging, identity };
+}
+/** The fields in which a lock differs from `expected`, named by their path in the file. */
+function lockDifferences({ lock, image, trust, staging }: LockFields, expected: ProjectLock): readonly string[] {
+  const same: readonly (readonly [string, boolean])[] = [
+    ["schemaVersion", lock["schemaVersion"] === expected.schemaVersion], ["mode", lock["mode"] === expected.mode],
+    ["sdkVersion", lock["sdkVersion"] === expected.sdkVersion], ["cliVersion", lock["cliVersion"] === expected.cliVersion],
+    ["engine", JSON.stringify(lock["engine"]) === JSON.stringify(expected.engine)], ["engineRelease", lock["engineRelease"] === expected.engineRelease],
+    ["image.mode", image["mode"] === expected.image.mode], ["image.manifestUrl", image["manifestUrl"] === expected.image.manifestUrl],
+    ["image.manifestSHA256", image["manifestSHA256"] === expected.image.manifestSHA256],
+    ["image.trust", trust["algorithm"] === expected.image.trust.algorithm && trust["keyId"] === expected.image.trust.keyId && trust["publicKey"] === expected.image.trust.publicKey],
+    ["staging.publicDir", staging["publicDir"] === expected.staging.publicDir], ["staging.assetBaseUrl", staging["assetBaseUrl"] === expected.staging.assetBaseUrl],
+  ];
+  return same.filter(([, equal]) => !equal).map(([field]) => field);
+}
+/** The release a lock pins, as errors, `assets install` reports and the doctor name it. */
+export function projectLockIdentity(lock: ProjectLock): ProjectLockIdentity {
+  return { sdkVersion: lock.sdkVersion, engineRelease: lock.engineRelease, manifestSHA256: decodeSHA256(lock.image.manifestSHA256, "image digest") };
+}
+/** The release an existing lock pins and the fields in which it differs from `expected`; none when it matches. */
+export function compareProjectLock(value: unknown, expected: ProjectLock): { readonly locked: ProjectLockIdentity; readonly fields: readonly string[] } {
+  const fields = readLock(value);
+  return { locked: fields.identity, fields: lockDifferences(fields, expected) };
+}
+/** The image a lock pins. `assets install --image` records an image the configuration does not name only there. */
+export function lockedImage(value: unknown): ImageRef<RuntimeMode> {
+  const { image } = readLock(value), mode = image["mode"];
+  if (mode !== "system" && mode !== "userspace") throw new VMError("PROTOCOL_ERROR", "project lock image mode is invalid");
+  return defineImage({ mode, manifestUrl: decodeImageLocation(image["manifestUrl"]), manifestSHA256: string(image["manifestSHA256"], "image digest"), trust: decodeTrustedImageKey(image["trust"]) });
+}
+function staleLock(locked: ProjectLockIdentity, installed: ProjectLockIdentity, fields: readonly string[]): VMError {
+  const release = (lock: ProjectLockIdentity) => `SDK ${lock.sdkVersion}, engine ${lock.engineRelease}, image sha256:${lock.manifestSHA256}`;
+  return new VMError("INVALID_ARGUMENT", `project lock oxidevm.lock.json does not match the installed SDK release and project configuration (differing fields: ${fields.join(", ")}): locked ${release(locked)}; installed ${release(installed)}; run \`${UPDATE_LOCK_COMMAND}\` to stage this release's assets and rewrite the lock (pass --image and --trust again for an image the project configuration does not name)`,
+    { reason: "project-lock-stale", fields: [...fields], locked, installed });
+}
+/** An existing lock must be the one this release writes for `input`; one that differs says how to update it. */
+export function validateProjectLock(value: unknown, input: ProjectConfig): ProjectLock {
+  const read = readLock(value), expected = createProjectLock(input), fields = lockDifferences(read, expected);
+  if (fields.length > 0) throw staleLock(read.identity, projectLockIdentity(expected), fields);
   return expected;
 }

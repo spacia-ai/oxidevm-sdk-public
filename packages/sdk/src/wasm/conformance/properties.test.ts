@@ -7,8 +7,8 @@ import { runProperties, runnerDiagnostics, type ConformancePorts, type Conforman
 import { decodeWasmTestReport, WASM_TEST_PROPERTIES, type WasmPropertyResult, type WasmTestProperty } from "./report.js";
 
 const ENDPOINTS: Readonly<Record<string, EndpointDecl>> = { rpc: { kind: "unix", path: "/workspace/_oxidevm/kv.sock", protocol: "kv/1" }, tcp: { kind: "tcp", port: 5432, protocol: "kv/1" } };
-const SERVICE: ConformanceSubject = { kind: "service", endpoints: ENDPOINTS };
-const COMMAND: ConformanceSubject = { kind: "command", endpoints: {} };
+const SERVICE: ConformanceSubject = { kind: "service", endpoints: ENDPOINTS, reach: "none" };
+const COMMAND: ConformanceSubject = { kind: "command", endpoints: {}, reach: "none" };
 const record = (value: Readonly<Record<string, unknown>>): string => JSON.stringify(value);
 
 interface FakeBehaviour {
@@ -93,7 +93,7 @@ const statuses = (results: ReadonlyMap<WasmTestProperty, WasmPropertyResult>): R
 describe("command modules", () => {
   it("pass integrity, exit-range and declared-host, and skip the service properties", async () => {
     const results = await run(COMMAND, { genuine: () => ({ kind: "exited", code: 2 }) });
-    expect(statuses(results)).toEqual({ integrity: "passed", "exit-range": "passed", ready: "not-applicable", endpoints: "not-applicable", "duplicate-start": "not-applicable", "snapshot-refused": "not-applicable", "eof-stop": "not-applicable", restart: "not-applicable", "kill-recover": "not-applicable", "declared-host": "passed" });
+    expect(statuses(results)).toEqual({ integrity: "passed", "exit-range": "passed", ready: "not-applicable", endpoints: "not-applicable", "duplicate-start": "not-applicable", "snapshot-refused": "not-applicable", "eof-stop": "not-applicable", restart: "not-applicable", "kill-recover": "not-applicable", "declared-host": "passed", "network-direct": "passed", "network-declared": "passed", "network-offline": "not-applicable" });
   });
 
   it("fail exit-range, and only exit-range, when main returns a status above 119", async () => {
@@ -129,7 +129,7 @@ describe("command modules", () => {
 describe("service modules", () => {
   it("pass every property when the service follows the runner contract", async () => {
     const results = await run(SERVICE, {});
-    expect(statuses(results)).toEqual({ integrity: "passed", "exit-range": "not-applicable", ready: "passed", endpoints: "passed", "duplicate-start": "passed", "snapshot-refused": "passed", "eof-stop": "passed", restart: "passed", "kill-recover": "passed", "declared-host": "passed" });
+    expect(statuses(results)).toEqual({ integrity: "passed", "exit-range": "not-applicable", ready: "passed", endpoints: "passed", "duplicate-start": "passed", "snapshot-refused": "passed", "eof-stop": "passed", restart: "passed", "kill-recover": "passed", "declared-host": "passed", "network-direct": "passed", "network-declared": "passed", "network-offline": "not-applicable" });
   });
 
   it("fail eof-stop, and only eof-stop, when the service ignores end of input", async () => {
@@ -173,5 +173,40 @@ describe("runner diagnostics", () => {
   it("collects undeclared capabilities and the last fault, and ignores other output", () => {
     const stderr = ["plain text", "{not json", record({ oxidevm: "warning", v: 1, kind: "undeclared-capability", member: "fs", capabilities: ["files.sync"] }), record({ oxidevm: "error", v: 1, kind: "adapter", fault: "thrown", message: "boom" })].join("\n");
     expect(runnerDiagnostics(stderr)).toEqual({ undeclared: ["files.sync"], failure: { oxidevm: "error", kind: "adapter", fault: "thrown", message: "boom" } });
+  });
+});
+
+// Engine ADR 0029, N-9: the VM under test is never connected, so every run of a module with a reach is an offline run.
+describe("network properties", () => {
+  const INTERNET: ConformanceSubject = { ...COMMAND, reach: "internet" };
+  const failedOnly = (results: ReadonlyMap<WasmTestProperty, WasmPropertyResult>) => [...results.values()].filter(result => result.status === "failed").map(result => result.property);
+
+  it("network-direct fails, and only it, when the module tried the browser's own network", async () => {
+    expect(statuses(await run(COMMAND, { genuine: () => ({ kind: "exited", code: 0 }) }))["network-direct"]).toBe("passed");
+    const results = await run(COMMAND, { genuine: () => ({ kind: "exited", code: 0 }), stderr: record({ oxidevm: "warning", v: 1, kind: "network-direct", api: "connect-src", target: "https://example.com/x" }) });
+    expectFailed(results, "network-direct", "connect-src https://example.com/x");
+    expect(failedOnly(results)).toEqual(["network-direct"]);
+  });
+
+  it("network-declared fails, and only it, when Rust refused a destination beyond the reach", async () => {
+    const vmOnly: ConformanceSubject = { ...COMMAND, reach: "vm" };
+    expect(statuses(await run(vmOnly, { genuine: () => ({ kind: "exited", code: 0 }) }))["network-declared"]).toBe("passed");
+    const results = await run(vmOnly, { genuine: () => ({ kind: "exited", code: 0 }), stderr: record({ oxidevm: "warning", v: 1, kind: "network-reach", address: "93.184.215.14", port: 443, protocol: "tcp" }) });
+    expectFailed(results, "network-declared", "tcp 93.184.215.14:443");
+    expect(failedOnly(results)).toEqual(["network-declared"]);
+  });
+
+  it("network-offline passes a command that fails offline with one line and status 69, and fails a silent or crashing one", async () => {
+    expect(statuses(await run(INTERNET, { genuine: () => ({ kind: "exited", code: 69 }), stderr: "tool: network unavailable: this VM is not connected to the internet\n" }))["network-offline"]).toBe("passed");
+    expectFailed(await run(INTERNET, { genuine: () => ({ kind: "exited", code: 69 }) }), "network-offline", "without a line on standard error");
+    const crashed = await run(INTERNET, { genuine: () => ({ kind: "exited", code: 123 }), stderr: record({ oxidevm: "error", v: 1, kind: "adapter", fault: "thrown", message: "TypeError: fetch failed" }) });
+    expectFailed(crashed, "network-offline", "kit.net.describe");
+    expectFailed(await run(INTERNET, { genuine: () => "running" }), "network-offline", "did not end within its bound");
+  });
+
+  it("network-offline passes a service that stays ready offline, and fails one that does not", async () => {
+    expect(statuses(await run({ ...SERVICE, reach: "internet" }, {}))["network-offline"]).toBe("passed");
+    expectFailed(await run({ ...SERVICE, reach: "internet" }, { refused: ["tcp"] }), "network-offline", "stopped serving");
+    expectFailed(await run({ ...SERVICE, reach: "vm" }, { genuine: () => new VMError("GUEST_CRASH", "kv crashed") }), "network-offline", "did not become ready");
   });
 });

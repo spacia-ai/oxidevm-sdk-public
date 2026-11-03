@@ -8,11 +8,12 @@ const modules = vi.hoisted(() => new Map([
   ["oxidevm_core_shared.wasm", Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0, 2)],
   ["oxidevm_netstack.wasm", Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0, 3)],
   ["oxidevm_userspace.wasm", Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0, 4)],
+  ["oxidevm_tls.wasm", Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0, 5)],
 ]));
 vi.mock("./engine.generated.js", async () => {
   const { sha256Hex: digest } = await import("./runtime/workers/snapshot-content.js");
   const artifacts = [];
-  for (const [name, bytes] of modules) artifacts.push({ name, mode: name === "oxidevm_userspace.wasm" ? "userspace" : "system", bytes: bytes.length, sha256: await digest(bytes) });
+  for (const [name, bytes] of modules) artifacts.push({ name, mode: name === "oxidevm_userspace.wasm" || name === "oxidevm_tls.wasm" ? "userspace" : "system", bytes: bytes.length, sha256: await digest(bytes) });
   return {
     engineReleaseId: "e".repeat(64), engineDownload: null, engineCompliance: null,
     engineRelease: { schemaVersion: 3, engineSource: { commit: "c".repeat(40), dirty: false, nativeInputsSHA256: "d".repeat(64) }, identities: { coreApi: 16, jitAbi: 59, userspaceApi: 29, netstackApi: 2 }, artifacts },
@@ -68,14 +69,18 @@ it.each([Uint8Array.of(9, 9, 9), Uint8Array.of(1)])("repairs an invalid cached a
 });
 
 /** Serves every pinned module at its name, except `replace`d ones (a status or other bytes). */
-function serve(replace: ReadonlyMap<string, Uint8Array | number> = new Map()): void {
+/** Serves the stand-in modules; returns the names requested so far. */
+function serve(replace: ReadonlyMap<string, Uint8Array | number> = new Map()): () => readonly string[] {
+  const requested: string[] = [];
   vi.stubGlobal("fetch", (input: URL | string) => {
     const name = new URL(String(input)).pathname.split("/").at(-1) ?? "";
+    requested.push(name);
     const replacement = replace.get(name);
     if (typeof replacement === "number") return Promise.resolve(new Response("missing", { status: replacement }));
     const body = replacement ?? modules.get(name);
     return Promise.resolve(body === undefined ? new Response("missing", { status: 404 }) : new Response(new Uint8Array(body)));
   });
+  return () => requested;
 }
 
 it("rejects a mismatched engine before a worker can execute it", async () => {
@@ -124,5 +129,18 @@ describe("modules served from the runtime base URL", () => {
     await expect(failure).rejects.toMatchObject({ code: "CORE_LOAD_FAILED" });
     expect(created).not.toHaveBeenCalled();
     await expect(failure).rejects.toMatchObject({ detail: { asset: "oxidevm_core_shared.wasm", engineRelease: "e".repeat(64) } });
+  });
+
+  it("fetches the TLS module only when a module first needs it, once per VM (ADR 0029)", async () => {
+    const requested = serve();
+    const assets = await loadEngineAssets("userspace", "https://assets.test/oxidevm/runtime/");
+    expect([...assets.urls.keys()]).toEqual(["oxidevm_userspace.wasm"]);
+    expect(requested()).not.toContain("oxidevm_tls.wasm");
+    const [first, second] = await Promise.all([assets.lazy("oxidevm_tls.wasm"), assets.lazy("oxidevm_tls.wasm")]);
+    expect(first).toEqual(modules.get("oxidevm_tls.wasm"));
+    expect(second).toBe(first);
+    expect(requested().filter(name => name === "oxidevm_tls.wasm")).toHaveLength(1);
+    await expect(assets.lazy("oxidevm_userspace.wasm")).rejects.toMatchObject({ code: "CORE_LOAD_FAILED" });
+    assets.dispose();
   });
 });

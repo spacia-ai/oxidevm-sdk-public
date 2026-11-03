@@ -1,5 +1,7 @@
-import { afterEach, expect, it, vi } from "vitest";
-import { adaptVM, bindFrameDiagnostics, ownedModuleCommands, spawnOwnedModuleProcess } from "./vm-adapter.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { isolationUnavailable } from "./runtime/protocol/module-frame.js";
+import type { ModuleFrameOpener } from "./module-execution.js";
+import { adaptVM, bindFrameOwner, ownedModuleCommands, ownedModules } from "./vm-adapter.js";
 import { record } from "./runtime/decode.js";
 import { decodePublicVMOptions } from "./vm-options.js";
 import { decodeSHA256 } from "./values.js";
@@ -8,6 +10,19 @@ import { bootedManagedVm, ScriptedWorker } from "./runtime/system-vm.test-suppor
 import type { PipeJSProcessSpec, WorkspaceChange, WorkspaceFileEntry, WorkspaceWatch } from "./contracts.js";
 import type { SnapshotInfo } from "./runtime/snapshot-types.js";
 import type { ModuleCommandsRequest } from "./runtime/protocol/userspace-module-commands.js";
+import { copyKey } from "./runtime/protocol/userspace-module-files.js";
+import { tlsPin } from "./wasm/net/tls-file.js";
+import { buildRelease, COMMAND_DECLARATION } from "./wasm/runner/fixtures.test-support.js";
+import { encodeLaunchArgument } from "./wasm/runner/descriptor.js";
+import type { Capability } from "./wasm/capabilities.js";
+
+/** ADR 0028: the module frames a VM opens, faked: each open answers a frame whose loss the test reports. */
+const frames = { open: vi.fn<ModuleFrameOpener["open"]>(), lost: [] as (() => void)[] };
+const fakeFrames: ModuleFrameOpener = {
+  open: (sources, signal) => frames.open(sources, signal),
+  sources: () => Promise.resolve({ broker: new Blob(["broker"]), runner: new Blob(["runner"]) }),
+  watch: (_frame, lost) => { frames.lost.push(lost); return () => undefined; },
+};
 
 const ACCEL = { available: true } as const;
 const NOT_APPLICABLE = { available: false, reason: "mode-unsupported" } as const;
@@ -20,7 +35,7 @@ it.each(["system", "userspace"] as const)("advertises native snapshots for %s", 
   const runtime = await bootedManagedVm();
   const vm = await adaptVM(runtime, decodePublicVMOptions({ mode }),
     { id: "test", version: "1", mode, manifestSHA256: decodeSHA256("a".repeat(64), "test"), cpuProfile: "x86-64-v3", signatureVerified: true, keyId: "test" },
-    { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() }, { tier: "development" }, mode === "system" ? NOT_APPLICABLE : ACCEL, { start: { kind: "booted", reason: "first-start" } });
+    { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy: () => Promise.reject(new Error("unused")), dispose: vi.fn() }, { tier: "development" }, mode === "system" ? NOT_APPLICABLE : ACCEL, { start: { kind: "booted", reason: "first-start" } });
   try { expect(vm.capabilities.snapshots).toEqual({ available: true }); }
   finally { await vm.dispose(); }
 });
@@ -33,7 +48,7 @@ it.each([
   vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true); vi.stubGlobal("navigator", { storage });
   vi.stubGlobal("location", new URL("https://ide.example.test/"));
   const runtime = await bootedManagedVm();
-  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() };
+  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy: () => Promise.reject(new Error("unused")), dispose: vi.fn() };
   try {
     const vm = await adaptVM(runtime, decodePublicVMOptions({ mode: "system", workspaceId: "retention" }), {
       id: "test", version: "1", mode: "system", manifestSHA256: decodeSHA256("a".repeat(64), "test manifest"), cpuProfile: "x86-64-v3", signatureVerified: true, keyId: "test",
@@ -47,7 +62,7 @@ it("exposes the runtime's own network owner as vm.network", async () => {
   vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true); vi.stubGlobal("navigator", { storage: undefined });
   vi.stubGlobal("location", new URL("https://ide.example.test/"));
   const runtime = await bootedManagedVm();
-  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() };
+  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy: () => Promise.reject(new Error("unused")), dispose: vi.fn() };
   try {
     const vm = await adaptVM(runtime, decodePublicVMOptions({ mode: "system", network: { mode: "local" } }), {
       id: "test", version: "1", mode: "system", manifestSHA256: decodeSHA256("a".repeat(64), "test manifest"), cpuProfile: "x86-64-v3", signatureVerified: true, keyId: "test",
@@ -66,7 +81,7 @@ it("exposes the runtime workspace's own file methods on vm.workspace and refuses
   vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true); vi.stubGlobal("navigator", { storage: undefined });
   vi.stubGlobal("location", new URL("https://ide.example.test/"));
   const runtime = await bootedManagedVm();
-  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() };
+  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy: () => Promise.reject(new Error("unused")), dispose: vi.fn() };
   const entry: WorkspaceFileEntry = { kind: "file", link: null, name: "a.txt", path: "/a.txt", size: 2, version: "0".repeat(48) };
   const watch: WorkspaceWatch = { done: Promise.resolve(), setDirectories: () => Promise.resolve() };
   const runtimeWorkspace = runtime.workspace;
@@ -110,7 +125,7 @@ it("reports how a Userspace VM's saved /workspace met its image, in-sync without
   vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true); vi.stubGlobal("navigator", { storage: undefined });
   vi.stubGlobal("location", new URL("https://ide.example.test/"));
   const runtime = await bootedManagedVm();
-  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() };
+  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy: () => Promise.reject(new Error("unused")), dispose: vi.fn() };
   const image = { id: "test", version: "1", mode: "userspace" as const, manifestSHA256: decodeSHA256("a".repeat(64), "test manifest"), cpuProfile: "x86-64-v3" as const, signatureVerified: true as const, keyId: "test" };
   const workspace = { state: "conflict-preserved" as const, conflicts: [{ reason: "changed-in-both" as const, path: "/workspace/app.ts" }], omittedConflicts: 0 };
   try {
@@ -123,7 +138,7 @@ it("reports how a Userspace VM's saved /workspace met its image, in-sync without
 
 it("delivers holder handoff before ending its subscription and retires public resources",async()=>{
  vi.stubGlobal("Worker",ScriptedWorker);vi.stubGlobal("crossOriginIsolated",true);vi.stubGlobal("navigator",{storage:undefined});vi.stubGlobal("location",new URL("https://ide.test/"));
- const runtime=await bootedManagedVm(),assets={urls:new Map<string,string>(),compile:()=>Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))),dispose:vi.fn()},register=vi.spyOn(runtime,"allowWorkspaceHandoff").mockImplementation(()=>{});
+ const runtime=await bootedManagedVm(),assets={urls:new Map<string,string>(),compile:()=>Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))),lazy:()=>Promise.reject(new Error("unused")),dispose:vi.fn()},register=vi.spyOn(runtime,"allowWorkspaceHandoff").mockImplementation(()=>{});
  const vm=await adaptVM(runtime,decodePublicVMOptions({mode:"system"}),{id:"test",version:"1",mode:"system",manifestSHA256:decodeSHA256("a".repeat(64),"test"),cpuProfile:"x86-64-v3",signatureVerified:true,keyId:"test"},assets,{tier:"development"},NOT_APPLICABLE,{start:{kind:"booted",reason:"first-start"}});
  const order:string[]=[],subscription=vm.allowWorkspaceHandoff(()=>order.push("moved"),{signal:new AbortController().signal}).then(()=>order.push("ended"));
  const call=register.mock.calls[0];if(call===undefined)throw new Error("missing holder listener");call[0]({saved:true});await subscription;
@@ -133,7 +148,7 @@ it("delivers holder handoff before ending its subscription and retires public re
 it.each(["system", "userspace"] as const)("rejects malformed %s handoff registrations before registering a holder", async mode => {
   vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true);
   vi.stubGlobal("navigator", { storage: undefined }); vi.stubGlobal("location", new URL("https://ide.test/"));
-  const runtime = await bootedManagedVm(), assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() };
+  const runtime = await bootedManagedVm(), assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy: () => Promise.reject(new Error("unused")), dispose: vi.fn() };
   const register = vi.spyOn(runtime, "allowWorkspaceHandoff").mockImplementation(() => {});
   const vm = await adaptVM(runtime, decodePublicVMOptions({ mode }),
     { id: "test", version: "1", mode, manifestSHA256: decodeSHA256("a".repeat(64), "test"), cpuProfile: "x86-64-v3", signatureVerified: true, keyId: "test" },
@@ -159,7 +174,7 @@ it.each(["system", "userspace"] as const)("rejects malformed %s handoff registra
 it("ends valid local handoff subscriptions on abort and disposal", async () => {
   vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true);
   vi.stubGlobal("navigator", { storage: undefined }); vi.stubGlobal("location", new URL("https://ide.test/"));
-  const runtime = await bootedManagedVm(), assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() };
+  const runtime = await bootedManagedVm(), assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy: () => Promise.reject(new Error("unused")), dispose: vi.fn() };
   const register = vi.spyOn(runtime, "allowWorkspaceHandoff").mockImplementation(() => {});
   const vm = await adaptVM(runtime, decodePublicVMOptions({ mode: "system" }),
     { id: "test", version: "1", mode: "system", manifestSHA256: decodeSHA256("a".repeat(64), "test"), cpuProfile: "x86-64-v3", signatureVerified: true, keyId: "test" }, assets, { tier: "development" }, NOT_APPLICABLE, { start: { kind: "booted", reason: "first-start" } });
@@ -179,7 +194,7 @@ it("ends valid local handoff subscriptions on abort and disposal", async () => {
 it.each(["system", "userspace"] as const)("%s keeps the requested update offer coherent after restoring another image", async mode => {
   vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true);
   vi.stubGlobal("navigator", { storage: undefined }); vi.stubGlobal("location", new URL("https://ide.test/"));
-  const runtime = await bootedManagedVm(), assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() };
+  const runtime = await bootedManagedVm(), assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy: () => Promise.reject(new Error("unused")), dispose: vi.fn() };
   const old = { id: "test", version: "old", mode, manifestSHA256: decodeSHA256("a".repeat(64), "test"), cpuProfile: "x86-64-v3" as const, signatureVerified: true as const, keyId: "test" };
   let running = old;
   vi.spyOn(runtime, "imageIdentity", "get").mockImplementation(() => running);
@@ -198,34 +213,43 @@ it.each(["system", "userspace"] as const)("%s keeps the requested update offer c
   } finally { await vm.dispose(); }
 });
 
-it("starts spawnModule's runner with its launch through the VM's owner record, and refuses VMs that cannot run it", async () => {
+it("starts spawnModule's runner from the VM's copies through the VM's owner record, and refuses VMs that cannot run it", async () => {
   vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true); vi.stubGlobal("navigator", { storage: undefined });
   vi.stubGlobal("location", new URL("https://ide.example.test/"));
-  const runtime = await bootedManagedVm(), started: unknown[] = [];
-  runtime.spawnJS = spec => { started.push(spec); return Promise.reject(new VMError("ABORTED", "the test runtime starts nothing")); };
-  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() };
+  const runtime = await bootedManagedVm(), started: unknown[] = [], asked: unknown[] = [];
+  runtime.spawnModule = spec => { started.push(spec); return Promise.reject(new VMError("ABORTED", "the test runtime starts nothing")); };
+  runtime.moduleFiles = (pins, options) => { asked.push([pins, options]); return Promise.resolve([]); };
+  runtime.attachModuleFrame = () => Promise.resolve();
+  frames.open.mockImplementation(() => Promise.resolve({ port: new MessageChannel().port1, dispose: () => undefined }));
+  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy: () => Promise.reject(new Error("unused")), dispose: vi.fn() };
   const image = { id: "test", version: "1", manifestSHA256: decodeSHA256("a".repeat(64), "test"), cpuProfile: "x86-64-v3", signatureVerified: true, keyId: "test" } as const;
-  const vm = await adaptVM(runtime, decodePublicVMOptions({ mode: "userspace" }), { ...image, mode: "userspace" }, assets, { tier: "development" }, ACCEL, { start: { kind: "booted", reason: "first-start" } });
+  const vm = await adaptVM(runtime, decodePublicVMOptions({ mode: "userspace" }), { ...image, mode: "userspace" }, assets, { tier: "development" }, ACCEL, { start: { kind: "booted", reason: "first-start" }, moduleFrames: fakeFrames });
   const system = await adaptVM(runtime, decodePublicVMOptions({ mode: "system" }), { ...image, mode: "system" }, assets, { tier: "development" }, NOT_APPLICABLE, { start: { kind: "booted", reason: "first-start" } });
   if (vm.mode !== "userspace") throw new Error("Expected a Userspace VM");
-  const worker = new URL("https://ide.example.test/assets/module-runner/runner.worker.js"), launch = { kind: "host", descriptor: "{\"v\":1}" } as const;
+  const start = { descriptor: "{\"v\":1}", files: {} } as const, pin = { sha256: "a".repeat(64), bytes: 4 };
   try {
-    await expect(spawnOwnedModuleProcess(vm, { worker, args: ["in.md"] }, launch)).rejects.toMatchObject({ code: "ABORTED" });
-    expect(started).toEqual([expect.objectContaining({ worker: worker.href, args: ["in.md"], launch })]);
-    // The public spawnJS starts the same way, without a launch.
-    await expect(vm.spawnJS({ worker, args: ["in.md"] })).rejects.toMatchObject({ code: "ABORTED" });
-    expect(started).toHaveLength(2);
-    expect(record(started[1], "public start")["launch"]).toBeUndefined();
+    const modules = ownedModules(vm);
+    await expect(modules.spawn({ args: ["in.md"] }, start)).rejects.toMatchObject({ code: "ABORTED" });
+    // The runtime chooses the runner: the page names none, and the description travels beside argv, never in it.
+    expect(started).toEqual([expect.objectContaining({ args: ["in.md"], descriptor: start.descriptor, files: {} })]);
+    expect(record(started[0], "module start")["worker"]).toBeUndefined();
+    // Without a cwd the module starts in /workspace, as spawnModule did before ADR 0028 (0.0.9 and earlier); a cwd is kept.
+    expect(record(started[0], "module start")["cwd"]).toBe("/workspace");
+    await expect(modules.spawn({ args: [], cwd: "/tmp" }, start)).rejects.toMatchObject({ code: "ABORTED" });
+    expect(record(started[1], "module start")["cwd"]).toBe("/tmp");
+    await expect(modules.missing([pin], undefined)).resolves.toEqual([]);
+    expect(asked).toEqual([[[pin], {}]]);
     // Another object with a spawnJS, a System VM and a hosted frame's VM have no runner to start.
-    await expect(spawnOwnedModuleProcess({ spawnJS: (spec: PipeJSProcessSpec) => vm.spawnJS(spec) }, { worker }, launch)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
-    await expect(spawnOwnedModuleProcess(system, { worker }, launch)).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
+    const refusal = (vmLike: object): unknown => { try { ownedModules(vmLike); return undefined; } catch (error: unknown) { return error; } };
+    expect(refusal({ spawnJS: (spec: PipeJSProcessSpec) => vm.spawnJS(spec) })).toMatchObject({ code: "INVALID_ARGUMENT" });
+    expect(refusal(system)).toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
     const hosted = { ...vm };
-    bindFrameDiagnostics(hosted, { readJSProcessTrace: () => Promise.reject(new Error("unused")), watchAccelerationNotices: () => Promise.reject(new Error("unused")) });
-    await expect(spawnOwnedModuleProcess(hosted, { worker }, launch)).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
-    expect(started).toHaveLength(2);
+    bindFrameOwner(hosted, { diagnostics: { readJSProcessTrace: () => Promise.reject(new Error("unused")), watchAccelerationNotices: () => Promise.reject(new Error("unused")) } });
+    expect(refusal(hosted)).toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
     // A disposed VM starts nothing.
     await vm.dispose();
-    await expect(spawnOwnedModuleProcess(vm, { worker }, launch)).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    await expect(modules.spawn({}, start)).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    await expect(modules.missing([pin], undefined)).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
     expect(started).toHaveLength(2);
   } finally { await system.dispose(); await runtime.dispose(); }
 });
@@ -235,7 +259,7 @@ it("sends module-command requests through a Userspace VM's owner record until th
   vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true); vi.stubGlobal("navigator", { storage: undefined });
   vi.stubGlobal("location", new URL("https://ide.example.test/"));
   const runtime = await bootedManagedVm();
-  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), dispose: vi.fn() };
+  const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy: () => Promise.reject(new Error("unused")), dispose: vi.fn() };
   const image = { id: "test", version: "1", manifestSHA256: decodeSHA256("a".repeat(64), "test"), cpuProfile: "x86-64-v3", signatureVerified: true, keyId: "test" } as const;
   const vm = await adaptVM(runtime, decodePublicVMOptions({ mode: "userspace" }), { ...image, mode: "userspace" }, assets, { tier: "development" }, ACCEL, { start: { kind: "booted", reason: "first-start" } });
   const system = await adaptVM(runtime, decodePublicVMOptions({ mode: "system" }), { ...image, mode: "system" }, assets, { tier: "development" }, NOT_APPLICABLE, { start: { kind: "booted", reason: "first-start" } });
@@ -256,8 +280,9 @@ it("sends module-command requests through a Userspace VM's owner record until th
     expect(refusal({ spawnJS: (): Promise<never> => Promise.reject(new Error("unused")) })).toMatchObject({ ...unavailable, message: expect.stringContaining("not created by this copy of the SDK") as unknown });
     expect(refusal(system)).toMatchObject({ ...unavailable, message: expect.stringContaining("Userspace VM") as unknown });
     const hosted = { ...vm };
-    bindFrameDiagnostics(hosted, { readJSProcessTrace: () => Promise.reject(new Error("unused")), watchAccelerationNotices: () => Promise.reject(new Error("unused")) });
-    expect(refusal(hosted)).toMatchObject({ ...unavailable, message: expect.stringContaining("hosted runtime frame") as unknown });
+    bindFrameOwner(hosted, { diagnostics: { readJSProcessTrace: () => Promise.reject(new Error("unused")), watchAccelerationNotices: () => Promise.reject(new Error("unused")) } });
+    // A hosted VM reaches module commands through frame protocol 17 (ADR 0028); one bound without them has none.
+    expect(refusal(hosted)).toMatchObject({ ...unavailable, message: expect.stringContaining("Userspace VM") as unknown });
     // Disposal ends the VM's lifetime: nothing more is sent.
     expect(owned.disposed.aborted).toBe(false);
     await vm.dispose();
@@ -265,4 +290,78 @@ it("sends module-command requests through a Userspace VM's owner record until th
     await expect(owned.request(status)).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
     expect(received).toHaveLength(2);
   } finally { await system.dispose(); await runtime.dispose(); }
+});
+
+describe("the VM's module frame (ADR 0028)", () => {
+  async function moduleVM() {
+    vi.stubGlobal("Worker", ScriptedWorker); vi.stubGlobal("crossOriginIsolated", true); vi.stubGlobal("navigator", { storage: undefined });
+    vi.stubGlobal("location", new URL("https://ide.example.test/"));
+    frames.open.mockReset(); frames.lost.length = 0;
+    const runtime = await bootedManagedVm(), events: string[] = [], attached: MessagePort[] = [];
+    runtime.attachModuleFrame = port => { events.push("attach"); attached.push(port); return Promise.resolve(); };
+    runtime.detachModuleFrame = () => { events.push("detach"); return Promise.resolve(); };
+    runtime.spawnModule = () => { events.push("spawn"); return Promise.reject(new VMError("ABORTED", "the test runtime starts nothing")); };
+    runtime.moduleFiles = () => Promise.resolve([]);
+    const dispose = runtime.dispose.bind(runtime);
+    runtime.dispose = async () => { events.push("runtime-dispose"); await dispose(); };
+    frames.open.mockImplementation(() => Promise.resolve({ port: new MessageChannel().port1, dispose: () => { events.push("frame-dispose"); } }));
+    const lazy = vi.fn((name: string) => Promise.resolve(new TextEncoder().encode(name)));
+    const assets = { urls: new Map<string, string>(), compile: () => Promise.resolve(new WebAssembly.Module(Uint8Array.of(0,97,115,109,1,0,0,0))), lazy, dispose: vi.fn() };
+    const image = { id: "test", version: "1", manifestSHA256: decodeSHA256("a".repeat(64), "test"), cpuProfile: "x86-64-v3", signatureVerified: true, keyId: "test" } as const;
+    const vm = await adaptVM(runtime, decodePublicVMOptions({ mode: "userspace" }), { ...image, mode: "userspace" }, assets, { tier: "development" }, ACCEL, { start: { kind: "booted", reason: "first-start" }, moduleFrames: fakeFrames });
+    return { vm, runtime, events, attached, lazy, modules: ownedModules(vm) };
+  }
+  const start = { descriptor: "{\"v\":1}", files: {} } as const;
+
+  it("one frame per VM, removed after dispose", async () => {
+    const { vm, events, attached, modules } = await moduleVM();
+    await expect(modules.spawn({}, start)).rejects.toMatchObject({ code: "ABORTED" });
+    await expect(modules.spawn({}, start)).rejects.toMatchObject({ code: "ABORTED" });
+    await ownedModuleCommands(vm).request({ operation: "status", registration: 1 }).catch(() => undefined);
+    expect(frames.open).toHaveBeenCalledOnce();
+    expect([events, attached.length]).toEqual([["attach", "spawn", "spawn"], 1]);
+    await vm.dispose();
+    // The VM's worker, and with it the verified-copy store, goes first; then the frame.
+    expect(events.slice(-2)).toEqual(["runtime-dispose", "frame-dispose"]);
+  });
+
+  it("a failed probe gives the typed capability and starts no worker", async () => {
+    const { vm, events, modules } = await moduleVM();
+    frames.open.mockImplementation(() => Promise.reject(isolationUnavailable("blob-workers", "This browser cannot isolate WebAssembly modules (blob-workers)")));
+    const refusal = { code: "FEATURE_NOT_AVAILABLE", detail: { reason: "wasm-module-isolation-unavailable", capability: "blob-workers" } };
+    await expect(modules.spawn({}, start)).rejects.toMatchObject(refusal);
+    await expect(ownedModuleCommands(vm).request({ operation: "enable", descriptor: "{}", commands: ["a"], concurrency: 1, files: {} })).rejects.toMatchObject(refusal);
+    expect(events).toEqual([]);
+    await vm.dispose();
+  });
+
+  it("a module with a network reach starts with the engine's TLS module, fetched only when the VM lacks it (ADR 0029)", async () => {
+    const { vm, runtime, lazy, modules } = await moduleVM(), sent: (readonly string[])[] = [];
+    let held = false;
+    runtime.moduleFiles = pins => Promise.resolve(held ? [] : pins.map(pin => copyKey(pin)));
+    runtime.spawnModule = request => { sent.push(Object.keys(request.files)); held ||= Object.keys(request.files).length > 0; return Promise.reject(new VMError("ABORTED", "the test runtime starts nothing")); };
+    const describe = async (host: readonly Capability[]) => encodeLaunchArgument((await buildRelease({ adapter: "export default () => ({ main: () => 0 });", declaration: { ...COMMAND_DECLARATION, requires: { host: [...host] } } })).descriptor);
+    await modules.spawn({}, { descriptor: await describe(["files.sync"]), files: {} }).catch(() => undefined);
+    expect([lazy.mock.calls.length, sent]).toEqual([0, [[]]]);
+    await modules.spawn({}, { descriptor: await describe(["net.internet"]), files: {} }).catch(() => undefined);
+    expect(lazy.mock.calls.map(call => call[0])).toEqual(["oxidevm_tls.wasm"]);
+    expect(sent[1]).toEqual([copyKey(tlsPin())]);
+    // Once the VM's store holds it, later starts send and fetch nothing.
+    await modules.spawn({}, { descriptor: await describe(["net.vm"]), files: {} }).catch(() => undefined);
+    expect([lazy.mock.calls.length, sent[2]]).toEqual([1, []]);
+    await vm.dispose();
+  });
+
+  it("a lost frame ends processes with 125 and the next call reopens it", async () => {
+    const { vm, events, modules } = await moduleVM();
+    await modules.spawn({}, start).catch(() => undefined);
+    expect(frames.lost).toHaveLength(1);
+    frames.lost[0]?.();
+    // The Userspace worker ends the module processes with status 125 (driver.moduleFrameLost) once told.
+    await vi.waitFor(() => { expect(events).toEqual(["attach", "spawn", "frame-dispose", "detach"]); });
+    await modules.spawn({}, start).catch(() => undefined);
+    expect(frames.open).toHaveBeenCalledTimes(2);
+    expect(events.slice(4)).toEqual(["attach", "spawn"]);
+    await vm.dispose();
+  });
 });

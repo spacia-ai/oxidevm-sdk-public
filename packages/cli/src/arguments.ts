@@ -18,11 +18,11 @@ export type CLIInvocation = Common & (
   | {readonly command:"wasm inspect";readonly file:string}
   | {readonly command:"wasm build";readonly project:string;readonly check:boolean;readonly out?:string;readonly module?:string}
   | {readonly command:"wasm release";readonly project:string;readonly out?:string;readonly module?:string;readonly repo?:string}
-  | {readonly command:"wasm init";readonly directory:string;readonly moduleKind:"command"|"service";readonly id?:string;readonly from?:string}
+  | {readonly command:"wasm init";readonly directory:string;readonly moduleKind:"command"|"service";readonly id?:string;readonly from?:string;readonly network:"none"|"vm"|"internet"}
   | {readonly command:"wasm test";readonly project:string;readonly module?:string;readonly image?:{readonly bundle:string;readonly trust:string};readonly args:readonly string[];readonly options:Readonly<Record<string,unknown>>;readonly browser:"chromium"|"firefox"|"webkit";readonly engineDir?:string;readonly timeoutMs?:number}
   | { readonly command: "init"; readonly directory: string; readonly mode: RuntimeMode; readonly skipAssets: boolean; readonly start: boolean; readonly packageManager: "npm" | "bun"; readonly archives?: { readonly sdk: string; readonly cli: string }; readonly engineDir?: string; readonly image?: { readonly bundle: string; readonly trust: string } }
-  | { readonly command: "assets install"; readonly config: string; readonly image?: string;readonly snapshot?:string;readonly trust?:string; readonly reference?: string; readonly engineDir?: string }
-  | { readonly command: "doctor"; readonly url: string; readonly browser: "chromium" | "firefox" | "webkit"; readonly previewOrigin?: string }
+  | { readonly command: "assets install"; readonly config: string; readonly image?: string;readonly snapshot?:string;readonly trust?:string; readonly reference?: string; readonly engineDir?: string; readonly updateLock: boolean }
+  | { readonly command: "doctor"; readonly url: string; readonly browser: "chromium" | "firefox" | "webkit"; readonly previewOrigin?: string; readonly config?: string }
   | { readonly command: "image init"; readonly directory: string; readonly mode: RuntimeMode }
   | { readonly command: "image keygen"; readonly out: string }
   | { readonly command: "image build"; readonly recipe: string; readonly signingKey: string; readonly out?: string; readonly baseUrl?: string; readonly distribution: boolean; readonly secrets: readonly { readonly id: string; readonly file: string }[] }
@@ -51,12 +51,12 @@ function nonempty(value: unknown, label: string): string {
   return value;
 }
 const allowed: Readonly<Record<CliCommand, readonly string[]>> = {
-  init: ["mode", "skip-assets", "engine-dir", "image", "image-trust", "start", "use-bun", "sdk-archive", "cli-archive"], "assets install": ["config", "image", "snapshot", "trust", "reference", "engine-dir"], doctor: ["browser", "preview-origin"],
+  init: ["mode", "skip-assets", "engine-dir", "image", "image-trust", "start", "use-bun", "sdk-archive", "cli-archive"], "assets install": ["config", "image", "snapshot", "trust", "reference", "engine-dir", "update-lock"], doctor: ["browser", "preview-origin", "config"],
   "image init": ["mode"], "image keygen": ["out"], "image build": ["signing-key", "out", "base-url", "distribution", "secret"], "image test": ["trust", "browser", "distribution", "engine-dir"], "image inspect": ["trust"], "image pack": ["trust"],
   "snapshot pack":["recipe","signing-key","image-trust","out","base-url","browser","timeout-ms","engine-dir"],"snapshot test":["trust","verify","browser","timeout-ms","engine-dir"],"snapshot inspect":["trust"],
   "snapshot init":["name","mode","image","image-trust"],"snapshot build":["signing-key","image-trust","out","base-url","browser","timeout-ms","engine-dir"],
   "wasm add":["project","yes","offline"],"wasm stage":["project","offline"],"wasm doctor":["project"],"wasm inspect":[],
-  "wasm build":["project","out","module","check"],"wasm release":["project","out","module","repo"],"wasm init":["kind","id","from"],
+  "wasm build":["project","out","module","check"],"wasm release":["project","out","module","repo"],"wasm init":["kind","id","from","network"],
   "wasm test":["project","module","image","image-trust","arg","option","browser","engine-dir","timeout-ms"],
 };
 
@@ -73,8 +73,9 @@ export function parseArguments(arguments_: readonly string[], environment: Reado
       name:{type:"string"},
       snapshot:{type:"string"},
       project:{type:"string"},yes:{type:"boolean"},offline:{type:"boolean"},
-      module:{type:"string"},check:{type:"boolean"},arg:{type:"string",multiple:true},option:{type:"string",multiple:true},kind:{type:"string"},id:{type:"string"},from:{type:"string"},repo:{type:"string"},
+      module:{type:"string"},check:{type:"boolean"},arg:{type:"string",multiple:true},option:{type:"string",multiple:true},kind:{type:"string"},id:{type:"string"},from:{type:"string"},repo:{type:"string"},network:{type:"string"},
       start: { type: "boolean" }, "use-bun": { type: "boolean" }, "sdk-archive": { type: "string" }, "cli-archive": { type: "string" },
+      "update-lock": { type: "boolean" },
     } });
   } catch { return invalid("unknown flag or missing flag value; use --help"); }
   const json = parsed.values.json === true;
@@ -147,7 +148,9 @@ export function parseArguments(arguments_: readonly string[], environment: Reado
     case "wasm init": {
       const moduleKind=parsed.values.kind??"command";
       if(moduleKind!=="command"&&moduleKind!=="service")return invalid("--kind must be command or service");
-      return {...common,command,directory:argument(),moduleKind,...(parsed.values.id===undefined?{}:{id:nonempty(parsed.values.id,"--id")}),...(parsed.values.from===undefined?{}:{from:nonempty(parsed.values.from,"--from")})};
+      const network=parsed.values.network??"none";
+      if(network!=="none"&&network!=="vm"&&network!=="internet")return invalid("--network must be none, vm or internet");
+      return {...common,command,directory:argument(),moduleKind,network,...(parsed.values.id===undefined?{}:{id:nonempty(parsed.values.id,"--id")}),...(parsed.values.from===undefined?{}:{from:nonempty(parsed.values.from,"--from")})};
     }
     case "snapshot build":
     case "snapshot pack":{
@@ -174,9 +177,9 @@ export function parseArguments(arguments_: readonly string[], environment: Reado
       if (parsed.values.reference !== undefined && parsed.values.image === undefined&&parsed.values.snapshot===undefined) return invalid("--reference requires --image or --snapshot");
       if(parsed.values.trust!==undefined&&parsed.values.snapshot===undefined&&parsed.values.image===undefined)return invalid("--trust requires --snapshot or --image");
       const snapshot=parsed.values.snapshot===undefined?{}:{snapshot:nonempty(parsed.values.snapshot,"--snapshot"),trust:nonempty(parsed.values.trust??environment["OXIDEVM_SNAPSHOT_TRUST_FILE"],"snapshot author trust")};
-      return { ...common, command, config: parsed.values.config ?? "oxidevm.config.ts", ...(parsed.values.image === undefined ? {} : { image: nonempty(parsed.values.image, "--image") }), ...(parsed.values.trust === undefined ? {} : { trust: nonempty(parsed.values.trust, "--trust") }), ...snapshot, ...(parsed.values.reference === undefined ? {} : { reference: nonempty(parsed.values.reference, "--reference") }), ...engineDir };
+      return { ...common, command, config: parsed.values.config ?? "oxidevm.config.ts", ...(parsed.values.image === undefined ? {} : { image: nonempty(parsed.values.image, "--image") }), ...(parsed.values.trust === undefined ? {} : { trust: nonempty(parsed.values.trust, "--trust") }), ...snapshot, ...(parsed.values.reference === undefined ? {} : { reference: nonempty(parsed.values.reference, "--reference") }), ...engineDir, updateLock: parsed.values["update-lock"] === true };
     }
-    case "doctor": return { ...common, command, url: positional[0] ?? "http://localhost:5173/", browser: browser(), ...(parsed.values["preview-origin"] === undefined ? {} : { previewOrigin: nonempty(parsed.values["preview-origin"], "--preview-origin") }) };
+    case "doctor": return { ...common, command, url: positional[0] ?? "http://localhost:5173/", browser: browser(), ...(parsed.values["preview-origin"] === undefined ? {} : { previewOrigin: nonempty(parsed.values["preview-origin"], "--preview-origin") }), ...(parsed.values.config === undefined ? {} : { config: nonempty(parsed.values.config, "--config") }) };
     case "image init": return { ...common, command, directory: argument(), mode: mode() };
     case "image keygen": return { ...common, command, out: nonempty(parsed.values.out, "--out") };
     case "image build": {

@@ -20,7 +20,7 @@ it("accepts the exact oxidevm wasm commands in the module guide", async () => {
     expect(invocation.kind).toBe("command");
     return invocation.kind === "command" ? invocation.command : "help";
   });
-  expect(commands).toEqual(["wasm add", "wasm init", "wasm init", "wasm init", "wasm build", "wasm test", "wasm test", "wasm test"]);
+  expect(commands).toEqual(["wasm add", "wasm init", "wasm init", "wasm init", "wasm init", "wasm build", "wasm test", "wasm test", "wasm test"]);
 });
 
 it("creates the prebuilt starter with the short npx or bunx command", () => {
@@ -67,6 +67,19 @@ it("accepts --engine-dir only where the pinned engine release is staged or serve
   }
 });
 
+it("accepts --update-lock only for assets install, and --config for doctor", () => {
+  expect(parseArguments(["assets", "install", "--update-lock"], {})).toMatchObject({ command: "assets install", updateLock: true });
+  expect(parseArguments(["assets", "install"], {})).toMatchObject({ command: "assets install", updateLock: false });
+  expect(parseArguments(["assets", "install", "--update-lock", "--image", "dist", "--trust", "author.public.json", "--json"], {})).toMatchObject({ command: "assets install", updateLock: true, image: "dist", trust: "author.public.json" });
+  expect(parseArguments(["doctor", "--config", "app/oxidevm.config.ts"], {})).toMatchObject({ command: "doctor", config: "app/oxidevm.config.ts" });
+  expect(parseArguments(["doctor"], {})).not.toHaveProperty("config");
+  for (const command of [["assets", "install", "--update-lock", "--update-lock"], ["doctor", "--update-lock"], ["init", "app", "--update-lock"], ["image", "inspect", "dist", "--update-lock"], ["doctor", "--config", ""]]) {
+    let failure: unknown;
+    try { parseArguments(command, {}); } catch (error: unknown) { failure = error; }
+    expect(failure).toMatchObject({ code: "INVALID_ARGUMENT" });
+  }
+});
+
 it("parses the module commands with their own flags and defaults", () => {
   expect(parseArguments(["wasm", "add", "github:acme/tool@v1.0.0"], {})).toMatchObject({ command: "wasm add", source: "github:acme/tool@v1.0.0", project: ".", yes: false, offline: false });
   expect(parseArguments(["wasm", "add", "file:dist", "--project", "app", "--yes", "--offline", "--json"], {})).toMatchObject({ command: "wasm add", source: "file:dist", project: "app", yes: true, offline: true, json: true });
@@ -82,7 +95,9 @@ it("parses the module authoring commands with their own flags and defaults", () 
   expect(parseArguments(["wasm", "build", "--check", "--project", "mod", "--out", "release", "--module", "src/module.ts"], {})).toMatchObject({ project: "mod", check: true, out: "release", module: "src/module.ts" });
   expect(parseArguments(["wasm", "release", "--repo", "acme/tool"], {})).toMatchObject({ command: "wasm release", project: ".", repo: "acme/tool" });
   expect(parseArguments(["wasm", "release"], {})).not.toHaveProperty("repo");
-  expect(parseArguments(["wasm", "init", "my-tool"], {})).toMatchObject({ command: "wasm init", directory: "my-tool", moduleKind: "command" });
+  expect(parseArguments(["wasm", "init", "my-tool"], {})).toMatchObject({ command: "wasm init", directory: "my-tool", moduleKind: "command", network: "none" });
+  expect(parseArguments(["wasm", "init", "my-tool", "--network", "internet"], {})).toMatchObject({ network: "internet" });
+  expect(() => parseArguments(["wasm", "init", "my-tool", "--network", "everywhere"], {})).toThrow("--network must be none, vm or internet");
   expect(parseArguments(["wasm", "init", "my-tool", "--kind", "service", "--id", "echo", "--from", "x.wasm"], {})).toMatchObject({ moduleKind: "service", id: "echo", from: "x.wasm" });
   expect(parseArguments(["wasm", "init", "--help"], {})).toMatchObject({ kind: "help", command: "wasm init" });
   expect(parseArguments(["wasm", "build", "--help"], {})).toMatchObject({ kind: "help", command: "wasm build" });

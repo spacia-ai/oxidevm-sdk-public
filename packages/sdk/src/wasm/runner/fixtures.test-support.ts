@@ -60,5 +60,5 @@ export const COMMAND_DECLARATION = {
 export const SERVICE_DECLARATION = {
   id: "db", version: "1.0.0", abi: "emscripten", process: { kind: "service", exclusive: "workspace" },
   expose: { sql: { kind: "unix", path: "/workspace/_oxidevm/db.sock", protocol: "db-sql/1" }, pg: { kind: "tcp", port: 5432, protocol: "postgres-3.0" } },
-  requires: { host: ["files.sync"], browser: ["web-locks"] }, license: { spdx: "Apache-2.0" },
+  requires: { host: ["files.sync"] }, license: { spdx: "Apache-2.0" },
 } as const satisfies PinlessDeclaration;

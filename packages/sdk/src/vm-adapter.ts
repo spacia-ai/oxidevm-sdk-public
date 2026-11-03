@@ -21,8 +21,13 @@ import { defaultImage } from "./default-image.js";
 import { validateJSProcessSpec } from "./js-process-options.js";
 import type { PipeJSProcessSpec, TerminalJSProcessSpec } from "./contracts.js";
 import type { AccelerationNotice } from "./runtime/js-process/late-failure.js";
-import type { RunnerHostLaunch } from "./runtime/js-process/launch.js";
+import { copyKey, type CopyKey, type ModulePin } from "./runtime/protocol/userspace-module-files.js";
+import { ModuleExecution, type ModuleFrameOpener } from "./module-execution.js";
+import type { ModuleStart } from "./runtime/vm-types.js";
 import { MODULE_COMMAND_REASONS, type ModuleCommandsRequest, type ModuleCommandsResult } from "./runtime/protocol/userspace-module-commands.js";
+import { parseLaunchArgument } from "./wasm/runner/descriptor.js";
+import { moduleReach } from "./wasm/reach.js";
+import { startsWithTls, TLS_FILE, tlsPin } from "./wasm/net/tls-file.js";
 
 /** Public startup progress follows the managed runtime's cold/resume decision. */
 export function toBootProgress(mode: RuntimeMode, progress: StartProgress): BootProgress {
@@ -49,19 +54,31 @@ export interface OwnedModuleCommands {
   readonly request: (request: ModuleCommandsRequest, signal?: AbortSignal) => Promise<ModuleCommandsResult>;
   /** Aborts when the VM is disposed: its Userspace worker, and every registration it held, is gone. */
   readonly disposed: AbortSignal;
+  /** ADR 0028: which pins the VM's verified-copy store lacks, so the page sends only those. */
+  readonly missing: (pins: readonly ModulePin[], signal: AbortSignal | undefined) => Promise<readonly CopyKey[]>;
 }
-/** A local VM's owner record. A Userspace VM's also starts `spawnModule`'s runner with its launch and reaches the VM's
- * module commands (ADR 0027), which no public member of the VM can do. */
-type VMOwner = {
-  readonly runtime: RuntimeVM;
-  readonly spawnModule?: (spec: PipeJSProcessSpec, launch: RunnerHostLaunch) => Promise<ProcessHandle>;
-  readonly moduleCommands?: OwnedModuleCommands;
-} | FrameDiagnostics;
+/** What `spawnModule` gives a module's process: its own arguments, directory and environment, never a worker. */
+export interface ModuleSpawnSpec {
+  readonly args?: readonly string[];
+  readonly cwd?: string;
+  readonly env?: Readonly<Record<string, string>>;
+  readonly signal?: AbortSignal;
+}
+/** A local Userspace VM's module starts (ADR 0028): the store's missing files and the start itself. */
+export interface OwnedModules {
+  readonly missing: (pins: readonly ModulePin[], signal: AbortSignal | undefined) => Promise<readonly CopyKey[]>;
+  readonly spawn: (spec: ModuleSpawnSpec, start: ModuleStart) => Promise<ProcessHandle>;
+}
+/** A VM's private owner record: a local VM's runtime, or a hosted frame's diagnostics. A Userspace VM's also starts
+ * `spawnModule`'s runner from the VM's verified copies and reaches the VM's module commands (ADR 0027 and ADR 0028), in
+ * the hosted frame too (frame protocol 17), which no public member of the VM can do. */
+interface ModuleOwner { readonly modules?: OwnedModules; readonly moduleCommands?: OwnedModuleCommands }
+type VMOwner = ({ readonly runtime: RuntimeVM } | { readonly diagnostics: FrameDiagnostics }) & ModuleOwner;
 const ownedVMs = new WeakMap<object, VMOwner>();
 
-/** Hosted VMs retain the same private ownership boundary as local VMs. */
-export function bindFrameDiagnostics(vm: VM, diagnostics: FrameDiagnostics): void {
-  ownedVMs.set(vm, diagnostics);
+/** Hosted VMs retain the same private ownership boundary as local VMs: their diagnostics, and their modules. */
+export function bindFrameOwner(vm: VM, owner: { readonly diagnostics: FrameDiagnostics } & ModuleOwner): void {
+  ownedVMs.set(vm, owner);
 }
 
 function userspaceOwner(vm: VM, feature: string): VMOwner {
@@ -77,7 +94,7 @@ export async function readOwnedJSProcessTrace(vm: VM, capacity?: number): Promis
     if (owner.runtime.readJSProcessTrace === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "JS service tracing is unavailable");
     return owner.runtime.readJSProcessTrace(capacity);
   }
-  return owner.readJSProcessTrace(capacity);
+  return owner.diagnostics.readJSProcessTrace(capacity);
 }
 
 export async function watchOwnedAccelerationNotices(vm: VM, listener: (notice: AccelerationNotice) => void, signal: AbortSignal): Promise<void> {
@@ -86,31 +103,31 @@ export async function watchOwnedAccelerationNotices(vm: VM, listener: (notice: A
     if (owner.runtime.watchAccelerationNotices === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "Fast-path notices are unavailable");
     return owner.runtime.watchAccelerationNotices(listener, { signal });
   }
-  return owner.watchAccelerationNotices(listener, signal);
+  return owner.diagnostics.watchAccelerationNotices(listener, signal);
 }
 /**
- * `spawnModule`'s start (engine ADR 0027): the module runner receives its launch description in its start message, so
- * the process's argv, and `/proc/<pid>/cmdline`, hold only the caller's arguments. A VM this SDK did not create is
- * INVALID_ARGUMENT; a System VM and a hosted frame's VM, which run no JS processes, are FEATURE_NOT_AVAILABLE.
+ * `spawnModule`'s access to a VM (engine ADR 0027 and ADR 0028): the Userspace worker starts the module process, whose
+ * runner runs in the VM's module frame, with the launch description in its start message, so the process's argv, and
+ * `/proc/<pid>/cmdline`, hold only the caller's arguments, and with the copies its store verified. A local Userspace VM
+ * and a hosted frame's Userspace VM (frame protocol 17, `bindFrameOwner`) have modules. A VM this SDK did not create is
+ * INVALID_ARGUMENT; a System VM, which runs no JS processes, is FEATURE_NOT_AVAILABLE.
  */
-export async function spawnOwnedModuleProcess(vm: object, spec: PipeJSProcessSpec, launch: RunnerHostLaunch): Promise<ProcessHandle> {
+export function ownedModules(vm: object): OwnedModules {
   const owner = ownedVMs.get(vm);
   if (owner === undefined) throw new VMError("INVALID_ARGUMENT", "VM was not created by this SDK instance");
-  if (!("runtime" in owner)) throw new VMError("FEATURE_NOT_AVAILABLE", "JS processes require self-hosted Userspace");
-  if (owner.spawnModule === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "WebAssembly modules require Userspace");
-  return owner.spawnModule(spec, launch);
+  if (owner.modules === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "WebAssembly modules require Userspace");
+  return owner.modules;
 }
 
 /**
- * `enableModuleCommands`'s access to a VM (engine ADR 0027). Only a local Userspace VM this SDK created has module
- * commands: any other object, a hosted frame's VM, which loads the engine from another origin, and a System VM are
- * FEATURE_NOT_AVAILABLE `wasm-module-command-unavailable`.
+ * `enableModuleCommands`'s access to a VM (engine ADR 0027 and ADR 0028). A Userspace VM this SDK created, local or in
+ * the hosted runtime frame, has module commands: any other object and a System VM are FEATURE_NOT_AVAILABLE
+ * `wasm-module-command-unavailable`.
  */
 export function ownedModuleCommands(vm: object): OwnedModuleCommands {
   const owner = ownedVMs.get(vm);
   const unavailable = (why: string) => new VMError("FEATURE_NOT_AVAILABLE", `Module commands are unavailable: ${why}`, { reason: MODULE_COMMAND_REASONS.unavailable });
   if (owner === undefined) throw unavailable("the VM was not created by this copy of the SDK");
-  if (!("runtime" in owner)) throw unavailable("the VM runs in the hosted runtime frame; load the engine from your own origin");
   if (owner.moduleCommands === undefined) throw unavailable("they need a Userspace VM");
   return owner.moduleCommands;
 }
@@ -122,7 +139,7 @@ export function ownedRuntime(vm: VM): RuntimeVM {
   return runtime.runtime;
 }
 
-export async function adaptVM(runtime: RuntimeVM, options: ValidatedVMOptions, image: ImageInfo, assets: LoadedEngineAssets, license: LicenseStatus, commandAcceleration: FeatureSupport, booted: Pick<ManagedImageInfo, "start" | "workspace" | "update"> = {}): Promise<VM> {
+export async function adaptVM(runtime: RuntimeVM, options: ValidatedVMOptions, image: ImageInfo, assets: LoadedEngineAssets, license: LicenseStatus, commandAcceleration: FeatureSupport, booted: Pick<ManagedImageInfo, "start" | "workspace" | "update"> & { readonly moduleFrames?: ModuleFrameOpener } = {}): Promise<VM> {
   if (runtime.storagePersistence === undefined) throw new VMError("PROTOCOL_ERROR", "runtime has no durable storage identity");
   const backend = await runtime.storagePersistence();
   const retention = await readBrowserQuota(navigator.storage);
@@ -170,31 +187,73 @@ export async function adaptVM(runtime: RuntimeVM, options: ValidatedVMOptions, i
       throw error;
     } finally { decoded.signal?.removeEventListener("abort", abort); }
   }
-  async function startJS(spec: PipeJSProcessSpec | TerminalJSProcessSpec, launch: RunnerHostLaunch | undefined): Promise<ProcessHandle | TerminalHandle> {
+  async function startJS(spec: PipeJSProcessSpec | TerminalJSProcessSpec): Promise<ProcessHandle | TerminalHandle> {
     active(); const decoded = validateJSProcessSpec(spec); abortIfRequested(decoded.signal);
     if (runtime.spawnJS === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "This runtime does not support JS processes");
     const creating = new AbortController(), abort = () => creating.abort(); decoded.signal?.addEventListener("abort", abort, { once: true });
     try {
-      const process = await runtime.spawnJS({ ...decoded, signal: creating.signal, ...(launch === undefined ? {} : { launch }) });
+      const process = await runtime.spawnJS({ ...decoded, signal: creating.signal });
       if (decoded.signal?.aborted === true) { const handle = adaptProcess(process, false); await handle.kill("SIGKILL", { scope: "process-group" }); await handle.exit; throw new VMError("ABORTED", "process creation cancelled"); }
       return adaptProcess(process, decoded.terminal !== undefined);
     } finally { decoded.signal?.removeEventListener("abort", abort); }
   }
   async function spawnJS(spec: TerminalJSProcessSpec): Promise<TerminalHandle>;
   async function spawnJS(spec: PipeJSProcessSpec): Promise<ProcessHandle>;
-  async function spawnJS(spec: PipeJSProcessSpec | TerminalJSProcessSpec): Promise<ProcessHandle | TerminalHandle> { return startJS(spec, undefined); }
-  async function spawnModule(spec: PipeJSProcessSpec, launch: RunnerHostLaunch): Promise<ProcessHandle> {
-    const process = await startJS(spec, launch);
-    if (process.kind !== "process") throw new VMError("PROTOCOL_ERROR", "A module's runner has no terminal");
-    return process;
-  }
+  async function spawnJS(spec: PipeJSProcessSpec | TerminalJSProcessSpec): Promise<ProcessHandle | TerminalHandle> { return startJS(spec); }
+  const missing = async (pins: readonly ModulePin[], signal: AbortSignal | undefined): Promise<readonly CopyKey[]> => {
+    active();
+    if (runtime.moduleFiles === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "This runtime does not support WebAssembly modules");
+    return runtime.moduleFiles(pins, signal === undefined ? {} : { signal });
+  };
+  /**
+   * ADR 0029: a module with a network reach starts with the engine's TLS module. The VM's store holds it like any pinned
+   * file, so this VM fetches it from the engine release the first time such a module starts, and never when none does;
+   * a description that does not parse is left for the Userspace worker to refuse.
+   */
+  const withEngineFiles = async (descriptor: string, files: Readonly<Record<CopyKey, Blob>>, signal: AbortSignal | undefined): Promise<Readonly<Record<CopyKey, Blob>>> => {
+    let reach;
+    try { reach = moduleReach(parseLaunchArgument(descriptor).manifest.requires.host); } catch { return files; }
+    if (!startsWithTls(reach)) return files;
+    const pin = tlsPin(), key = copyKey(pin);
+    if (Object.hasOwn(files, key) || (await missing([pin], signal)).length === 0) return files;
+    return { ...files, [key]: new Blob([await assets.lazy(TLS_FILE, signal)]) };
+  };
+  // ADR 0028: one module frame per VM, opened by the first module start or enable; the store goes before it on dispose.
+  const frames = booted.moduleFrames ?? {
+    open: () => Promise.reject(new VMError("FEATURE_NOT_AVAILABLE", "This VM cannot open a module frame", { reason: "wasm-module-isolation-unavailable", capability: "frame-load" })),
+    sources: () => Promise.resolve({ broker: new Blob(), runner: new Blob() }), watch: () => () => undefined,
+  };
+  const execution = new ModuleExecution({
+    ...frames,
+    attach: async port => { if (runtime.attachModuleFrame === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "This runtime does not support WebAssembly modules"); await runtime.attachModuleFrame(port); },
+    detach: async () => { await runtime.detachModuleFrame?.(); },
+  });
+  const modules: OwnedModules = {
+    missing,
+    spawn: async (spec, start) => {
+      active(); abortIfRequested(spec.signal);
+      await execution.ensure(spec.signal);
+      if (runtime.spawnModule === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "This runtime does not support WebAssembly modules");
+      const creating = new AbortController(), abort = () => creating.abort(); spec.signal?.addEventListener("abort", abort, { once: true });
+      try {
+        const files = await withEngineFiles(start.descriptor, start.files, spec.signal);
+        // A module starts in /workspace unless the caller names a directory, as every JS process does (validateJSProcessSpec).
+        const process = await runtime.spawnModule({ ...(spec.args === undefined ? {} : { args: spec.args }), cwd: spec.cwd ?? "/workspace", ...(spec.env === undefined ? {} : { env: spec.env }), signal: creating.signal, ...start, files });
+        if (spec.signal?.aborted === true) { const handle = adaptProcess(process, false); await handle.kill("SIGKILL", { scope: "process-group" }); await handle.exit; throw new VMError("ABORTED", "process creation cancelled"); }
+        return adaptProcess(process, false);
+      } finally { spec.signal?.removeEventListener("abort", abort); }
+    },
+  };
   const moduleCommands: OwnedModuleCommands = {
     request: async (request, signal) => {
       active();
+      if (request.operation === "enable") await execution.ensure(signal);
       if (runtime.moduleCommands === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "This runtime has no module commands", { reason: MODULE_COMMAND_REASONS.unavailable });
-      return runtime.moduleCommands(request, signal === undefined ? {} : { signal });
+      const sent = request.operation === "enable" ? { ...request, files: await withEngineFiles(request.descriptor, request.files, signal) } : request;
+      return runtime.moduleCommands(sent, signal === undefined ? {} : { signal });
     },
     disposed: lifetime.signal,
+    missing,
   };
   const base = {
     prepareImage: (request?: { readonly signal?: AbortSignal }) => {
@@ -241,12 +300,12 @@ export async function adaptVM(runtime: RuntimeVM, options: ValidatedVMOptions, i
     },
     listeningPorts: (request?: { readonly signal?: AbortSignal }) => { active(); return runtime.listeningPorts(request); },
     watchListeningPorts: (listener: Parameters<VM["watchListeningPorts"]>[0], request: Parameters<VM["watchListeningPorts"]>[1]) => { active(); return runtime.watchListeningPorts(listener, request); },
-    dispose: () => { lifetime.abort(); disposal ??= previews.dispose().finally(() => runtime.dispose()).finally(() => assets.dispose()); return disposal; },
+    dispose: () => { lifetime.abort(); disposal ??= previews.dispose().finally(() => runtime.dispose()).finally(() => execution.dispose()).finally(() => assets.dispose()); return disposal; },
   };
   const vm: VM = options.mode === "userspace" ? { ...base, spawnJS, mode: "userspace", get image(){const actual=runtime.imageIdentity??image;if(actual.mode!=="userspace")throw new VMError("PROTOCOL_ERROR","Actual image mode changed");return {...actual,mode:"userspace" as const};}, start: { ...adaptStart(booted.start ?? { kind: "booted", reason: "first-start" }), workspaceDetails: booted.workspace ?? booted.start?.workspaceDetails ?? IN_SYNC_WORKSPACE,...(booted.update===undefined?{}:{update:booted.update}) } } : {
     ...base, mode: "system", get image(){const actual=runtime.imageIdentity??image;if(actual.mode!=="system")throw new VMError("PROTOCOL_ERROR","Actual image mode changed");return {...actual,mode:"system" as const};}, start: {...adaptStart(booted.start),...(booted.update===undefined?{}:{update:booted.update})},
   };
-  ownedVMs.set(vm, vm.mode === "userspace" ? { runtime, spawnModule, moduleCommands } : { runtime }); return vm;
+  ownedVMs.set(vm, vm.mode === "userspace" ? { runtime, modules, moduleCommands } : { runtime }); return vm;
 }
 
 function adaptStart(start?: ManagedStart): VMStart {

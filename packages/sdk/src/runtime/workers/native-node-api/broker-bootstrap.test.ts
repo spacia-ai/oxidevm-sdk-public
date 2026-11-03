@@ -33,7 +33,7 @@ for (const beforeSpawn of [false, true]) it(`acknowledges bootstrap and retains 
 });
 
 const PROGRAM = { kind: "native-node", entry: "/workspace/server.js", source: { kind: "file" }, input: 3, output: 4, context: { kind: "main" },
-  profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/node_modules" }], basis: "no-addons", dependencyGeneration: 1n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0 } };
+  profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/node_modules" }], basis: "no-addons", dependencyGeneration: 1n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0, bridgeVersion: 16 } };
 
 /** A bootstrapped broker with one spawned process whose worker this test plays. */
 async function spawnedProcess() {

@@ -1,89 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { VMError } from "../../runtime/errors.js";
-import { createArtifacts, preverifiedArtifacts } from "./artifacts.js";
-import { IntegrityError, type Fetcher } from "./pinned.js";
+import { preverifiedArtifacts } from "./artifacts.js";
 import { commandLaunch } from "./harness.test-support.js";
 import { COMMAND_DECLARATION, buildRelease, type Release } from "./fixtures.test-support.js";
 
 const wasm = Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 0);
 const release = (): Promise<Release> => buildRelease({ adapter: "export default () => ({ main: () => 0 });", artifacts: { "tool.wasm": wasm, "data.bin": Uint8Array.of(1, 2, 3, 4) }, declaration: COMMAND_DECLARATION });
-const serve = (served: Release["served"], counter?: { count: number }): Fetcher => url => {
-  if (counter !== undefined) counter.count += 1;
-  const bytes = served.get(url);
-  return Promise.resolve(bytes === undefined ? new Response(null, { status: 404 }) : new Response(bytes.slice()));
-};
-const signal = () => new AbortController().signal;
 
-describe("pinned artifacts", () => {
-  it("compiles, copies and names verified files, fetching each at most once", async () => {
-    const { descriptor, served } = await release(), counter = { count: 0 };
-    const artifacts = createArtifacts(descriptor, serve(served, counter), signal());
-    expect(await artifacts.compile("tool.wasm")).toBeInstanceOf(WebAssembly.Module);
-    const first = await artifacts.bytes("data.bin");
-    first.fill(9);
-    expect([...await artifacts.bytes("data.bin")]).toEqual([1, 2, 3, 4]);
-    await artifacts.compile("tool.wasm");
-    expect(counter.count).toBe(2);
-    expect(artifacts.url("data.bin")).toBe(descriptor.artifacts["data.bin"]?.url);
-    const adapter = await artifacts.adapter();
-    expect([adapter.size, adapter.type]).toEqual([descriptor.adapter.bytes, "text/javascript"]);
-  });
-
-  it("rejects a name the manifest does not declare, for bytes, compile and url alike", async () => {
-    const { descriptor, served } = await release();
-    const artifacts = createArtifacts(descriptor, serve(served), signal());
-    await expect(artifacts.bytes("other.bin")).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
-    await expect(artifacts.compile("toString")).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
-    expect(() => artifacts.url("__proto__")).toThrow(VMError);
-  });
-
-  it("reports an integrity error for altered, longer or shorter bytes, and says which", async () => {
-    const { descriptor, served } = await release();
-    const url = descriptor.artifacts["data.bin"]?.url ?? "";
-    const cases: readonly (readonly [Uint8Array<ArrayBuffer>, RegExp])[] = [
-      [Uint8Array.of(1, 2, 3, 5), /does not match its sha256 pin/u], [Uint8Array.of(1, 2, 3, 4, 5), /larger than its pin/u], [Uint8Array.of(1, 2, 3), /shorter than its pin/u],
-    ];
-    for (const [bytes, message] of cases) {
-      const artifacts = createArtifacts(descriptor, serve(new Map([...served, [url, bytes]])), signal());
-      await expect(artifacts.bytes("data.bin"), String(bytes.length)).rejects.toBeInstanceOf(IntegrityError);
-      await expect(artifacts.bytes("data.bin")).rejects.toMatchObject({ detail: { reason: "wasm-module-integrity" } });
-      await expect(artifacts.bytes("data.bin")).rejects.toThrow(message);
-    }
-  });
-
-  it("stops reading a body that exceeds its pin instead of buffering it", async () => {
-    const { descriptor } = await release();
-    let pulls = 0, cancelled = false;
-    const endless: Fetcher = () => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
-      pull(controller) { pulls += 1; controller.enqueue(new Uint8Array(1024)); },
-      cancel() { cancelled = true; },
-    })));
-    await expect(createArtifacts(descriptor, endless, signal()).bytes("data.bin")).rejects.toBeInstanceOf(IntegrityError);
-    expect(cancelled).toBe(true);
-    expect(pulls).toBeLessThan(5);
-  });
-
-  it("distinguishes a missing file or a network failure from tampering", async () => {
-    const { descriptor, served } = await release();
-    const gone = new Map(served);
-    gone.delete(descriptor.artifacts["data.bin"]?.url ?? "");
-    await expect(createArtifacts(descriptor, serve(gone), signal()).bytes("data.bin")).rejects.toMatchObject({ code: "CORE_LOAD_FAILED", detail: { reason: "wasm-module-artifact" } });
-    const offline: Fetcher = () => Promise.reject(new TypeError("Failed to fetch"));
-    await expect(createArtifacts(descriptor, offline, signal()).bytes("data.bin")).rejects.toMatchObject({ code: "CORE_LOAD_FAILED" });
-  });
-
-  it("passes the module's cancellation to the fetch and rethrows it unchanged", async () => {
-    const { descriptor } = await release(), controller = new AbortController();
-    const seen = vi.fn();
-    const hanging: Fetcher = (_url, init) => new Promise<Response>((_resolve, reject) => { seen(init.signal === controller.signal); init.signal.addEventListener("abort", () => { reject(init.signal.reason instanceof Error ? init.signal.reason : new Error("aborted")); }); });
-    const pending = createArtifacts(descriptor, hanging, controller.signal).bytes("data.bin");
-    controller.abort(new Error("module stopped"));
-    await expect(pending).rejects.toThrow("module stopped");
-    expect(seen).toHaveBeenCalledWith(true);
-  });
-});
-
-// Engine ADR 0027: a command a program in the VM runs uses the copies the Userspace worker verified when it was turned on.
+// Engine ADR 0028: every start uses the copies the VM's verified-copy store checked before the process existed.
 describe("pre-verified copies", () => {
   it("never fetches or hashes: compile returns the verified module, bytes read the copy and url is a blob: URL until close", async () => {
     const { descriptor, ...rest } = await release(), copies = await commandLaunch({ descriptor, ...rest }, "tool");
@@ -91,7 +15,6 @@ describe("pre-verified copies", () => {
     try {
       const artifacts = preverifiedArtifacts(descriptor, copies);
       expect(await artifacts.adapter()).toBe(copies.adapter);
-      await artifacts.verifyAll();
       expect(await artifacts.compile("tool.wasm")).toBe(copies.artifacts["tool.wasm"]?.module);
       const first = await artifacts.bytes("data.bin");
       first.fill(9);
@@ -127,5 +50,35 @@ describe("pre-verified copies", () => {
       try { preverifiedArtifacts(descriptor, changed); } catch (error: unknown) { refused = error; }
       expect(refused).toMatchObject({ status: 120, kind: "launch", detail: { reason: "wasm-module-launch" } });
     }
+  });
+
+  it("reads a verified copy synchronously, for an interpreter that installs on import without JSPI: the same copy, no fetch, no second check", async () => {
+    const { descriptor, ...rest } = await release(), copies = await commandLaunch({ descriptor, ...rest }, "tool");
+    const read = vi.fn((blob: Blob): Uint8Array<ArrayBuffer> => blob === copies.artifacts["data.bin"]?.blob ? Uint8Array.of(1, 2, 3, 4) : new Uint8Array());
+    const fetching = vi.spyOn(globalThis, "fetch"), digest = vi.spyOn(crypto.subtle, "digest");
+    try {
+      const artifacts = preverifiedArtifacts(descriptor, copies, read);
+      expect(artifacts.blob("data.bin")).toBe(copies.artifacts["data.bin"]?.blob);
+      const bytes = artifacts.bytesSync("data.bin");
+      expect([...bytes]).toEqual([1, 2, 3, 4]);
+      expect(read).toHaveBeenCalledWith(copies.artifacts["data.bin"]?.blob);
+      expect(fetching).not.toHaveBeenCalled();
+      expect(digest).not.toHaveBeenCalled();
+      for (const name of ["other.bin", "__proto__"]) {
+        expect(() => artifacts.blob(name), name).toThrow(VMError);
+        expect(() => artifacts.bytesSync(name), name).toThrow(VMError);
+      }
+    } finally { fetching.mockRestore(); digest.mockRestore(); }
+  });
+
+  it("reads synchronously with the worker's FileReaderSync, and says so where a scope has none", async () => {
+    const { descriptor, ...rest } = await release(), copies = await commandLaunch({ descriptor, ...rest }, "tool");
+    let refused: unknown;
+    try { preverifiedArtifacts(descriptor, copies).bytesSync("data.bin"); } catch (error: unknown) { refused = error; }
+    expect(refused).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", detail: { reason: "wasm-artifact-sync-read" } });
+    class FakeFileReaderSync { readAsArrayBuffer(blob: Blob): ArrayBuffer { return blob === copies.artifacts["data.bin"]?.blob ? Uint8Array.of(5, 6, 7, 8).buffer : new ArrayBuffer(0); } }
+    vi.stubGlobal("FileReaderSync", FakeFileReaderSync);
+    try { expect([...preverifiedArtifacts(descriptor, copies).bytesSync("data.bin")]).toEqual([5, 6, 7, 8]); }
+    finally { vi.unstubAllGlobals(); }
   });
 });

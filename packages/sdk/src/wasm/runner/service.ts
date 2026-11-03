@@ -3,6 +3,7 @@ import { VMError } from "../../runtime/errors.js";
 import type { Connection } from "../define.js";
 import { linuxErrno } from "../kit/errno.js";
 import type { EndpointDecl } from "../manifest-types.js";
+import type { ModuleReach } from "../reach.js";
 import type { ServiceRun } from "./hooks.js";
 import type { LinuxParts } from "./host.js";
 import { ModuleFailure, settledWithin, withDeadline } from "./failure.js";
@@ -23,9 +24,25 @@ const TRANSIENT_ACCEPT = new Set([4, 11, 12, 23, 24, 71, 103, 105]);
 const ACCEPT_RETRY_MS = 100;
 const SOCKET_DIRECTORY = "/workspace/_oxidevm";
 
+/**
+ * How the runner tells a socket file left by an earlier run from a live listener's (engine ADR 0028 and ADR 0029):
+ * - `leased`: an exclusive service. The Userspace worker holds its workspace lease from before the process started
+ *   until the process ends, so no other instance of it is alive and a socket file at its path is a leftover.
+ * - `probe`: a connect tells; the module's reach admits VM connections.
+ * - `unknowable`: a shared service without a reach. Rust refuses its every client connect, so it cannot ask.
+ */
+export type LeftoverCheck = "leased" | "probe" | "unknowable";
+
+/** The check a service gets: its lease when it has one, otherwise a probe only within its declared reach. */
+export function leftoverCheck(exclusive: boolean, reach: ModuleReach): LeftoverCheck {
+  if (exclusive) return "leased";
+  return reach === "none" ? "unknowable" : "probe";
+}
+
 export interface ServiceInputs {
   readonly linux: LinuxParts;
   readonly endpoints: Readonly<Record<string, EndpointDecl>>;
+  readonly leftovers: LeftoverCheck;
   readonly maxClients: number;
   readonly run: ServiceRun;
   /** Aborted when the stop request arrives, before connections drain. */
@@ -68,10 +85,10 @@ async function acceptsConnections(sockets: LinuxParts["sockets"], path: string):
 }
 
 /**
- * Binds and listens on one endpoint. A Unix socket file left by an earlier run (nothing accepts on it) is replaced; a file
- * that is not a socket, or a socket somebody still listens on, is never touched.
+ * Binds and listens on one endpoint. A Unix socket file left by an earlier run is replaced; a file that is not a socket,
+ * a socket somebody still listens on, or one the service cannot check (`leftovers`) is never touched.
  */
-async function listen(linux: LinuxParts, name: string, endpoint: EndpointDecl, backlog: number): Promise<Listener> {
+async function listen(linux: LinuxParts, name: string, endpoint: EndpointDecl, backlog: number, leftovers: LeftoverCheck): Promise<Listener> {
   const { sockets, files, filesSync } = linux;
   if (endpoint.kind === "unix") {
     if (endpoint.path.startsWith(`${SOCKET_DIRECTORY}/`)) {
@@ -80,7 +97,10 @@ async function listen(linux: LinuxParts, name: string, endpoint: EndpointDecl, b
     const existing = await lstatOrAbsent(linux, endpoint.path);
     if (existing !== undefined) {
       if ((existing.mode & S_IFMT) !== S_IFSOCK) throw new ModuleFailure("launch", `${endpoint.path} exists and is not a socket, so the module will not replace it`);
-      if (await acceptsConnections(sockets, endpoint.path)) throw new ModuleFailure("busy", `Endpoint ${name} is already in use`);
+      if (leftovers === "unknowable") {
+        throw new ModuleFailure("busy", `A socket file is at ${endpoint.path}, and a service without a network reach cannot check whether something still listens on it, so it is left alone; declare process.exclusive "workspace" to have a leftover replaced`);
+      }
+      if (leftovers === "probe" && await acceptsConnections(sockets, endpoint.path)) throw new ModuleFailure("busy", `Endpoint ${name} is already in use`);
       try { await files.unlink(endpoint.path); } catch (error: unknown) { if (linuxErrno(error) !== ENOENT) throw error; }
     }
   }
@@ -183,7 +203,7 @@ export async function runService(inputs: ServiceInputs): Promise<void> {
     for (const [name, endpoint] of Object.entries(inputs.endpoints)) {
       const handler = run.handlers.get(name);
       if (handler === undefined) throw new ModuleFailure("adapter", `The adapter has no handler for ${name}`);
-      listeners.push(await listen(linux, name, endpoint, inputs.maxClients));
+      listeners.push(await listen(linux, name, endpoint, inputs.maxClients, inputs.leftovers));
       const listener = listeners[listeners.length - 1];
       if (listener !== undefined) loops.push(acceptLoop(listener.fd, handler).catch((error: unknown) => { failure.reject(error); }));
     }

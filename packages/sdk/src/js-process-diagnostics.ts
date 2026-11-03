@@ -10,6 +10,7 @@ import type { NativeProcessProfile } from "./runtime/userspace-command-abi.js";
 import { readNativeRoots } from "./runtime/userspace-command-abi.js";
 import { lateFailureDetail, lateFailureKind, type LateFailureKind } from "./runtime/js-process/late-failure.js";
 import { isModuleCommandName, moduleCommandPath } from "./runtime/module-command-names.js";
+import type { ModuleReach } from "./wasm/reach.js";
 
 /** Rust's closed bridge service operations by number; 65550 (a signal's host disposition) exists from trace 17. */
 const serviceOperations = [
@@ -43,7 +44,7 @@ const rejectionCodes = [
 export type AccelerationRejectionReason = typeof rejectionCodes[number][1];
 const rejectionReasons: ReadonlyMap<number, AccelerationRejectionReason> = new Map(rejectionCodes);
 /** The newest reason code of each trace version that has placements. */
-const lastReason: ReadonlyMap<number, number> = new Map([[15, 38], [16, 40], [17, 42]]);
+const lastReason: ReadonlyMap<number, number> = new Map([[15, 38], [16, 40], [17, 42], [18, 42]]);
 /** A module command runs in Linux for its own reasons (41, 42), a full command table (36) or the command context gate (1-10). */
 const moduleCommandReasons: ReadonlySet<number> = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 36, 41, 42]);
 type LinuxPlacement = { readonly placement: "linux"; readonly reason: AccelerationRejectionReason; readonly environment: AccelerationEnvironmentRejection | null };
@@ -72,12 +73,26 @@ export interface JSProcessLateFailureEvent {
   readonly ordinal: bigint; readonly pid: ProcessId; readonly session: ProcessId | null;
   readonly generation: bigint; readonly incarnationId: bigint; readonly kind: LateFailureKind; readonly detail: string;
 }
+/**
+ * Trace 18 (engine ADR 0029): a module process's request refused before its owner ran it, because the destination lies
+ * beyond the network reach its module declared. The request's own service row carries EACCES.
+ */
+export interface JSProcessRefusalEvent {
+  readonly ordinal: bigint; readonly generation: bigint; readonly incarnationId: bigint; readonly requestId: bigint; readonly pid: ProcessId;
+  readonly reason: "module-network-reach";
+  readonly declared: ModuleReach;
+  readonly attempted: "vm" | "internet";
+  /** The destination it named; a Unix socket's path is not recorded. */
+  readonly destination: { readonly family: "unix" } | { readonly family: "ipv4" | "ipv6"; readonly address: string; readonly port: number };
+}
 export interface JSProcessTrace {
-  /** All three lists share one bounded ring and monotonic ordinal sequence. */
+  /** All four lists share one bounded ring and monotonic ordinal sequence. */
   readonly dropped: bigint;
   readonly events: readonly JSProcessTraceEvent[];
   readonly placements: readonly JSProcessPlacementEvent[];
   readonly failures: readonly JSProcessLateFailureEvent[];
+  /** Empty before trace 18. */
+  readonly refusals: readonly JSProcessRefusalEvent[];
 }
 export async function configureJSProcessTrace(vm: UserspaceVM, capacity: number): Promise<void> {
   await readOwnedJSProcessTrace(vm, integer(capacity, "JS trace capacity", 0, 4096));
@@ -100,9 +115,9 @@ export function decodeJSProcessTrace(bytes: Uint8Array): JSProcessTrace {
   const r = new Reader(bytes);
   if (new TextDecoder().decode(r.raw(4)) !== "OXJT") protocol("JS trace magic mismatch");
   const version = r.u32();
-  if (version !== 15 && version !== 16 && version !== 17) protocol("JS trace version mismatch");
-  const dropped = r.u64(), count = r.u32(), placementCount = r.u32(), failureCount = r.u32(), events: JSProcessTraceEvent[] = [], placements: JSProcessPlacementEvent[] = [];
-  if (count + placementCount + failureCount > 4096) protocol("JS trace exceeds capacity");
+  if (version < 15 || version > 18) protocol("JS trace version mismatch");
+  const dropped = r.u64(), count = r.u32(), placementCount = r.u32(), failureCount = r.u32(), refusalCount = version < 18 ? 0 : r.u32(), events: JSProcessTraceEvent[] = [], placements: JSProcessPlacementEvent[] = [];
+  if (count + placementCount + failureCount + refusalCount > 4096) protocol("JS trace exceeds capacity");
   const ordinals = new Set<bigint>();
   let previous = 0n;
   for (let index = 0; index < count; index++) {
@@ -119,7 +134,8 @@ export function decodeJSProcessTrace(bytes: Uint8Array): JSProcessTrace {
     const common = { ordinal, pid, tid, addressSpaceId };
     placements.push(subject === 2 ? modulePlacement(r, common, placement) : nativePlacement(r, version, { ...common, subject: subject === 0 ? "node" : "bun", runtime: subject === 0 ? "node" : "bun" }, placement));
   }
-  return { dropped, events, placements, failures: decodeLateFailures(r, failureCount, ordinals) };
+  const failures = decodeLateFailures(r, failureCount, ordinals), refusals = decodeRefusals(r, refusalCount, ordinals); r.end();
+  return { dropped, events, placements, failures, refusals };
 }
 
 function serviceOperation(number: number, version: number): JSProcessTraceEvent["operation"] {
@@ -172,7 +188,7 @@ function modulePlacement(r: Reader, identity: PlacementIdentity, placement: numb
   return { ...common, ...metadata, placement: "browser-module", generation, incarnationId, registration };
 }
 
-function decodeLateFailures(r: Reader, count: number, ordinals: ReadonlySet<bigint>): JSProcessLateFailureEvent[] {
+function decodeLateFailures(r: Reader, count: number, ordinals: Set<bigint>): JSProcessLateFailureEvent[] {
   const failures: JSProcessLateFailureEvent[] = [];
   let previous = 0n;
   for (let index = 0; index < count; index++) {
@@ -181,8 +197,37 @@ function decodeLateFailures(r: Reader, count: number, ordinals: ReadonlySet<bigi
     if (ordinal <= previous || ordinals.has(ordinal) || generation === 0n || incarnationId === 0n || kind === undefined || detail !== lateFailureDetail(detail)) protocol("Invalid late-failure record");
     previous = ordinal;
     failures.push({ ordinal, pid, session: session === 0 ? null : decodeProcessId(session), generation, incarnationId, kind, detail });
+    ordinals.add(ordinal);
   }
-  r.end(); return failures;
+  return failures;
+}
+
+const REACHES: readonly ModuleReach[] = ["none", "vm", "internet"];
+
+/** Trace 18 refusal rows: u64 ordinal, generation, process, request; u32 pid; u8 reason 1, declared reach, attempted scope; u16 family, u16 port; 16-byte address. */
+function decodeRefusals(r: Reader, count: number, ordinals: ReadonlySet<bigint>): JSProcessRefusalEvent[] {
+  const refusals: JSProcessRefusalEvent[] = [];
+  let previous = 0n;
+  for (let index = 0; index < count; index++) {
+    const ordinal = r.u64(), generation = r.u64(), incarnationId = r.u64(), requestId = r.u64(), pid = decodeProcessId(r.u32()), reason = r.u8(), declared = REACHES[r.u8()], scope = r.u8();
+    const family = r.u16(), port = r.u16(), address = r.raw(16);
+    const attempted = scope === 1 ? "vm" as const : scope === 2 ? "internet" as const : undefined;
+    if (ordinal <= previous || ordinals.has(ordinal) || generation === 0n || incarnationId === 0n || requestId === 0n || reason !== 1 || declared === undefined || attempted === undefined
+      || declared === "internet" || declared === "vm" && attempted === "vm") protocol("Invalid module network reach refusal");
+    previous = ordinal;
+    refusals.push({ ordinal, generation, incarnationId, requestId, pid, reason: "module-network-reach", declared, attempted, destination: refusalDestination(family, port, address) });
+  }
+  return refusals;
+}
+
+function refusalDestination(family: number, port: number, address: Uint8Array): JSProcessRefusalEvent["destination"] {
+  if (family === 1 && port === 0 && address.every(byte => byte === 0)) return { family: "unix" };
+  if (family === 2 && address.subarray(4).every(byte => byte === 0)) return { family: "ipv4", address: Array.from(address.subarray(0, 4)).join("."), port };
+  if (family === 10) {
+    const view = new DataView(address.buffer, address.byteOffset, 16);
+    return { family: "ipv6", address: Array.from({ length: 8 }, (_, index) => view.getUint16(index * 2).toString(16)).join(":"), port };
+  }
+  return protocol("Invalid refused destination");
 }
 
 function placementMetadata(r: Reader, version: number): Pick<JSProcessPlacementEvent, "parentPid" | "entry" | "profile" | "codeRoots"> & { readonly environment: AccelerationEnvironmentRejection | null } {

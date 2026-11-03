@@ -174,3 +174,21 @@ export interface ProjectConfig {
   /** Explicit image location and author trust. Required when this release has no managed image. */
   readonly image?: ImageLocation<RuntimeMode>;
 }
+
+/** The release `oxidevm.lock.json` pins: the SDK version, the engine release and the image's manifest digest. */
+export interface ProjectLockIdentity {
+  readonly sdkVersion: string;
+  /** `sha256:` and the engine release ID. */
+  readonly engineRelease: string;
+  readonly manifestSHA256: SHA256;
+}
+
+/**
+ * What asset installation did to `oxidevm.lock.json`. `updated` is true when it wrote the file, `from` names
+ * the lock it replaced (absent when there was none) and `to` the lock the project now has.
+ */
+export interface ProjectLockChange {
+  readonly updated: boolean;
+  readonly from?: ProjectLockIdentity;
+  readonly to: ProjectLockIdentity;
+}

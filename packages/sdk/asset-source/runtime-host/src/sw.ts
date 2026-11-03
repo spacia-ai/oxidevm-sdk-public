@@ -6,6 +6,8 @@
 // and images live outside the scope and keep the SDK's content-addressed caches. The page is
 // network-first so a redeployed shell takes effect; offline it comes from the cache.
 
+import { handledByShell } from "./sw-scope.ts";
+
 const worker: unknown = globalThis;
 if (!(worker instanceof ServiceWorkerGlobalScope)) throw new TypeError("the runtime frame's shell must run as a Service Worker");
 const sw = worker;
@@ -38,7 +40,7 @@ sw.addEventListener("install", event => { event.waitUntil(install().then(() => s
 sw.addEventListener("activate", event => { event.waitUntil(prune().then(() => sw.clients.claim())); });
 sw.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
-  if (event.request.method !== "GET" || url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return;
+  if (!handledByShell(url, event.request.method, scope)) return;
   event.respondWith((async () => {
     const cache = await caches.open(cacheName);
     // The page itself is fetched first so a redeployed shell takes effect; its hashed scripts

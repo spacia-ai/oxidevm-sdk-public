@@ -3,6 +3,7 @@ import { exactKeys, integer, protocolError, record, string } from "../../runtime
 /** The runner-contract properties `oxidevm wasm test` checks, in the order it checks them. */
 export const WASM_TEST_PROPERTIES = [
   "integrity", "exit-range", "ready", "endpoints", "duplicate-start", "snapshot-refused", "eof-stop", "restart", "kill-recover", "declared-host",
+  "network-direct", "network-declared", "network-offline",
 ] as const;
 export type WasmTestProperty = (typeof WASM_TEST_PROPERTIES)[number];
 export type WasmPropertyStatus = "passed" | "failed" | "not-applicable";

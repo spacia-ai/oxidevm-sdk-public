@@ -2,21 +2,22 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-/** The four modules of an engine release, in release.json order, with the mode each serves. */
+/** The five modules of an engine release, in release.json order, with the mode each serves. */
 const MODULES = [
   { name: "oxidevm_core.wasm", mode: "system" },
   { name: "oxidevm_core_shared.wasm", mode: "system" },
   { name: "oxidevm_netstack.wasm", mode: "system" },
   { name: "oxidevm_userspace.wasm", mode: "userspace" },
+  { name: "oxidevm_tls.wasm", mode: "userspace" },
 ] as const;
 
 export interface SyntheticEngineRelease {
   /** SHA-256 of `releaseJson`, as the engine names a release. */
   readonly id: string;
   readonly manifest: {
-    readonly schemaVersion: 3;
+    readonly schemaVersion: 4;
     readonly engineSource: { readonly commit: string; readonly dirty: boolean; readonly nativeInputsSHA256: string };
-    readonly identities: { readonly coreApi: number; readonly jitAbi: number; readonly userspaceApi: number; readonly netstackApi: number };
+    readonly identities: { readonly coreApi: number; readonly jitAbi: number; readonly userspaceApi: number; readonly netstackApi: number; readonly tlsApi: number };
     readonly artifacts: readonly { readonly name: (typeof MODULES)[number]["name"]; readonly mode: (typeof MODULES)[number]["mode"]; readonly bytes: number; readonly sha256: string }[];
   };
   readonly releaseJson: Uint8Array;
@@ -37,15 +38,15 @@ function standInModule(variant: number, index: number): Uint8Array {
 }
 
 /**
- * A schema-3 release laid out the way the engine's release builder writes one, with tiny valid
+ * A schema-4 release laid out the way the engine's release builder writes one, with tiny valid
  * stand-in modules. A different `variant` changes every module and therefore the release ID.
  */
-export function syntheticEngineRelease(variant = 0, identities: Identities = { coreApi: 16, jitAbi: 59, userspaceApi: 29, netstackApi: 2 }): SyntheticEngineRelease {
+export function syntheticEngineRelease(variant = 0, identities: Identities = { coreApi: 16, jitAbi: 59, userspaceApi: 29, netstackApi: 2, tlsApi: 1 }): SyntheticEngineRelease {
   const entries = MODULES.map(({ name, mode }, index) => ({ name, mode, bytes: standInModule(variant, index) }));
   const manifest = {
-    schemaVersion: 3 as const,
+    schemaVersion: 4 as const,
     engineSource: { commit: "c".repeat(40), dirty: false, nativeInputsSHA256: "d".repeat(64) },
-    identities: { coreApi: identities.coreApi, jitAbi: identities.jitAbi, userspaceApi: identities.userspaceApi, netstackApi: identities.netstackApi },
+    identities: { coreApi: identities.coreApi, jitAbi: identities.jitAbi, userspaceApi: identities.userspaceApi, netstackApi: identities.netstackApi, tlsApi: identities.tlsApi },
     artifacts: entries.map(({ name, mode, bytes }) => ({ name, mode, bytes: bytes.length, sha256: sha256(bytes) })),
   };
   const releaseJson = new TextEncoder().encode(`${JSON.stringify(manifest, null, 2)}\n`);

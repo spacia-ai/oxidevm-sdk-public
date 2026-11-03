@@ -9,12 +9,21 @@ import type { SnapshotRef } from "../../contracts.js";
 import { FRAME_PROTOCOL_VERSION } from "./handshake.js";
 import { decodeKeeperReport } from "./keepers.js";
 import { decodeWorkspaceRequest, isWorkspaceFrameType } from "./workspace.js";
+import { decodeModuleDescriptor, decodeModulePins, decodeSuppliedFiles, type CopyKey, type ModulePin } from "../../runtime/protocol/userspace-module-files.js";
+import { decodeModuleCommandsRequest, type ModuleCommandsRequest } from "../../runtime/protocol/userspace-module-commands.js";
 import type { WorkspaceFrameOperation } from "./workspace.js";
 
 // Requests the page sends the runtime frame over the connected port, one per public VM method.
 // Every request carries `v` and a page-chosen `id`; replies and events name that id, and
 // `{ type: "cancel", id }` aborts it. Values the VM validates itself (paths, commands, labels) are
 // only type-checked here; the VM's own validation runs in the frame exactly as in a local VM.
+
+/** What a module's process is given besides its description: never a command, a worker or a terminal. */
+export interface ModuleSpawnWire {
+  readonly args?: readonly string[];
+  readonly cwd?: string;
+  readonly env?: Readonly<Record<string, string>>;
+}
 
 /** What a spawned process asks for. The VM's spawn validation runs on it in the frame. */
 export interface SpawnWire {
@@ -41,6 +50,13 @@ export type FrameOperation =
   | WorkspaceFrameOperation
   | { readonly type: "spawn"; readonly spec: SpawnWire; readonly io: MessagePort }
   | { readonly type: "terminal.attach"; readonly key: string; readonly io: MessagePort }
+  /** Protocol 17 (ADR 0028): which pinned files the frame VM's store lacks; the page reads only those. */
+  | { readonly type: "module.files"; readonly pins: readonly ModulePin[] }
+  /** Protocol 17: `spawnModule`'s start with the copies the store lacked (at most 66 Blobs and 512 MiB) and the
+   * process's own arguments, directory and environment. */
+  | ({ readonly type: "module.spawn"; readonly descriptor: string; readonly files: Readonly<Record<CopyKey, Blob>>; readonly io: MessagePort } & ModuleSpawnWire)
+  /** Protocol 17: one request to the frame VM's module-command owner, answered even when the page cancels it. */
+  | { readonly type: "module.commands"; readonly request: ModuleCommandsRequest }
   | { readonly type: "exposePort"; readonly port: number }
   | { readonly type: "preview.close"; readonly preview: number }
   | { readonly type: "listeningPorts" | "watchListeningPorts" }
@@ -120,6 +136,20 @@ export function decodeFrameMessage(value: unknown): FrameMessage {
     case "spawn":
       fields(["spec", "io"]);
       return { type, id, spec: decodeSpawnWire(message["spec"]), io: port(message["io"]) };
+    case "module.files":
+      fields(["pins"]);
+      return { type, id, pins: decodeModulePins(message["pins"]) };
+    case "module.spawn": {
+      fields(["descriptor", "files", "io"], ["args", "cwd", "env"]);
+      const spec = decodeSpawnWire({ command: "module", ...Object.fromEntries(["args", "cwd", "env"].flatMap(key => message[key] === undefined ? [] : [[key, message[key]]])) });
+      return {
+        type, id, descriptor: decodeModuleDescriptor(message["descriptor"]), files: decodeSuppliedFiles(message["files"]), io: port(message["io"]),
+        ...(spec.args === undefined ? {} : { args: spec.args }), ...(spec.cwd === undefined ? {} : { cwd: spec.cwd }), ...(spec.env === undefined ? {} : { env: spec.env }),
+      };
+    }
+    case "module.commands":
+      fields(["request"]);
+      return { type, id, request: decodeModuleCommandsRequest(record(message["request"], "module-commands request"), []) };
     case "terminal.attach":
       fields(["key", "io"]);
       return { type, id, key: string(message["key"], "terminal key"), io: port(message["io"]) };

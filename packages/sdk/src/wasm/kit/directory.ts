@@ -1,5 +1,6 @@
 import type { LinuxSyncFiles } from "../../js-process-types.js";
 import { linuxErrno } from "./errno.js";
+import { uniqueSuffix } from "./unique.js";
 
 const ENOENT = 2;
 /** `O_DIRECTORY` on Linux x86-64: lets a directory be opened read-only for `fsync`. */
@@ -20,7 +21,7 @@ export interface AtomicDirectory {
   readonly staging: string;
   /** Fills the staging directory; throwing leaves it in place for inspection and publishes nothing. */
   populate(directory: string): void | Promise<void>;
-  /** A fresh suffix for a quarantined staging directory; defaults to a random UUID. */
+  /** A fresh suffix for a quarantined staging directory; defaults to 32 random hex digits (`getRandomValues`). */
   readonly unique?: () => string;
 }
 
@@ -49,7 +50,7 @@ export async function createDirectoryAtomically(
   spec: AtomicDirectory,
 ): Promise<"created" | "existing"> {
   if (exists(fs, spec.destination)) return "existing";
-  if (exists(fs, spec.staging)) fs.rename(spec.staging, `${spec.staging}-failed-${(spec.unique ?? (() => crypto.randomUUID()))()}`);
+  if (exists(fs, spec.staging)) fs.rename(spec.staging, `${spec.staging}-failed-${(spec.unique ?? uniqueSuffix)()}`);
   fs.mkdir(spec.staging, 0o700);
   await spec.populate(spec.staging);
   syncPath(fs, spec.staging, "directory");

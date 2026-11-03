@@ -111,7 +111,14 @@
 /** 177 pairs API145/replay168 with module commands (ADR 0027): the OXMC/OXMA table, OXCR18 tag 4, OXJT17
  * placement subjects with reasons 41 and 42, OXCS signal notices (command operations 6 and 7), OXJR 65550
  * and JS process protocol 4. */
-export const PROTOCOL_VERSION = 177;
+/** 178 (ADR 0028) moves module integrity into the Userspace worker's verified-copy store: `module-files` asks what the
+ * store lacks, `spawn-module` starts `spawnModule`'s runner with the supplied copies (`spawn-js` carries no launch any
+ * more), and a module-commands enable carries its supplied copies too; `attach-module-frame` and `detach-module-frame`
+ * hand the Userspace worker the VM's module frame broker, behind which every module process runs. It also pairs API146
+ * (engine ADR 0029 and the signal amendments of ADR 0027): OXCS 2 notices with siginfo, OXMC 2 tables and
+ * `oxidevm_userspace_spawn_module_process` with each module's network reach, OXJT 18 refusal rows, and OXCR 19,
+ * whose native program carries the host helper's bridge version. */
+export const PROTOCOL_VERSION = 178;
 /** Combined architecture, background compilation and code-profile trace layout. */
 export const SYSTEM_TRACE_SCHEMA_VERSION = 54;
 

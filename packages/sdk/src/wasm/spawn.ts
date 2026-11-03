@@ -7,8 +7,8 @@ import { isServiceDecl } from "./manifest.js";
 import type { ModuleDecl, ResolvedManifest } from "./manifest-types.js";
 import { encodeLaunchArgument } from "./runner/descriptor.js";
 import { settledWithin } from "./runner/failure.js";
-import { ARTIFACT_FETCH_REASON } from "./runner/pinned.js";
-import { spawnOwnedModuleProcess } from "../vm-adapter.js";
+import { withModuleFiles } from "./module-supply.js";
+import { ownedModules } from "../vm-adapter.js";
 
 /**
  * What `spawnModule` and `enableModuleCommands` need of a VM: a Userspace VM, which has `spawnJS`; a system VM has
@@ -20,8 +20,6 @@ export interface ModuleVM {
   spawnJS(spec: PipeJSProcessSpec): Promise<ProcessHandle>;
 }
 
-/** The module runner worker, resolved the way the interceptor workers are so bundlers copy it as an asset. */
-const RUNNER_WORKER = new URL("../../assets/module-runner/runner.worker.js", import.meta.url);
 const DEFAULT_STARTUP_MS = 120_000;
 const READY_LINE_BYTES = 64 * 1024;
 const STDERR_TAIL_BYTES = 4096;
@@ -31,13 +29,12 @@ const STDERR_SETTLE_MS = 1000;
 type Info = Readonly<Record<string, string | number | boolean>>;
 interface Failure { readonly code: VMErrorCode; readonly reason: string }
 
-/** How a runner exit status is reported to the consumer; a file the runner could not fetch is named by its report. */
-function failureFor(exit: ProcessExit, reason: string | undefined): Failure {
-  if (exit.kind === "exited" && exit.code === MODULE_EXIT.launch && reason === ARTIFACT_FETCH_REASON) return { code: "CORE_LOAD_FAILED", reason };
+/** How a runner exit status is reported to the consumer. Files are checked before the process exists (ADR 0028). */
+function failureFor(exit: ProcessExit): Failure {
   if (exit.kind === "exited") {
     if (exit.code === MODULE_EXIT.prerequisite) return { code: "FEATURE_NOT_AVAILABLE", reason: MODULE_EXIT_REASONS.prerequisite };
     if (exit.code === MODULE_EXIT.busy) return { code: "QUOTA_EXCEEDED", reason: MODULE_EXIT_REASONS.busy };
-    const kinds: readonly ModuleExitReason[] = ["launch", "integrity", "adapter"];
+    const kinds: readonly ModuleExitReason[] = ["launch", "adapter"];
     const kind = kinds.find(candidate => MODULE_EXIT[candidate] === exit.code);
     if (kind !== undefined) return { code: "GUEST_CRASH", reason: MODULE_EXIT_REASONS[kind] };
   }
@@ -59,7 +56,7 @@ function runnerReport(stderr: string): { readonly message: string; readonly item
 
 function startupError(manifest: ResolvedManifest, exit: ProcessExit, stderr: string): VMError {
   const report = runnerReport(stderr);
-  const { code, reason } = failureFor(exit, report?.reason);
+  const { code, reason } = failureFor(exit);
   const status = exit.kind === "exited" ? exit.code : -exit.signalNumber;
   const message = report?.message ?? (stderr.trim().slice(-500) || `exit status ${String(status)}`);
   return new VMError(code, `${manifest.id} did not start: ${message}`, { reason, status, ...(report === undefined || report.items.length === 0 ? {} : { missing: report.items }) });
@@ -176,14 +173,25 @@ export async function spawnModule(vm: ModuleVM, handle: ModuleHandle, ...args: r
   const descriptor = launchDescriptor(handle, { options: request["options"], workspaceId });
   const commandArgs = request["args"], signal = request["signal"];
   if (signal !== undefined && !(signal instanceof AbortSignal)) throw new VMError("INVALID_ARGUMENT", "signal must be an AbortSignal");
-  // The launch description travels in the runner's start message, never in argv, where /proc/<pid>/cmdline would show it.
-  const process = await spawnOwnedModuleProcess(vm, {
-    worker: RUNNER_WORKER,
+  const modules = ownedModules(vm), cancel = signal instanceof AbortSignal ? signal : undefined;
+  const spec = {
     args: Array.isArray(commandArgs) ? Array.from<unknown>(commandArgs).map(String) : [],
     ...(typeof request["cwd"] === "string" ? { cwd: request["cwd"] } : {}),
     ...(typeof request["env"] === "object" && request["env"] !== null ? { env: Object.fromEntries(Object.entries(request["env"]).map(([key, value]) => [key, String(value)])) } : {}),
-    ...(signal instanceof AbortSignal ? { signal } : {}),
-  }, { kind: "host", descriptor: encodeLaunchArgument(descriptor) });
+    ...(cancel === undefined ? {} : { signal: cancel }),
+  };
+  // The launch description travels in the runner's start message, never in argv, where /proc/<pid>/cmdline would show it.
+  // The VM's store checks the files it lacks before the process exists (ADR 0028): a file that differs from its pin
+  // rejects here, and a later start sends nothing.
+  const encoded = encodeLaunchArgument(descriptor);
+  let process: ProcessHandle;
+  try {
+    process = await withModuleFiles(descriptor, modules, files => modules.spawn(spec, { descriptor: encoded, files }), cancel);
+  } catch (error: unknown) {
+    // A cancellation while the page read a file started nothing.
+    if (cancel?.aborted === true && !(error instanceof VMError && error.code === "ABORTED")) throw cancel.reason instanceof Error ? cancel.reason : new VMError("ABORTED", `Starting ${descriptor.manifest.id} was cancelled`);
+    throw error;
+  }
   const { manifest } = descriptor;
   if (!isServiceDecl(manifest)) return process;
   const started = await awaitReady(process, manifest, signal instanceof AbortSignal ? signal : undefined);

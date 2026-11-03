@@ -38,7 +38,7 @@ import { createNodeNet } from "./node-net.ts";
 import { Buffer } from "buffer";
 import { createProcessDirectory } from "./node-process-directory.ts";
 import { nodeQuerystring } from "./node-querystring.ts";
-import { createProcessKill, deliverProcessSignal, installProcessIpc, NodeProcess, validateNodeEnvironment, type ProcessBuildMetadata } from "./node-process.ts";
+import { createProcessKill, deliverProcessSignal, installProcessIpc, installSignalListeners, NodeProcess, validateNodeEnvironment, type ProcessBuildMetadata } from "./node-process.ts";
 import { createForkedChildren } from "./node-fork.ts";
 import { deliverProcessException } from "./node-exceptions.js";
 import { createIpcChannel } from "./node-ipc.ts";
@@ -156,6 +156,7 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
     ipcReferenced = () => channel.hasReferences;
   }
   io.setSignals(signal => scheduler.run(() => { deliverProcessSignal(process, signal, ended => { io.signalExit(ended); return io.halt(); }); }));
+  if (io.watchSignal !== undefined) installSignalListeners(process, (signal, watching) => { io.watchSignal?.(signal, watching); });
   if (start.env["NODE_NO_WARNINGS"] !== "1") {
     process.on("warning", createWarningPrinter(process, text => { stderr.write(text); }, () => processIdentity.pid));
   }

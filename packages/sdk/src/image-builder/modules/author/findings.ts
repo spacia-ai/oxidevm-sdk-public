@@ -1,7 +1,7 @@
 /** What a module build can complain about. The set is closed so that a report reader can switch over it exhaustively. */
 export const FINDING_CODES = [
   "module-source", "manifest-literal", "manifest-invalid",
-  "adapter-bundle", "adapter-import", "adapter-stubbed", "adapter-size", "adapter-meta", "adapter-global", "adapter-eval",
+  "adapter-bundle", "adapter-import", "adapter-stubbed", "adapter-size", "adapter-meta", "adapter-global", "adapter-eval", "adapter-network",
   "artifact-missing", "artifact-unsafe", "artifact-size",
   "license-source", "license-bundled", "notices-missing", "output-unsafe",
 ] as const;

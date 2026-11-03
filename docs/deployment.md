@@ -108,11 +108,60 @@ clone, so run it before the production build. The generated handles name those
 files with `new URL(path, import.meta.url)`, so bundlers copy them as assets (small
 files may be inlined as `data:` URLs; both forms are verified against the lock).
 Ship the notices a module's license requires, and the source offer for a copyleft
-module, with the application. Modules start JS processes, so they run only on a
-self-hosted runtime and a cross-origin isolated page. A content security policy
-needs `blob:` in `script-src` (the verified adapter is imported from a blob URL)
-and `data:` in `connect-src` when files are inlined. See
-[WebAssembly modules](wasm-modules.md).
+module, with the application. Modules start JS processes of a Userspace VM, on a
+cross-origin isolated page, with a self-hosted runtime or the hosted runtime
+frame. See [WebAssembly modules](wasm-modules.md).
+
+Module code runs in a per-VM **module frame** with an opaque origin, never in the
+application's origin (engine ADR 0028). The frame's document comes from the
+origin that runs the runtime:
+
+- **Hosted runtime frame:** `/v/<sdk version>/module-frame/` on the runtime
+  origin, served by the runtime frame deployment with the frame's own headers.
+  The page still reads the module's staged files from its own origin.
+- **Self-hosted:** `oxidevm assets install` stages the SDK's module frame
+  (`index.html`, `broker.js`, `runner.js` and the `frame.json` that holds its
+  headers) at `module-frame/` beside the engine assets, that is
+  `<runtime.baseUrl>module-frame/`. With the default `assetBaseUrl` that is
+  `public/oxidevm/runtime/module-frame/`, served at
+  `/oxidevm/runtime/module-frame/`. Run `oxidevm assets install` again after
+  every SDK upgrade, as for the engine: the broker and runner speak that SDK's
+  protocol versions, and the frame's policy names its bootstrap script by
+  sha256. A deployment that does not use `assets install` serves the SDK
+  package's `assets/module-frame/` directory there instead.
+
+Every response under `module-frame/` carries the headers in that directory's
+`frame.json` (`headers`), and not the application's own policy:
+
+```http
+Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'sha256-<bootstrap>' blob: 'wasm-unsafe-eval' 'unsafe-eval'; worker-src blob:; connect-src blob:; frame-ancestors *; base-uri 'none'; form-action 'none'
+Cross-Origin-Embedder-Policy: require-corp
+Cross-Origin-Resource-Policy: cross-origin
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+```
+
+Copy the exact values from `frame.json` rather than from this page. The policy
+must be a header, never a `<meta>` element: only the header carries `sandbox`,
+which keeps the document opaque even when it is opened directly. CORP must be
+`cross-origin`, because Firefox checks it against the frame's opaque origin. Do
+not let a Service Worker answer `module-frame/` requests, and serve
+`index.html` as `text/html` and the two scripts as JavaScript. A frame that does
+not load fails with `FEATURE_NOT_AVAILABLE` `wasm-module-isolation-unavailable`
+(`capability: "frame-load"`); a missing `broker.js` or `runner.js` fails with
+`CORE_LOAD_FAILED` `module-frame-asset`. A frame served without its
+`Content-Security-Policy` (a development middleware that serves `module-frame/`
+like any other asset, say) refuses modules with `capability: "frame-policy"`:
+the frame checks at startup that a fetch of a `data:` URL is refused, and a
+runner that `importScripts` of one is, so a deployment that drops the policy
+fails closed instead of handing module code the browser's network.
+
+Under the application's own content security policy, allow `frame-src` for the
+origin that serves the module frame (`'self'` when self-hosted), and
+`connect-src 'self'` for the staged files and the frame's scripts, plus `data:`
+when files are inlined. The runner imports the verified adapter from a `blob:`
+URL inside the module frame, under the frame's policy. Modules run in Chromium and
+Firefox; WebKit and Safari refuse them with a typed error.
 
 ## Preview host
 

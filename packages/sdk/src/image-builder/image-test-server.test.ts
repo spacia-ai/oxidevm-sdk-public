@@ -42,3 +42,33 @@ it("serves a module release, a copy with one altered adapter byte, the wasm page
     for (const path of ["/images/anything/manifest.json", "/module/%2e%2e/engine", "/module-tampered/missing.bin"]) expect((await fetch(`${server.origin}${path}`)).status, path).toBe(404);
   } finally { await server.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+it("serves the module frame beside the runtime with the headers its frame.json names, and nothing else of that directory", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxidevm-module-frame-server-test-"));
+  await mkdir(join(root, "engine")); await mkdir(join(root, "browser")); await mkdir(join(root, "frame"));
+  const headers = { "Content-Security-Policy": "sandbox allow-scripts; default-src 'none'", "Cross-Origin-Embedder-Policy": "require-corp", "Cross-Origin-Resource-Policy": "cross-origin", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
+  await writeFile(join(root, "frame/frame.json"), JSON.stringify({ schemaVersion: 1, headers }));
+  await writeFile(join(root, "frame/index.html"), "<!doctype html><title>frame</title>"); await writeFile(join(root, "frame/broker.js"), "/* broker */"); await writeFile(join(root, "frame/runner.js"), "/* runner */");
+  await writeFile(join(root, "frame/extra.js"), "/* not part of the frame */");
+  const server = await startImageTestServer({ engineDir: join(root, "engine"), browserDir: join(root, "browser"), entry: "wasm-client.js", moduleFrameDir: join(root, "frame") });
+  try {
+    for (const [path, body, type] of [["broker.js", "/* broker */", "text/javascript"], ["runner.js", "/* runner */", "text/javascript"], ["", "<!doctype html><title>frame</title>", "text/html"], ["index.html", "<!doctype html><title>frame</title>", "text/html"]] as const) {
+      const response = await fetch(`${server.origin}/oxidevm/runtime/module-frame/${path}`);
+      expect(response.status, path).toBe(200);
+      expect(await response.text()).toBe(body);
+      expect(response.headers.get("content-type")).toBe(type);
+      for (const [name, value] of Object.entries(headers)) expect(response.headers.get(name), name).toBe(value);
+      // The frame's own headers replace the page's: no opener policy, and CORP cross-origin for the opaque frame.
+      expect(response.headers.get("cross-origin-opener-policy")).toBeNull();
+    }
+    for (const path of ["frame.json", "extra.js", "%2e%2e/frame.json", "nested/broker.js"]) expect((await fetch(`${server.origin}/oxidevm/runtime/module-frame/${path}`)).status, path).toBe(404);
+  } finally { await server.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+it("refuses a module frame directory whose frame.json names no headers", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxidevm-module-frame-server-test-"));
+  await writeFile(join(root, "frame.json"), JSON.stringify({ schemaVersion: 1 }));
+  try {
+    await expect(startImageTestServer({ engineDir: root, browserDir: root, moduleFrameDir: root })).rejects.toMatchObject({ code: "CORE_LOAD_FAILED" });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

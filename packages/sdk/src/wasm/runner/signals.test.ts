@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { JS_MAILBOX_BYTES, JS_PROCESS_PROTOCOL_VERSION, LinuxError } from "../../runtime/js-process/codec.js";
-import { dispositionOperation } from "../../runtime/js-process/signals.js";
+import { JS_MAILBOX_BYTES, JS_PROCESS_PROTOCOL_VERSION, LinuxError, Writer } from "../../runtime/js-process/codec.js";
+import { dispositionOperation, SIGNAL_BUFFER_BYTES } from "../../runtime/js-process/signals.js";
 import { LinuxClient } from "../../runtime/js-process/transport.js";
 import { record } from "../../runtime/decode.js";
 import { clientSignals } from "./browser.js";
 import { COMMAND_DECLARATION, buildRelease } from "./fixtures.test-support.js";
-import { fakeSignals, launch } from "./harness.test-support.js";
+import { launch } from "./harness.test-support.js";
+import { fakeSignals } from "../testing/memory-signals.js";
 import { RunnerSignals } from "./signals.js";
 
 afterEach(() => { vi.restoreAllMocks(); });
@@ -75,9 +76,10 @@ describe("host.process.signals", () => {
     expect(transport.listeners).toBe(1);
   });
 
-  it("exposes word 1 as the interrupt buffer in Pyodide's format", async () => {
+  it("exposes the interrupt word (byte 8 of the signal buffer, JS process protocol 5) as the interrupt buffer in Pyodide's format", async () => {
     const transport = fakeSignals(), trap = await new RunnerSignals(transport).api.trap(["SIGINT"]);
     expect(trap.interruptBuffer.buffer).toBe(transport.interruptWord.buffer);
+    expect([trap.interruptBuffer.byteOffset, trap.interruptBuffer.length]).toEqual([8, 1]);
     Atomics.store(transport.interruptWord, 0, 2);
     expect(trap.interruptBuffer[0]).toBe(2);
   });
@@ -168,7 +170,7 @@ describe("host.process.signals", () => {
   });
 
   it("binds to the process's Linux client: dispositions travel as OXJR 65550 and nudged signals reach the trap", async () => {
-    const channel = new MessageChannel(), words = new SharedArrayBuffer(8), driver = channel.port2;
+    const channel = new MessageChannel(), words = new SharedArrayBuffer(SIGNAL_BUFFER_BYTES), driver = channel.port2;
     const client = new LinuxClient(channel.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES), words), requests: unknown[] = [];
     driver.onmessage = (event: MessageEvent<unknown>) => {
       const request = record(event.data, "request"); requests.push(request);
@@ -184,8 +186,70 @@ describe("host.process.signals", () => {
       expect(await trap[Symbol.asyncIterator]().next()).toEqual({ value: "SIGINT", done: false });
       expect(trap.interruptBuffer.buffer).toBe(words);
       await trap.untrap();
-      void signals.api.raise("SIGINT");
-      await vi.waitFor(() => expect(requests.at(-1)).toEqual({ version: JS_PROCESS_PROTOCOL_VERSION, type: "signaled", signal: 2 }));
+      // raise asks Rust for the process's pid first (OXJR 65537); its kill follows in the masks suite.
+      void signals.api.raise("SIGINT").catch(() => undefined);
+      await vi.waitFor(() => expect(requests.at(-1)).toMatchObject({ type: "request", operation: 65537 }));
+    } finally { client.dispose(); driver.close(); }
+  });
+});
+
+describe("host.process.signals masks (OXJR 14 and 127) and raise as kill(getpid())", () => {
+  it("block and unblock answer the previous mask, pending the blocked pending set, through Rust's operations", async () => {
+    const transport = fakeSignals(), signals = new RunnerSignals(transport);
+    expect(await signals.api.block(["SIGINT"])).toEqual(new Set());
+    expect(transport.masks).toEqual([["block", 1n << 1n]]);
+    expect(await signals.api.block(["SIGTERM", "SIGUSR1"])).toEqual(new Set(["SIGINT"]));
+    const trap = await signals.api.trap(["SIGINT"]);
+    await signals.api.raise("SIGINT");
+    expect(await signals.api.pending()).toEqual(new Set(["SIGINT"]));
+    // Unblocking a pending trapped signal delivers it once.
+    expect(await signals.api.unblock(["SIGINT"])).toEqual(new Set(["SIGINT", "SIGTERM", "SIGUSR1"]));
+    expect(await trap[Symbol.asyncIterator]().next()).toEqual({ value: "SIGINT", done: false });
+    expect(await signals.api.pending()).toEqual(new Set());
+  });
+
+  it("raise is kill(getpid(), signal): a trapped signal reaches its trap through Rust, an untrapped one takes its default action without settling", async () => {
+    const transport = fakeSignals(), signals = new RunnerSignals(transport);
+    const trap = await signals.api.trap(["SIGUSR1"]);
+    await signals.api.raise("SIGUSR1");
+    expect(transport.kills).toEqual([10]);
+    expect(await trap[Symbol.asyncIterator]().next()).toEqual({ value: "SIGUSR1", done: false });
+    await trap.untrap();
+    let settled = false;
+    void signals.api.raise("SIGUSR1").finally(() => { settled = true; });
+    await settle();
+    expect(transport.exits).toEqual([10]);
+    expect(settled).toBe(false);
+  });
+
+  it("refuses SIGKILL, SIGSTOP, unknown names and malformed lists before asking Rust", async () => {
+    const transport = fakeSignals(), signals = new RunnerSignals(transport), refused = { code: "INVALID_ARGUMENT" };
+    for (const member of ["block", "unblock"]) for (const input of [["SIGKILL"], ["SIGSTOP"], ["SIGNOPE"], "SIGINT", [33], undefined]) {
+      await expect(untyped(signals.api, member, input), `${member} ${JSON.stringify(input)}`).rejects.toMatchObject(refused);
+    }
+    expect(transport.masks).toEqual([]);
+  });
+
+  it("travels as OXJR 14 {u8 how, u64 set} and 127, and raise as OXJR 62 to the process's own pid", async () => {
+    const channel = new MessageChannel(), driver = channel.port2, requests: Readonly<Record<string, unknown>>[] = [];
+    const client = new LinuxClient(channel.port1, new SharedArrayBuffer(JS_MAILBOX_BYTES), new SharedArrayBuffer(SIGNAL_BUFFER_BYTES));
+    driver.onmessage = (event: MessageEvent<unknown>) => {
+      const request = record(event.data, "request"); requests.push(request);
+      const info = request["operation"] === 65537;
+      // Process info: pid 7, parent 1, uid and gid 1000, no terminal, cwd "/", no arguments or environment.
+      const payload = info ? new Writer().u32(7).u32(1).u32(1000).u32(1000).raw(new Uint8Array(4)).blob(new TextEncoder().encode("/")).u32(0).u32(0).finish() : new Uint8Array();
+      driver.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "reply", sequence: request["sequence"], errno: 0, value: request["operation"] === 14 ? 4n : 0n, payload });
+    };
+    try {
+      const signals = new RunnerSignals(clientSignals(client));
+      expect(await signals.api.block(["SIGINT", "SIGRTMIN"])).toEqual(new Set(["SIGQUIT"]));
+      expect(requests.at(-1)).toMatchObject({ operation: 14, payload: new Writer().u8(0).u64((1n << 1n) | (1n << 34n)).finish() });
+      await signals.api.unblock(["SIGINT"]);
+      expect(requests.at(-1)).toMatchObject({ operation: 14, payload: new Writer().u8(1).u64(1n << 1n).finish() });
+      expect(await signals.api.pending()).toEqual(new Set());
+      expect(requests.at(-1)).toMatchObject({ operation: 127, payload: new Uint8Array() });
+      await signals.api.raise("SIGUSR2");
+      expect(requests.slice(-2)).toMatchObject([{ operation: 65537 }, { operation: 62, payload: new Writer().u32(7).u8(12).finish() }]);
     } finally { client.dispose(); driver.close(); }
   });
 });

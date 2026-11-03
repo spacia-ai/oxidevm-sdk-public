@@ -6,8 +6,7 @@ import type { CommandIO } from "../define.js";
 import type { ResolvedManifest } from "../manifest-types.js";
 import { isServiceDecl } from "../manifest.js";
 import { resolveOptions } from "../options.js";
-import { createArtifacts, preverifiedArtifacts, type VerifiedArtifacts } from "./artifacts.js";
-import { ARTIFACT_FETCH_REASON, IntegrityError, type Fetcher } from "./pinned.js";
+import { preverifiedArtifacts, type SyncBlobReader, type VerifiedArtifacts } from "./artifacts.js";
 import { parseLaunchArgument, type LaunchDescriptor } from "./descriptor.js";
 import { failureLine, ModuleFailure, type RunnerReport } from "./failure.js";
 import { writeGuestFiles } from "./guest-files.js";
@@ -16,18 +15,34 @@ import { buildHost, type LinuxParts, type UndeclaredAccess } from "./host.js";
 import { runnerStart, type RunnerStart } from "./launch.js";
 import { RunnerSignals, type SignalTransport } from "./signals.js";
 import { missingPrerequisites, type BrowserProbe } from "./prerequisites.js";
-import { DEFAULT_CLIENTS, runService } from "./service.js";
+import { DEFAULT_CLIENTS, leftoverCheck, runService } from "./service.js";
+import type { NetPorts } from "../net/ports.js";
+import type { TlsLayer } from "../net/streams.js";
+import { createModuleNetwork, installNetworkGlobals, type DirectAttempt, type ModuleNetwork, type ReachRefusal } from "../net/surface.js";
+import { moduleReach } from "../reach.js";
+
+/** Where a module's network lives (engine ADR 0029): the process's VM sockets and the global scope its `fetch` goes into. */
+export interface RunnerNetwork {
+  readonly ports: NetPorts;
+  /** The worker's global scope; tests pass a plain object. */
+  readonly scope: object;
+  /** TLS; the engine's client unless a test host supplies another. */
+  readonly tls?: TlsLayer;
+  /** The worker's own `fetch`, kept for `blob:` URLs. */
+  readonly local?: typeof fetch;
+}
 
 /** Everything the runner touches outside the Linux process: injected so tests can fake the browser. */
 export interface RunnerContext extends LinuxParts {
-  readonly fetch: Fetcher;
-  /** `navigator.locks`; absent where Web Locks are unavailable. */
-  readonly locks: Pick<LockManager, "request"> | undefined;
   readonly browser: BrowserProbe;
   /** Evaluates a verified adapter bundle as an ES module and returns its namespace. */
   readonly importAdapter: (bundle: Blob) => Promise<unknown>;
   /** The process's signals (JS process protocol 4), behind `host.process.signals`. */
   readonly signals: SignalTransport;
+  /** The module network; without it a module gets no `host.net` and its scope is left as it is. */
+  readonly network?: RunnerNetwork;
+  /** Reads a verified copy without awaiting (`host.artifacts.bytesSync`); the worker's `FileReaderSync` by default. */
+  readonly readBlobSync?: SyncBlobReader;
 }
 
 const encoder = new TextEncoder();
@@ -92,12 +107,25 @@ async function start(context: RunnerContext, descriptor: LaunchDescriptor, { pro
   catch (error: unknown) { throw new ModuleFailure("launch", error instanceof Error ? error.message : "The options are invalid"); }
   const missing = await missingPrerequisites(manifest, context.browser, context.files);
   if (missing.length > 0) throw new ModuleFailure("prerequisite", `Missing: ${missing.join(", ")}`, missing);
-  // Everything the release pins is checked before the adapter's first line runs: the adapter, then every other file.
+  // Every file the release pins was checked by the VM's store before this process existed (engine ADR 0028).
   const adapter = await artifacts.adapter();
-  await artifacts.verifyAll();
   await writeGuestFiles(context.files, manifest, artifacts);
+  const warn = (record: Readonly<Record<string, unknown>>): void => {
+    // A program in the VM reads a command's own output on standard error, so only an application gets records; each once.
+    const key = JSON.stringify(record);
+    if (guest || warned.has(key) || warned.size >= MAX_NETWORK_WARNINGS) return;
+    warned.add(key);
+    void writeLine(context, context.stderr, { oxidevm: "warning", v: 1, ...record }).catch(() => undefined);
+  };
+  const warned = new Set<string>();
+  const refused = (destination: ReachRefusal): void => { warn({ kind: "network-reach", ...destination }); };
+  const net = moduleNetwork(context, manifest, lifecycle.signal, {
+    refused,
+    direct: attempt => { warn({ kind: "network-direct", ...attempt }); },
+  });
   const factory = adapterFactory(await context.importAdapter(adapter));
   const { host, log } = buildHost({
+    ...(net?.host === undefined ? {} : { net: net.host }), refused,
     linux: context, capabilities: manifest.requires.host, options, artifacts, signal: lifecycle.signal, signals: signals.api,
     // Reaching for an undeclared member is remembered for the fault report, and reported once per member to an
     // application; a program in the VM reads the command's own output on standard error, so it gets no record.
@@ -111,7 +139,7 @@ async function start(context: RunnerContext, descriptor: LaunchDescriptor, { pro
   if (!isServiceDecl(manifest)) return runCommand(context, manifest, hooks, process);
   const run = serviceRun(hooks, Object.keys(manifest.expose));
   await runService({
-    linux: context, endpoints: manifest.expose, maxClients: manifest.limits?.clients ?? DEFAULT_CLIENTS, run, lifecycle, log,
+    linux: context, endpoints: manifest.expose, leftovers: leftoverCheck(manifest.process.exclusive === "workspace", moduleReach(manifest.requires.host)), maxClients: manifest.limits?.clients ?? DEFAULT_CLIENTS, run, lifecycle, log,
     ready: async info => {
       const current = await context.process.info();
       await writeLine(context, context.stdout, { oxidevm: "ready", v: 1, pid: current.pid, info });
@@ -120,24 +148,28 @@ async function start(context: RunnerContext, descriptor: LaunchDescriptor, { pro
   return 0;
 }
 
-/** Holds the workspace lock for exclusive services and reports `busy` when another process has it. */
-async function withExclusiveLock(context: RunnerContext, descriptor: LaunchDescriptor, run: () => Promise<number>): Promise<number> {
-  const { manifest } = descriptor;
-  if (!isServiceDecl(manifest) || manifest.process.exclusive !== "workspace") return run();
-  if (descriptor.workspaceId === undefined) throw new ModuleFailure("launch", "An exclusive service needs a workspaceId");
-  if (context.locks === undefined) throw new ModuleFailure("prerequisite", "Missing: browser feature web-locks", ["browser feature web-locks"]);
-  return context.locks.request(`oxidevm-module:${descriptor.workspaceId}:${manifest.id}`, { ifAvailable: true }, async lock => {
-    if (lock === null) throw new ModuleFailure("busy", `${manifest.id} is already running in this workspace`);
-    return run();
+/**
+ * The module's network (engine ADR 0029, N-3): `host.net` and the `fetch`/`WebSocket` globals on the process's own VM
+ * sockets for a module with a reach, "network not declared" globals for one without, and the browser's other network
+ * APIs removed either way. Installed before the adapter is evaluated, so module code never sees the browser's own.
+ */
+function moduleNetwork(context: RunnerContext, manifest: ResolvedManifest, signal: AbortSignal, report: { readonly refused: (destination: ReachRefusal) => void; readonly direct: (attempt: DirectAttempt) => void }): ModuleNetwork | undefined {
+  const { network } = context;
+  if (network === undefined) return undefined;
+  const created = createModuleNetwork({
+    ports: network.ports, reach: moduleReach(manifest.requires.host), signal, refused: report.refused,
+    ...(network.tls === undefined ? {} : { tls: network.tls }), ...(network.local === undefined ? {} : { local: network.local }),
   });
+  installNetworkGlobals(network.scope, created, report.direct);
+  return created;
 }
+
+/** Network warnings one run writes at most. */
+const MAX_NETWORK_WARNINGS = 16;
 
 /** Turns anything thrown into the exit status and error report the consumer sees. */
 function classify(error: unknown, undeclared: ReadonlyMap<string, UndeclaredAccess>): { readonly status: number; readonly report: RunnerReport } {
   if (error instanceof ModuleFailure) return { status: error.status, report: { kind: error.kind, message: error.message, ...(error.items.length === 0 ? {} : { items: error.items }) } };
-  if (error instanceof IntegrityError) return { status: MODULE_EXIT.integrity, report: { kind: "integrity", message: error.message } };
-  // A pinned file that cannot be fetched stops the start like a bad launch, whoever asked for the file.
-  if (error instanceof VMError && error.detail?.["reason"] === ARTIFACT_FETCH_REASON) return { status: MODULE_EXIT.launch, report: { kind: "launch", message: error.message, reason: ARTIFACT_FETCH_REASON } };
   const message = error instanceof Error ? error.message : "The module failed";
   const stack = error instanceof Error && error.stack !== undefined ? error.stack.slice(0, MAX_STACK) : undefined;
   const reached = [...new Set([...undeclared.values()].flatMap(access => access.capabilities))];
@@ -148,24 +180,25 @@ function classify(error: unknown, undeclared: ReadonlyMap<string, UndeclaredAcce
 /**
  * Runs one module to completion and returns the exit status for the runner's bootstrap: the adapter's own status (0-119)
  * or one of the runner statuses in `MODULE_EXIT`. Nothing thrown escapes, because an uncaught error would reach the
- * consumer as the engine's reserved status 125. `launch` is what the start message carried: `spawnModule`'s description,
- * or a module command's description and verified copies (engine ADR 0027). A failure is a JSON record on standard error
+ * consumer as the engine's reserved status 125. `launch` is what the start message carried: the description and the
+ * verified copies of `spawnModule`'s start or of a module command (engine ADR 0027 and ADR 0028). A failure is a JSON record on standard error
  * for an application, and one readable line for a program in the VM that ran a command.
  */
 export async function runModule(context: RunnerContext, launch: RunnerLaunch | undefined): Promise<number> {
   const lifecycle = new AbortController(), undeclared = new Map<string, UndeclaredAccess>(), signals = new RunnerSignals(context.signals);
   let artifacts: VerifiedArtifacts | undefined;
   try {
+    if (launch === undefined) throw new ModuleFailure("launch", "The module runner started without its launch");
     const info = await context.process.info(), process = { start: runnerStart(launch, info.args), info };
     let descriptor: LaunchDescriptor;
     try { descriptor = parseLaunchArgument(process.start.descriptor); }
     catch (error: unknown) { throw new ModuleFailure("launch", error instanceof VMError ? error.message : "The launch descriptor is invalid"); }
     // Only a command module runs as a program; its files were checked when its commands were turned on.
     if (process.start.invocation.kind === "command" && isServiceDecl(descriptor.manifest)) throw new ModuleFailure("launch", `${descriptor.manifest.id} is a service and runs no commands`);
-    const copies = process.start.copies;
-    artifacts = copies === undefined ? createArtifacts(descriptor, context.fetch, lifecycle.signal) : preverifiedArtifacts(descriptor, copies);
+    artifacts = preverifiedArtifacts(descriptor, process.start.copies, context.readBlobSync);
     const run: Run = { process, artifacts, lifecycle, undeclared, signals };
-    return await withExclusiveLock(context, descriptor, () => start(context, descriptor, run));
+    // An exclusive service's workspace lease was taken by the Userspace worker before this process existed (ADR 0028).
+    return await start(context, descriptor, run);
   } catch (error: unknown) {
     const { status, report } = classify(error, undeclared);
     const written = launch?.kind === "module-command"
