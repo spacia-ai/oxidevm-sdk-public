@@ -1,4 +1,5 @@
 import { VMError, deserializeError, serializeUnknownError } from "../../errors.js";
+import type { ListenableSignal } from "../../process-signals.js";
 import { ASSISTANCE_LIMITS, decodeAssistanceOperation, encodeAssistanceRequest, isAssistanceSupervisoryOperation, type AssistanceIdentity, type AssistanceOperation, type AssistanceRequest } from "../../protocol/assistance.js";
 import { BROKER_REPLY_VERSION, decodeBrokerCommand, type BrokerEvent, type BrokerCommand } from "../../protocol/assistance-broker.js";
 import { decodeAssistanceEvent, type AssistanceEvent } from "../../protocol/assistance-event.js";
@@ -57,7 +58,7 @@ export class ProcessIO {
   #guestSequence = 0;
   #childEvents: ((event: ProcessChildEvent) => void) | undefined;
   #forkEvents: ForkEvents | undefined;
-  #signals: ((signal: Exclude<ChildSignal, "KILL">) => void) | undefined;
+  #signals: ((signal: ListenableSignal) => void) | undefined;
   #closed: Error | undefined;
   #exception: ((error: unknown, origin: ExceptionOrigin, promise?: Promise<unknown>) => boolean) | undefined;
   #drained: PromiseWithResolvers<undefined> | undefined;
@@ -312,7 +313,7 @@ export class ProcessIO {
     this.#forkEvents = receive;
   }
 
-  setSignals(receive: (signal: Exclude<ChildSignal, "KILL">) => void): void {
+  setSignals(receive: (signal: ListenableSignal) => void): void {
     if (this.#signals !== undefined) throw new VMError("PROTOCOL_ERROR", "Signal owner already installed");
     this.#signals = receive;
   }
@@ -401,8 +402,12 @@ export interface CapturedProcess {
 export type ProcessRuntimeIO = Pick<ProcessIO,
   "callSync" | "call" | "retain" | "hasPending" | "drain" | "setCallbackScheduler" |
   "setInput" | "setChildEvents" | "setSignals" | "forkSync" | "forkInput" |
-  "forkOutputAck" | "setForkEvents" | "fail" | "terminate" | "signalExit" | "halt" | "setExceptionHandler" | "applicationException"
+  "forkOutputAck" | "setForkEvents" | "fail" | "terminate" | "halt" | "setExceptionHandler" | "applicationException"
 > & {
+  /** A signal without a listener ends the process. The assisted runtime only delivers SIGHUP, SIGINT and SIGTERM. */
+  signalExit(signal: number): void;
+  /** Native Node only: a listener for `signal` came or its last one went (bridge 16), or is refused (bridge 15). */
+  watchSignal?(signal: number, watching: boolean): void;
   ready(readRequested: Promise<undefined>, closed: AbortSignal): void;
   networkInterfaces?(): NetworkInterfaces;
   signalProcess?(pid: number, signal: number): void;

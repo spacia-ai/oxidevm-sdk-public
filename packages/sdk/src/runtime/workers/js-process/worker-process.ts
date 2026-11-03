@@ -19,22 +19,23 @@ export function localWorkerProcess(url: string, pid: number): WorkerProcess {
     },
   };
 }
-/** A native process on the execution origin. `attention` receives one notice per Linux request the
- * broker forwards, or is null where the execution worker counts none. */
-export function isolatedWorkerProcess(broker: MessagePort, pid: number, attention: MessagePort | null): WorkerProcess {
+/** A process behind a broker on another origin: a native process on the execution origin (native broker protocol), or
+ * a module process in the opaque module frame (module broker protocol 1, ADR 0028). `attention` receives one notice per
+ * Linux request the broker forwards, or is null where the execution worker counts none. */
+export function isolatedWorkerProcess(broker: MessagePort, pid: number, attention: MessagePort | null, version: number = NATIVE_BROKER_PROCESS_VERSION): WorkerProcess {
   const channel = new MessageChannel(); let closed = false;
-  broker.postMessage({ version: NATIVE_BROKER_PROCESS_VERSION, type: "spawn", pid, port: channel.port2 }, [channel.port2]);
+  broker.postMessage({ version, type: "spawn", pid, port: channel.port2 }, [channel.port2]);
   return {
     send(value, transfer) {
       const port = transfer[0]; if (transfer.length !== 1 || !(port instanceof MessagePort)) throw new VMError("PROTOCOL_ERROR", "Native startup requires one service port");
-      channel.port1.postMessage({ version: NATIVE_BROKER_PROCESS_VERSION, type: "start", value, port, attention }, attention === null ? [port] : [port, attention]);
+      channel.port1.postMessage({ version, type: "start", value, port, attention }, attention === null ? [port] : [port, attention]);
     },
-    stop() { if (closed) return; closed = true; channel.port1.postMessage({ version: NATIVE_BROKER_PROCESS_VERSION, type: "stop" }); channel.port1.close(); },
+    stop() { if (closed) return; closed = true; channel.port1.postMessage({ version, type: "stop" }); channel.port1.close(); },
     listen(message, failure) {
       channel.port1.onmessage = (event: MessageEvent<unknown>) => {
         try {
           const reply = record(event.data, "isolated process reply");
-          if (reply["version"] !== NATIVE_BROKER_PROCESS_VERSION) throw new VMError("PROTOCOL_ERROR", "Isolated process version mismatch");
+          if (reply["version"] !== version) throw new VMError("PROTOCOL_ERROR", "Isolated process version mismatch");
           if (reply["type"] === "error") { exactKeys(reply, ["version", "type", "message"]); throw new VMError("VM_FAULT", string(reply["message"], "worker error")); }
           exactKeys(reply, ["version", "type", "value"]); if (reply["type"] !== "message") throw new VMError("PROTOCOL_ERROR", "Unknown isolated process reply");
           message(reply["value"]);

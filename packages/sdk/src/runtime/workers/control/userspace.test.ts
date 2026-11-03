@@ -137,7 +137,7 @@ it("answers a reply it cannot forward with an error instead of stranding the req
 // Engine ADR 0027: the page's module-commands request reaches the execution worker as decoded, and its answer comes back unchanged.
 it("relays a module-commands request and its answer, and refuses a malformed one before the execution worker", async () => {
   const { worker, send } = execution();
-  const enable = { id: 4, version: PROTOCOL_VERSION, type: "module-commands", operation: "enable", descriptor: "{}", commands: ["python"], concurrency: 4 };
+  const enable = { id: 4, version: PROTOCOL_VERSION, type: "module-commands", operation: "enable", descriptor: "{}", commands: ["python"], concurrency: 4, files: {} };
   const response = send(enable);
   await vi.waitFor(() => expect(worker.posted.filter(message => !isAttentionAttachment(message))).toEqual([enable]));
   const value = { operation: "enable", registration: 1, commands: ["python"], skipped: [] };

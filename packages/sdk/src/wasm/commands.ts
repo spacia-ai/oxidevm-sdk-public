@@ -7,14 +7,15 @@ import type { CommandName, Erased, ModuleHandle, OptionsField } from "./handle.j
 import { handleManifest, launchDescriptor } from "./launch-descriptor.js";
 import { isServiceDecl } from "./manifest.js";
 import type { ModuleDecl } from "./manifest-types.js";
-import { encodeLaunchArgument } from "./runner/descriptor.js";
+import { encodeLaunchArgument, type LaunchDescriptor } from "./runner/descriptor.js";
+import { withModuleFiles } from "./module-supply.js";
 import type { ModuleVM } from "./spawn.js";
 
 /**
  * Module commands on a VM's PATH (engine ADR 0027): an application turns a command module's declared `commands` on for
  * one Userspace VM, and every program there can then run the module as `/usr/local/bin/<name>`. The VM's Userspace
- * worker owns the registration: it fetches and checks every pinned file once, keeps the checked copies while the commands
- * stay on, and has Rust place each command's stub.
+ * worker owns the registration: its verified-copy store checks each file the page supplies once per VM (ADR 0028), keeps
+ * the checked copies while the commands stay on, and has Rust place each command's stub.
  */
 
 /** How many runs of one call's commands may be active at once when the call names no `concurrency`. */
@@ -82,6 +83,7 @@ export interface ModuleCommands<M extends ModuleDecl = ModuleDecl, N extends Com
 
 /** The decoded call: its launch description with the options resolved, and the names in the manifest's order. */
 interface EnableRequest {
+  readonly launch: LaunchDescriptor;
   readonly descriptor: string;
   readonly commands: readonly string[];
   readonly concurrency: number;
@@ -125,8 +127,8 @@ function decodeEnable(handle: unknown, input: unknown): EnableRequest {
     throw refuse(`concurrency must be an integer from 1 to ${String(MODULE_COMMAND_MAX_CONCURRENCY)}`);
   }
   // The options are fixed now, defaults included, because a program that runs a command cannot pass any.
-  const descriptor = encodeLaunchArgument(launchDescriptor(handle, { options: fields["options"], workspaceId: undefined }));
-  return { descriptor, commands, concurrency, signal };
+  const launch = launchDescriptor(handle, { options: fields["options"], workspaceId: undefined });
+  return { launch, descriptor: encodeLaunchArgument(launch), commands, concurrency, signal };
 }
 
 /** The handle of one registration. It holds only the registration's id: the VM's Userspace worker owns its state. */
@@ -163,8 +165,8 @@ function registered(owner: OwnedModuleCommands, registration: number, names: rea
 }
 
 /**
- * Turns a command module's `commands` on for one Userspace VM (engine ADR 0027). The VM's Userspace worker fetches every
- * pinned file of the release once, checks it against its pin and keeps the checked copies; Rust then places a stub at
+ * Turns a command module's `commands` on for one Userspace VM (engine ADR 0027). The page reads the pinned files the VM
+ * does not hold yet from its own origin, and the VM's verified-copy store checks each against its pin and keeps it; Rust then places a stub at
  * `/usr/local/bin/<name>` for each command, and every program in the VM that runs one runs the module as that process.
  * Options are fixed by this call. When it fails, nothing is turned on.
  */
@@ -174,7 +176,15 @@ export async function enableModuleCommands(vm: ModuleVM, handle: ModuleHandle, .
   const request = decodeEnable(handle, args[0]);
   const owner = ownedModuleCommands(vm), { signal } = request;
   if (aborted(signal)) throw cancelled();
-  const answer = await owner.request({ operation: "enable", descriptor: request.descriptor, commands: request.commands, concurrency: request.concurrency }, signal);
+  // The page reads only the files the VM's store lacks; the store checks them before anything is turned on (ADR 0028).
+  let answer: Awaited<ReturnType<OwnedModuleCommands["request"]>>;
+  try {
+    answer = await withModuleFiles(request.launch, owner, files => owner.request({ operation: "enable", descriptor: request.descriptor, commands: request.commands, concurrency: request.concurrency, files }, signal), signal);
+  } catch (error: unknown) {
+    // A cancellation while the page read a file, or before the VM answered, turned nothing on.
+    if (aborted(signal)) throw cancelled();
+    throw error;
+  }
   if (answer.operation !== "enable" || answer.commands.length !== request.commands.length || answer.commands.some((name, index) => name !== request.commands[index])) {
     throw new VMError("PROTOCOL_ERROR", "The VM turned on other commands than it was asked to");
   }

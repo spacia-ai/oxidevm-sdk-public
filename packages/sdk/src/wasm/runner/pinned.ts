@@ -1,5 +1,5 @@
 import { VMError } from "../../runtime/errors.js";
-import type { PinnedFile } from "../handle.js";
+import type { Pin, PinnedFile } from "../handle.js";
 
 /**
  * Fetching and checking one pinned file of a module release. The runner uses it for every file at every
@@ -29,11 +29,11 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
 }
 
 /**
- * Fetches one pinned file, never holding more than its pin allows, and compares size and sha256. `label` starts the
- * messages ("Artifact tool.wasm"); `file` is the declared name every failure carries in `detail.file`. A file that cannot
- * be fetched is CORE_LOAD_FAILED `wasm-module-artifact`; bytes that differ from the pin are an `IntegrityError`.
+ * Reads one pinned file for the page, never holding more than its pin allows: a file that cannot be fetched is
+ * CORE_LOAD_FAILED `wasm-module-artifact`, one of another size an `IntegrityError`. It does not hash: the VM's verified-copy
+ * store (`workers/js-process/module-copies.ts`) checks the bytes before any of the module's code runs.
  */
-export async function loadPinned(pin: PinnedFile, label: string, file: string, fetcher: Fetcher, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+export async function readPinned(pin: PinnedFile, label: string, file: string, fetcher: Fetcher, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
   let response: Response;
   try {
     response = await fetcher(pin.url, { signal });
@@ -57,6 +57,19 @@ export async function loadPinned(pin: PinnedFile, label: string, file: string, f
     length += part.value.length;
   }
   if (length !== pin.bytes) throw new IntegrityError(`${label} is shorter than its pin`, file);
+  return bytes;
+}
+
+/** Compares a copy's size and sha256 with its pin; `IntegrityError` naming `file` when they differ. */
+export async function verifyPinned(bytes: Uint8Array<ArrayBuffer>, pin: Pin, label: string, file: string): Promise<void> {
+  if (bytes.byteLength > pin.bytes) throw new IntegrityError(`${label} is larger than its pin`, file);
+  if (bytes.byteLength < pin.bytes) throw new IntegrityError(`${label} is shorter than its pin`, file);
   if (await sha256Hex(bytes) !== pin.sha256) throw new IntegrityError(`${label} does not match its sha256 pin`, file);
+}
+
+/** Fetches and checks one pinned file: `readPinned`, then `verifyPinned`. */
+export async function loadPinned(pin: PinnedFile, label: string, file: string, fetcher: Fetcher, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+  const bytes = await readPinned(pin, label, file, fetcher, signal);
+  await verifyPinned(bytes, pin, label, file);
   return bytes;
 }

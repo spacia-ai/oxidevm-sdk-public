@@ -2,9 +2,8 @@ import { serveRestoreStream } from "./snapshot-restore-stream.js";
 import { decodeImagePreparationReport } from "../protocol/image-preparation.js";
 import type { SnapshotStorageProgress } from "./snapshot-channel.js";
 import type {ShippedInstallIdentity} from "../protocol.js";
-import { NativeColdFiles } from "./native-cold-files.js";
+import { NativeColdFiles, type NativeColdSelection } from "./native-cold-files.js";
 import {stageNativeWorkspace} from "./native-workspace-stage.js";
-import type {ManagedBoot} from "../protocol/storage.js";
 import type {RootfsCheckpointDestination} from "./rootfs-store.js";
 import { VMError } from "../errors.js";
 import {sameShippedIdentity} from "../protocol/shipped-source.js";
@@ -73,7 +72,7 @@ export class NativeSnapshotStore {
   constructor(objects: SnapshotObjects, catalog: SnapshotCatalog, recovery: SnapshotCatalog, environment: NativeSnapshotEnvironment) {
     this.#objects = objects; this.#catalog = catalog; this.#recovery = recovery; this.#environment = environment;
     this.#files = new NativeSnapshotFiles(environment.selections, objects);
-    this.#cold = new NativeColdFiles(environment.selections, this.#files);
+    this.#cold = new NativeColdFiles(environment);
   }
 
   get busy(): boolean { return this.#capture !== undefined || this.#restore !== undefined || this.#cold.busy || this.#selecting; }
@@ -86,20 +85,10 @@ export class NativeSnapshotStore {
     return restore.files.id;
   }
 
-  async selectFiles(request:{readonly boot:ManagedBoot;readonly rootTreeSha256:string;readonly rootPersistence:"ephemeral"|"persistent"},signal:AbortSignal):Promise<{readonly sourceId:string;readonly replaced?:string}> {
-    this.#acceleration?.controller.abort();this.#idle();active(signal);this.#selecting=true;
-    const image=crypto.randomUUID();
-    let committed=false;
-    try {
-      const previous=await this.#environment.selections.session();
-      const saved=await this.#rootOperation(signal,()=>this.#environment.rootfs.pinImage(this.#owner(image)), true);
-      if(saved.rootfs.rootTreeSha256!==request.rootTreeSha256) invalid("Cold-start image differs from its verified source");
-      const result=await this.#environment.selections.selectBoot(request.boot,request.rootTreeSha256,image,signal);
-      committed=true;
-      if(previous?.image!==undefined)await this.#environment.rootfs.releaseCheckpoint(this.#owner(previous.image)).catch(()=>{});
-      const sourceId = await this.#cold.begin(request.rootPersistence === "persistent" ? request.rootTreeSha256 : undefined, this.#environment.rootfs.currentRootfs().workspaceBaseSha256??request.rootTreeSha256, signal);
-      return {...result, sourceId};
-    } finally {this.#selecting=false;if(!committed)await this.#environment.rootfs.releaseCheckpoint(this.#owner(image));}
+  /** A cold start, once no restore-point transaction or optional image work is running. */
+  selectFiles(request:NativeColdSelection,signal:AbortSignal):Promise<{readonly sourceId:string;readonly replaced?:string}> {
+    this.#acceleration?.controller.abort();this.#idle();active(signal);
+    return this.#cold.select(request,signal);
   }
 
   abortCold(sourceId:string):Promise<void> {return this.#cold.abort(sourceId);}
@@ -156,13 +145,7 @@ export class NativeSnapshotStore {
         active(signal);
         return bytes;
       }
-      case "stage-native-cold-workspace": {
-        const result = await stageNativeWorkspace(() => this.#cold.files(request.sourceId,request.publication.workspaceBaseSha256), request.publication, signal);
-        if (result.retired && result.outcome.kind === "committed") this.#cold.staged(request.sourceId, request.preserve);
-        return result;
-      }
-      case "publish-native-cold": return this.#cold.publish(request.sourceId, signal);
-      case "complete-native-cold": return this.#cold.complete(request.sourceId);
+      case "stage-native-cold-workspace": case "publish-native-cold": case "complete-native-cold": return this.#cold.handle(request, signal);
       case "stage-native-workspace": {
         let restore:Restore|undefined;
         const result=await stageNativeWorkspace(()=>{

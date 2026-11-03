@@ -257,8 +257,8 @@ host. The digest and key stay pinned whatever the address.
 | `generateImageKey`, `readImageTrust` | Exclusive restrictive Ed25519 key creation and public trust loading |
 | `testImage` | Real browser readiness, files, command, terminal, persistence and applicable preview/evidence checks |
 | `inspectImage` | Read-only integrity inspection; authentication stays unverified without external trust |
-| `installProjectAssets`, `cacheImageBundle` | Stage the pinned engine release (from `engineDir`, `OXIDEVM_ENGINE_DIR`, the engine cache or the verified CDN release), authenticated image assets and generated references |
-| `doctorProject` | Inspect actual served headers, MIME, bytes, worker execution, storage and preview configuration |
+| `installProjectAssets`, `cacheImageBundle` | Stage the pinned engine release (from `engineDir`, `OXIDEVM_ENGINE_DIR`, the engine cache or the verified CDN release), authenticated image assets and generated references; `updateLock` rewrites `oxidevm.lock.json` for this release after staging, and the result's `lock` reports the change |
+| `doctorProject` | Inspect actual served headers, MIME, bytes, worker execution, storage and preview configuration, and with `project` the project's lock against this SDK |
 | `createProjectLock`, `validateProjectLock` | Bind the exact SDK/CLI, engine, image and chosen staging layout |
 
 Dockerfile, OCI, directory and archive rootfs sources work in both modes.

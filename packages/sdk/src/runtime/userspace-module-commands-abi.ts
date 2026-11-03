@@ -1,11 +1,12 @@
 import { integer } from "./decode.ts";
 import { protocol, Reader, Writer } from "./js-process/codec.ts";
 import { isModuleCommandName } from "./module-command-names.ts";
+import { moduleReachCode, type ModuleReach } from "../wasm/reach.js";
 
 /**
- * A VM's module-command table (engine ADR 0027, Userspace API 145). The page sends the whole table to
- * `oxidevm_userspace_module_commands_apply` as OXMC v1 and Rust answers OXMA v1; Rust owns the stubs at
- * `/usr/local/bin/<name>` and validates the table again.
+ * A VM's module-command table (engine ADR 0027, Userspace API 146). The page sends the whole table to
+ * `oxidevm_userspace_module_commands_apply` as OXMC v2 and Rust answers OXMA v1; Rust owns the stubs at
+ * `/usr/local/bin/<name>`, validates the table again and gives each command's process its registration's reach.
  */
 
 /** The most names one VM's table holds. */
@@ -13,26 +14,31 @@ export const MODULE_COMMAND_MAX_NAMES = 64;
 /** The largest per-registration concurrency, the size of Rust's host command table. */
 export const MODULE_COMMAND_MAX_CONCURRENCY = 32;
 
-/** One name of the table, owned by `registration`, which runs at most `concurrency` commands at once. */
-export interface ModuleCommandEntry { readonly registration: number; readonly concurrency: number; readonly name: string }
+/**
+ * One name of the table, owned by `registration`, which runs at most `concurrency` commands at once, each with the
+ * network reach its module declared (engine ADR 0029).
+ */
+export interface ModuleCommandEntry { readonly registration: number; readonly concurrency: number; readonly reach: ModuleReach; readonly name: string }
 
 /**
- * OXMC v1: "OXMC", u32 1, u32 count, count x (u32 registration, u32 concurrency, u32 name length, name), all
- * little-endian, in the given order. A table Rust would refuse is refused here before anything is written: the
- * SDK computes the table, so a refusal is a defect of the caller, not an engine answer.
+ * OXMC v2: "OXMC", u32 2, u32 count, count x (u32 registration, u32 concurrency, u8 reach, u32 name length, name), all
+ * little-endian, in the given order; the reach is 0 none, 1 this VM, 2 the internet. A table Rust would refuse is
+ * refused here before anything is written: the SDK computes the table, so a refusal is a defect of the caller, not an
+ * engine answer.
  */
 export function encodeModuleCommandTable(entries: readonly ModuleCommandEntry[]): Uint8Array<ArrayBuffer> {
   if (entries.length > MODULE_COMMAND_MAX_NAMES) protocol("Module command table exceeds its name limit");
-  const names = new Set<string>(), limits = new Map<number, number>();
-  const writer = new Writer().raw(new TextEncoder().encode("OXMC")).u32(1).u32(entries.length);
+  const names = new Set<string>(), limits = new Map<number, readonly [number, ModuleReach]>();
+  const writer = new Writer().raw(new TextEncoder().encode("OXMC")).u32(2).u32(entries.length);
   for (const entry of entries) {
     const registration = integer(entry.registration, "module command registration", 1, 0xffff_ffff);
     const concurrency = integer(entry.concurrency, "module command concurrency", 1, MODULE_COMMAND_MAX_CONCURRENCY);
     if (!isModuleCommandName(entry.name)) protocol("Invalid module command name");
     if (names.has(entry.name)) protocol("Duplicate module command name");
-    if ((limits.get(registration) ?? concurrency) !== concurrency) protocol("A module command registration has one concurrency limit");
-    names.add(entry.name); limits.set(registration, concurrency);
-    writer.u32(registration).u32(concurrency).blob(new TextEncoder().encode(entry.name));
+    const reach = moduleReachCode(entry.reach), [limit, declared] = limits.get(registration) ?? [concurrency, entry.reach];
+    if (limit !== concurrency || declared !== entry.reach) protocol("A module command registration has one concurrency limit and one reach");
+    names.add(entry.name); limits.set(registration, [concurrency, entry.reach]);
+    writer.u32(registration).u32(concurrency).u8(reach).blob(new TextEncoder().encode(entry.name));
   }
   return writer.finish();
 }

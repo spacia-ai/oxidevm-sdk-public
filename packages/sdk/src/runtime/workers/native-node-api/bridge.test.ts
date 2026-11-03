@@ -5,12 +5,13 @@ import { encodeNativeFrame, type NativeFrame } from "./codec.js";
 const readMin = Math.min;
 
 function fixture(frames: readonly NativeFrame[], poll = false, uncaught?: (error: unknown) => void, deferException = false,
-  options: { readonly readSize?: number; readonly merged?: boolean; readonly waitForAbort?: boolean; readonly runtime?: "node" | "bun" } = {}) {
-  const encoded = frames.map(encodeNativeFrame), merged = new Uint8Array(encoded.reduce((size, bytes) => size + bytes.length, 0));
+  options: { readonly readSize?: number; readonly merged?: boolean; readonly waitForAbort?: boolean; readonly runtime?: "node" | "bun"; readonly bridgeVersion?: 15 | 16 } = {}) {
+  const encoded = frames.map(frame => encodeNativeFrame(frame, options.bridgeVersion)), merged = new Uint8Array(encoded.reduce((size, bytes) => size + bytes.length, 0));
   let start = 0; for (const bytes of encoded) { merged.set(bytes, start); start += bytes.length; }
   const input = options.merged === true ? [merged] : encoded; let offset = 0, writes = 0, reads = 0;
   const failures: unknown[] = [], exceptions: unknown[] = [], signals: number[] = [], trace: NativeFrame[] = [], transport: { operation: string; bytes: number; milliseconds: number }[] = []; let polls = 0;
   let deliverException: (() => void) | undefined;
+  const written: Uint8Array[] = [];
   const bridge = new NativeBridge({ call: (operation, signal) => {
     if (!poll) throw new Error("No asynchronous request expected");
     if (options.waitForAbort === true && polls++ === 0) return new Promise((_resolve, reject) => {
@@ -27,12 +28,12 @@ function fixture(frames: readonly NativeFrame[], poll = false, uncaught?: (error
       const result = bytes.slice(offset, offset + readMin(count, options.readSize ?? 3)); offset += result.length;
       if (offset === bytes.length) { input.shift(); offset = 0; } return result;
     },
-    writeAll() { writes++; },
-  }, 3, 4, { ...(options.runtime === undefined ? {} : { runtime: options.runtime }), changed: () => undefined, failed: error => { failures.push(error); }, uncaught: (error, around) => {
+    writeAll(_fd, bytes) { writes++; written[written.length] = bytes.slice(); },
+  }, 3, 4, { ...(options.runtime === undefined ? {} : { runtime: options.runtime }), ...(options.bridgeVersion === undefined ? {} : { bridgeVersion: options.bridgeVersion }), changed: () => undefined, failed: error => { failures.push(error); }, uncaught: (error, around) => {
     const delivery = () => { around(() => { exceptions.push(error); uncaught?.(error); }); };
     if (deferException) deliverException = delivery; else delivery();
   }, signal: signal => { signals.push(signal); }, trace: frame => { trace[trace.length] = frame; }, transport: event => { transport[transport.length] = event; } });
-  return { bridge, failures, exceptions, signals, trace, transport, reads: () => reads, writes: () => writes, deliverException: () => { if (deliverException === undefined) throw new Error("No queued exception"); deliverException(); } };
+  return { bridge, failures, exceptions, signals, trace, transport, written, reads: () => reads, writes: () => writes, deliverException: () => { if (deliverException === undefined) throw new Error("No queued exception"); deliverException(); } };
 }
 const completion: NativeFrame = { kind: 2, sequence: 1, scope: 1n, environment: 0n, operation: "load", status: 0, args: [0n], bytes: new Uint8Array() };
 
@@ -354,3 +355,50 @@ it("keeps exception re-entry rules while delivery waits in the process scheduler
   test.deliverException();
   expect(() => test.bridge.load("/fixture.node")).toThrow(/retired/u); expect(test.failures).toEqual([]);
 });
+
+/** The version word of a written frame: its length prefix, then "OXNA", then the version. */
+const versionOf = (bytes: Uint8Array | undefined): number => bytes === undefined ? -1 : new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(8, true);
+const signalFrame = (signal: bigint, sequence = 1): NativeFrame => ({ kind: 8, sequence, scope: 0x1_0000_0000n + BigInt(sequence), environment: 0n, operation: "signal", status: 0, args: [signal], bytes: new Uint8Array() });
+const watched = (operation: "watch-signal" | "unwatch-signal", status = 0, sequence = 1): NativeFrame => ({ kind: 2, sequence, scope: BigInt(sequence), environment: 0n, operation, status, args: [0n], bytes: new Uint8Array() });
+
+it("writes and reads frames at the host helper's bridge version from the acceleration profile (15 or 16)", () => {
+  for (const bridgeVersion of [15, 16] as const) {
+    const test = fixture([completion], false, undefined, false, { bridgeVersion });
+    test.bridge.load("/fixture.node");
+    expect(versionOf(test.written[0])).toBe(bridgeVersion);
+    expect(test.failures).toEqual([]);
+  }
+  // A frame at another version than the profile names is a protocol failure, never reinterpreted.
+  const other = new NativeBridge({ call: () => Promise.reject(new Error("unused")) }, { read: () => encodeNativeFrame(completion, 15), writeAll: () => undefined }, 3, 4, { changed: () => undefined, failed: () => undefined, uncaught: () => undefined, bridgeVersion: 16 });
+  expect(() => other.load("/fixture.node")).toThrow(/version mismatch/u);
+});
+
+it("bridge 16: watch-signal and unwatch-signal install a listenable signal's handler, refusals arrive as the result's EINVAL status, and every listenable signal is delivered", () => {
+  const test = fixture([watched("watch-signal"), signalFrame(10n), watched("unwatch-signal", 0, 2), watched("watch-signal", 22, 3)], false, undefined, false, { bridgeVersion: 16 });
+  test.bridge.watchSignal(10, true);
+  expect(test.signals).toEqual([]);
+  test.bridge.watchSignal(10, false);
+  expect(test.signals).toEqual([10]);
+  expect(thrown(() => { test.bridge.watchSignal(28, true); })).toMatchObject({ code: "INVALID_ARGUMENT", detail: { reason: "native-signal-refused", signal: 28 } });
+  // KILL, STOP and the synchronous fault signals are refused before the host is asked.
+  for (const signal of [9, 19, 11, 4, 0, 32]) expect(() => { test.bridge.watchSignal(signal, true); }).toThrow(/cannot be listened/u);
+});
+
+it("bridge 15: SIGHUP, SIGINT and SIGTERM stay caught, a listener for any other signal is refused with a typed reason, and only those three are delivered", () => {
+  const test = fixture([signalFrame(1n), completion], false, undefined, false, { bridgeVersion: 15 });
+  for (const signal of [1, 2, 15]) { test.bridge.watchSignal(signal, true); test.bridge.watchSignal(signal, false); }
+  expect(test.writes()).toBe(0);
+  for (const signal of [3, 10, 12, 28]) {
+    expect(thrown(() => { test.bridge.watchSignal(signal, true); })).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", detail: { reason: "native-bridge-signal-listener", signal, bridgeVersion: 15 } });
+  }
+  test.bridge.load("/fixture.node");
+  expect(test.signals).toEqual([1]);
+  const stale = fixture([signalFrame(10n), completion], false, undefined, false, { bridgeVersion: 15 });
+  expect(() => stale.bridge.load("/fixture.node")).toThrow(/signal/u);
+});
+
+/** What `run` throws, for matching its typed code and detail. */
+function thrown(run: () => unknown): unknown {
+  try { run(); } catch (error: unknown) { return error; }
+  throw new Error("expected a throw");
+}

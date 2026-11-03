@@ -3,7 +3,7 @@ import { EventEmitter } from "./node-streams.ts";
 import { processMemoryUsage } from "./node-memory.ts";
 import { createWarningEmitter } from "./node-warnings.ts";
 import { decodeForkExecArgv } from "../../protocol/assistance-fork.js";
-import { linuxSignalConstants } from "../../process-signals.js";
+import { linuxSignalConstants, listenableEvent, listenableNumber, type ListenableSignal } from "../../process-signals.js";
 import { unavailableNodeApi } from "./node-capability.js";
 
 const monotonicNow = performance.now.bind(performance);
@@ -43,7 +43,6 @@ export function installProcessIpc(process: NodeProcess, channel: ProcessIpc): as
   process.on("removeListener", event => { if (event === "message") channel.setListeners(process.listenerCount("message")); });
 }
 
-const SIGNAL_NUMBERS = { TERM: 15, INT: 2, HUP: 1 } as const;
 
 /** Linux retains PID visibility, credentials and signal-disposition authority. */
 export function createProcessKill(send: ((pid: number, signal: number) => void) | undefined) {
@@ -66,10 +65,26 @@ export type ProcessBuildMetadata = { readonly config: ProcessBuildProperty; read
 
 /** A catchable signal reaches its listeners by name; without one the process
  * ends by that signal, exactly as Node's default disposition. */
-export function deliverProcessSignal(process: NodeProcess, signal: keyof typeof SIGNAL_NUMBERS, ended: (signal: 1 | 2 | 15) => never): void {
+export function deliverProcessSignal(process: NodeProcess, signal: ListenableSignal, ended: (signal: number) => never): void {
   const name = `SIG${signal}`;
   if (process.listenerCount(name) > 0) { process.emit(name, name); return; }
-  ended(SIGNAL_NUMBERS[signal]);
+  ended(listenableNumber(signal));
+}
+
+/**
+ * Native Node (bridge 16): the helper catches a signal only while JavaScript listens, as Node does. The first listener
+ * for a signal installs its handler and removing the last one removes it; a refusal (bridge 15 beyond SIGHUP, SIGINT and
+ * SIGTERM) throws from `process.on` before the listener is added.
+ */
+export function installSignalListeners(process: NodeProcess, watch: (signal: number, watching: boolean) => void): void {
+  process.on("newListener", event => {
+    const signal = listenableEvent(event);
+    if (signal !== null && process.listenerCount(`SIG${signal}`) === 0) watch(listenableNumber(signal), true);
+  });
+  process.on("removeListener", event => {
+    const signal = listenableEvent(event);
+    if (signal !== null && process.listenerCount(`SIG${signal}`) === 0) watch(listenableNumber(signal), false);
+  });
 }
 
 /** Admit only implemented Node options before any application module runs. */

@@ -20,8 +20,11 @@ const setBigUint64 = viewMethods.setBigUint64.value ?? protocol("Binary u64 writ
  * Version 3 adds `late-failure`, which a process posts before it exits on an uncaught fast-path
  * limitation (ADR 0026). Version 4 (ADR 0027) gives every non-native start message its `signals`
  * words (`signals.ts`), adds the driver's `signal` nudge and the worker's `signaled` exit on the
- * service port, and lets the module runner's start message carry its private `launch`. */
-export const JS_PROCESS_PROTOCOL_VERSION = 4;
+ * service port, and lets the module runner's start message carry its private `launch`. Version 5 (ADR 0028) gives
+ * `spawnModule`'s launch the verified copies a command's launch already carried, so no runner fetches or hashes, and
+ * replaces the eight bytes of signal words with the 1,568-byte signal buffer (`signals.ts`): 64 pending bits, the
+ * interrupt word at byte 8 and a ring of real-time arrivals with their details. */
+export const JS_PROCESS_PROTOCOL_VERSION = 5;
 /** The native execution broker's per-process channel: `spawn`, `start` and `stop` in, `error` and
  * `message` out. Version 2 adds `start.attention`, the port that receives one notice per Linux
  * request the broker forwards to the execution worker (`workers/attention-notices.ts`). */

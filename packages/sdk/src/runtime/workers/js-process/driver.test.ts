@@ -6,6 +6,11 @@ import { JS_PROCESS_PROTOCOL_VERSION, jsMailboxAttention, Writer } from "../../j
 import { HostAttention, postCounted } from "../../host-attention.js";
 import { serveAttentionNotices } from "../attention-notices.js";
 import type { UserspaceCommandHostRequest } from "../../userspace-command-abi.js";
+import { MODULE_BROKER_VERSION } from "../../protocol/module-frame.js";
+import { copyKey } from "../../protocol/userspace-module-files.js";
+import { encodeLaunchArgument } from "../../../wasm/runner/descriptor.js";
+import { buildRelease, COMMAND_DECLARATION } from "../../../wasm/runner/fixtures.test-support.js";
+import { SIGNAL_BUFFER_BYTES } from "../../js-process/signals.js";
 
 class TestWorker {
   static latest: TestWorker | undefined;
@@ -105,7 +110,7 @@ it("forwards metadata, mask, PATH and signal-disposition operations, then reject
 
 it("exits an admitted native command when its isolated execution capability is absent", async () => {
   const native = runtime(), driver = new JsProcessWorkers({ runtime: native, active: () => true, wake: () => {} });
-  await expect(driver.run({ ...request, cwd: "/workspace/swc", program: { kind: "native-node", entry: "/workspace/swc/build.cjs", source: { kind: "file" }, input: 3, output: 4, context: { kind: "main" }, profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/swc/node_modules" }], basis: "no-addons", dependencyGeneration: 11n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0 } } }, new AbortController().signal)).resolves.toBeUndefined();
+  await expect(driver.run({ ...request, cwd: "/workspace/swc", program: { kind: "native-node", entry: "/workspace/swc/build.cjs", source: { kind: "file" }, input: 3, output: 4, context: { kind: "main" }, profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/swc/node_modules" }], basis: "no-addons", dependencyGeneration: 11n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0, bridgeVersion: 16 } } }, new AbortController().signal)).resolves.toBeUndefined();
   expect(native.exits()).toBe(1); expect(TestWorker.latest).toBeUndefined();
 });
 
@@ -196,7 +201,7 @@ it("holds host attention for a same-origin worker's posted request until the dri
   expect(attention.size).toBe(0);
 });
 
-const NATIVE_PROGRAM = { kind: "native-node", entry: "/workspace/swc/build.cjs", source: { kind: "file" }, input: 3, output: 4, context: { kind: "main" }, profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/swc/node_modules" }], basis: "no-addons", dependencyGeneration: 11n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0 } } as const;
+const NATIVE_PROGRAM = { kind: "native-node", entry: "/workspace/swc/build.cjs", source: { kind: "file" }, input: 3, output: 4, context: { kind: "main" }, profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/swc/node_modules" }], basis: "no-addons", dependencyGeneration: 11n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0, bridgeVersion: 16 } } as const;
 
 it("holds host attention for a native process's request from its broker's notice until the driver receives it", async () => {
   vi.stubGlobal("crossOriginIsolated", true);
@@ -282,9 +287,9 @@ it("never remembers an unclassified failure or a malformed late-failure message"
   }
 });
 
-/** OXCS 1 for the test request (generation 1, id 1, pid 3), or for another generation, incarnation or process. */
+/** OXCS 2 for the test request (generation 1, id 1, pid 3), or for another generation, incarnation or process; sent by pid 2 as uid 1000 (SI_USER). */
 function signalNotice(signal: number, flags: number, { generation = 1n, id = 1n, pid = 3 } = {}): Uint8Array {
-  return new Writer().raw(new TextEncoder().encode("OXCS")).u32(1).u64(generation).u64(id).u32(pid).u8(signal).u8(flags).finish();
+  return new Writer().raw(new TextEncoder().encode("OXCS")).u32(2).u64(generation).u64(id).u32(pid).u8(signal).u8(flags).u32(0).u32(2).u32(1000).u64(0n).finish();
 }
 /** OXJP 1: Rust's completion of request `sequence` of the test request. */
 function completion(sequence: number, errno: number): Uint8Array {
@@ -298,21 +303,23 @@ function started() {
   return { worker, words, port, mailbox };
 }
 
-it("starts a non-native worker with eight bytes of signal words, and with the runner's launch only for the token registered with it", async () => {
+it("starts each local worker with a protocol-5 signal buffer of its own and no launch", async () => {
   vi.stubGlobal("Worker", TestWorker);
   vi.stubGlobal("self", { location: new URL("https://example.test/app"), crossOriginIsolated: true });
   const native = runtime(), driver = new JsProcessWorkers({ runtime: native, active: () => true, wake: () => {} });
-  const launch = { kind: "host", descriptor: "{\"v\":1}" } as const;
-  const tokens = [driver.register("https://example.test/runner.worker.js", launch), driver.register("https://example.test/plain.worker.js")];
-  const bootstraps: Readonly<Record<string, unknown>>[] = [], runs: Promise<void>[] = [];
+  const tokens = [driver.register("https://example.test/one.worker.js"), driver.register("https://example.test/two.worker.js")];
+  const bootstraps: Readonly<Record<string, unknown>>[] = [], runs: Promise<void>[] = [], urls: string[] = [];
   try {
     for (const [index, token] of tokens.entries()) {
       runs.push(driver.run({ ...request, ...decodeJSIdentity(1n, BigInt(index + 1)), program: { kind: "worker", token: BigInt(token) } }, new AbortController().signal));
       bootstraps.push(record(TestWorker.latest?.bootstrap, "bootstrap"));
+      urls.push(TestWorker.latest?.url ?? "");
     }
-    expect(bootstraps[0]).toMatchObject({ version: JS_PROCESS_PROTOCOL_VERSION, type: "start", launch });
-    expect(Object.keys(bootstraps[1] ?? {}).sort()).toEqual(["mailbox", "port", "signals", "type", "version"]);
-    for (const bootstrap of bootstraps) { const words = bootstrap["signals"]; expect(words instanceof SharedArrayBuffer ? words.byteLength : 0).toBe(8); }
+    expect(urls).toEqual(["https://example.test/one.worker.js", "https://example.test/two.worker.js"]);
+    for (const bootstrap of bootstraps) {
+      expect(Object.keys(bootstrap).sort()).toEqual(["mailbox", "port", "signals", "type", "version"]);
+      const words = bootstrap["signals"]; expect(words instanceof SharedArrayBuffer ? words.byteLength : 0).toBe(SIGNAL_BUFFER_BYTES);
+    }
     expect(bootstraps[0]?.["signals"]).not.toBe(bootstraps[1]?.["signals"]);
   } finally { native.retire(); driver.reconcile(); await Promise.all(runs); }
 });
@@ -328,7 +335,7 @@ it("turns Rust's caught-signal notices into pending bits, the interrupt word and
     driver.reconcile();
     // SIGINT asked for the interrupt word; SIGTERM only for its bit. One nudge covers both.
     expect(Atomics.load(words, 0)).toBe((1 << 1) | (1 << 14));
-    expect(Atomics.load(words, 1)).toBe(2);
+    expect(Atomics.load(words, 2)).toBe(2);
     expect(nudges()).toBe(1);
     await vi.waitFor(() => expect(delivered).toEqual([NUDGE]));
     // A notice for another incarnation or runtime generation is not this worker's, and no notice means no nudge.
@@ -346,21 +353,21 @@ it("stores an interrupting signal only while the interrupt word reads 0 and retr
   const running = driver.run(request, new AbortController().signal), { words } = started();
   try {
     // The module has not taken an earlier SIGTERM yet.
-    Atomics.store(words, 1, 15);
+    Atomics.store(words, 2, 15);
     native.notices.push(signalNotice(2, 0b10)); driver.reconcile();
-    expect([Atomics.load(words, 0), Atomics.load(words, 1)]).toEqual([1 << 1, 15]);
-    driver.reconcile(); expect(Atomics.load(words, 1)).toBe(15);
-    Atomics.store(words, 1, 0); driver.reconcile(); expect(Atomics.load(words, 1)).toBe(2);
+    expect([Atomics.load(words, 0), Atomics.load(words, 2)]).toEqual([1 << 1, 15]);
+    driver.reconcile(); expect(Atomics.load(words, 2)).toBe(15);
+    Atomics.store(words, 2, 0); driver.reconcile(); expect(Atomics.load(words, 2)).toBe(2);
     // Stored once: after the module takes it there is no second copy.
-    Atomics.store(words, 1, 0); driver.reconcile(); expect(Atomics.load(words, 1)).toBe(0);
+    Atomics.store(words, 2, 0); driver.reconcile(); expect(Atomics.load(words, 2)).toBe(0);
     // Without the interrupt flag a notice leaves the word alone.
     native.notices.push(signalNotice(10, 0b01)); driver.reconcile();
-    expect([Atomics.load(words, 0) & (1 << 9), Atomics.load(words, 1)]).toEqual([1 << 9, 0]);
+    expect([Atomics.load(words, 0) & (1 << 9), Atomics.load(words, 2)]).toEqual([1 << 9, 0]);
     // Two interrupting signals while the word is busy: the lowest goes first, then the next.
-    Atomics.store(words, 1, 3); native.notices.push(signalNotice(15, 0b10), signalNotice(1, 0b10)); driver.reconcile();
-    expect(Atomics.load(words, 1)).toBe(3);
-    Atomics.store(words, 1, 0); driver.reconcile(); expect(Atomics.load(words, 1)).toBe(1);
-    Atomics.store(words, 1, 0); driver.reconcile(); expect(Atomics.load(words, 1)).toBe(15);
+    Atomics.store(words, 2, 3); native.notices.push(signalNotice(15, 0b10), signalNotice(1, 0b10)); driver.reconcile();
+    expect(Atomics.load(words, 2)).toBe(3);
+    Atomics.store(words, 2, 0); driver.reconcile(); expect(Atomics.load(words, 2)).toBe(1);
+    Atomics.store(words, 2, 0); driver.reconcile(); expect(Atomics.load(words, 2)).toBe(15);
   } finally { native.retire(); driver.reconcile(); await running; }
 });
 
@@ -368,7 +375,7 @@ it("hands over Rust's notices before its completions, so a synchronous wait it i
   vi.stubGlobal("Worker", TestWorker);
   const notices: Uint8Array[] = [], completions: Uint8Array[] = [];
   const observed: { words?: Int32Array; seen?: readonly [number, number] } = {};
-  const native = runtime({ notices, completions, onNext: () => { const { words } = observed; if (completions.length > 0 && words !== undefined) observed.seen = [Atomics.load(words, 0), Atomics.load(words, 1)]; } });
+  const native = runtime({ notices, completions, onNext: () => { const { words } = observed; if (completions.length > 0 && words !== undefined) observed.seen = [Atomics.load(words, 0), Atomics.load(words, 2)]; } });
   const driver = new JsProcessWorkers({ runtime: native, interceptor: "https://example.test/tsc.js", active: () => true, wake: () => {} });
   const running = driver.run(request, new AbortController().signal), worker = started();
   observed.words = worker.words;
@@ -410,23 +417,89 @@ it.each([
   expect(native.exits()).toBe(1);
 });
 
-// Engine ADR 0027: Rust admitted an exec of an enabled command's stub (OXCR 18 tag 4).
+// Engine ADR 0027: Rust admitted an exec of an enabled command's stub (OXCR 19 tag 4).
 const COMMAND = { kind: "module-command", registration: 4, name: "typst", path: "/usr/local/bin/typst", terminals: { stdin: true, stdout: true, stderr: false } } as const;
 const commandRequest: UserspaceCommandHostRequest = { ...request, tty: true, program: COMMAND, args: ["typst", "compile", "a.typ"] };
 
-it("starts the SDK's module runner for a module command, with the launch its registration resolves to", async () => {
+const WASM = Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 0);
+/** A module command's launch as its registration resolves it: copies without compiled modules, which stay in the frame. */
+async function moduleLaunch() {
+  const release = await buildRelease({ adapter: "export default () => ({ main: () => 0 });", artifacts: { "tool.wasm": WASM }, declaration: { ...COMMAND_DECLARATION, commands: ["typst"] } });
+  const launch = { kind: "module-command", invocation: { name: "typst", path: "/usr/local/bin/typst" }, terminals: COMMAND.terminals, descriptor: encodeLaunchArgument(release.descriptor), adapter: new Blob([]), artifacts: { "tool.wasm": { blob: new Blob([WASM]), module: null } }, tls: null } as const;
+  return { release, launch, key: copyKey(release.descriptor.artifacts["tool.wasm"] ?? { sha256: "", bytes: 0 }) };
+}
+
+/** The module frame's broker as the driver sees it: each spawn's channel, the start on it and the service port. */
+function moduleFrame() {
+  const channel = new MessageChannel(), spawns: { readonly pid: unknown; readonly connection: MessagePort; readonly start: Promise<Readonly<Record<string, unknown>>> }[] = [];
+  channel.port2.onmessage = (event: MessageEvent<unknown>) => {
+    const spawn = record(event.data, "spawn"), connection = spawn["port"];
+    if (spawn["version"] !== MODULE_BROKER_VERSION || spawn["type"] !== "spawn" || !(connection instanceof MessagePort)) throw new Error("not a spawn");
+    const start = new Promise<Readonly<Record<string, unknown>>>(resolve => { connection.onmessage = message => { resolve(record(message.data, "start")); }; });
+    spawns.push({ pid: spawn["pid"], connection, start });
+  };
+  return { port: channel.port1, spawns };
+}
+
+it("starts every module process through the module frame's broker, never as a local worker (ADR 0028)", async () => {
   vi.stubGlobal("Worker", TestWorker);
-  const native = runtime(), resolved: unknown[] = [];
-  const launch = { kind: "module-command", invocation: { name: "typst", path: "/usr/local/bin/typst" }, terminals: COMMAND.terminals, descriptor: "{\"v\":1}", adapter: new Blob([]), artifacts: {} } as const;
-  const driver = new JsProcessWorkers({ runtime: native, commands: { launch: program => { resolved.push(program); return launch; } }, active: () => true, wake: () => {} });
-  const running = driver.run(commandRequest, new AbortController().signal), { worker } = started();
+  const native = runtime(), frame = moduleFrame(), { launch, key } = await moduleLaunch(), resolved: unknown[] = [];
+  const driver = new JsProcessWorkers({ runtime: native, commands: { launch: program => { resolved.push(program); return launch; } }, moduleFrame: () => frame.port, active: () => true, wake: () => {} });
+  const running = driver.run(commandRequest, new AbortController().signal);
   try {
-    // The same runner spawnModule starts, resolved by the SDK and never named by the guest.
-    expect(worker.url).toBe(new URL("../../../../assets/module-runner/runner.worker.js", import.meta.url).href);
-    expect(worker.url.endsWith("/packages/sdk/assets/module-runner/runner.worker.js")).toBe(true);
-    expect(record(worker.bootstrap, "bootstrap")["launch"]).toBe(launch);
+    await vi.waitFor(() => { expect(frame.spawns).toHaveLength(1); });
+    const start = await frame.spawns[0]?.start;
+    expect(frame.spawns[0]?.pid).toBe(3);
+    // The launch crosses as copies with each artifact's key, so the broker compiles once per copy; no shared memory crosses.
+    expect(start).toMatchObject({ version: MODULE_BROKER_VERSION, type: "start", value: { version: JS_PROCESS_PROTOCOL_VERSION, type: "start", launch, keys: { "tool.wasm": key } } });
+    expect(start?.["port"]).toBeInstanceOf(MessagePort);
+    expect(TestWorker.latest).toBeUndefined();
     expect(resolved).toEqual([COMMAND]);
   } finally { native.retire(); driver.reconcile(); await running; }
+});
+
+it("ends a module process with status 125 when no module frame is attached, and never starts it in the page's origin", async () => {
+  vi.stubGlobal("Worker", TestWorker);
+  const native = runtime(), { launch } = await moduleLaunch();
+  const driver = new JsProcessWorkers({ runtime: native, commands: { launch: () => launch }, moduleFrame: () => undefined, active: () => true, wake: () => {} });
+  await expect(driver.run(commandRequest, new AbortController().signal)).resolves.toBeUndefined();
+  expect(native.exits()).toBe(1);
+  expect(native.written.join("")).toContain("JS process failed: The module frame is gone");
+  expect(TestWorker.latest).toBeUndefined();
+});
+
+it("forwards a signal before the completion it interrupted, on the module process's service port", async () => {
+  const notices: Uint8Array[] = [], completions: Uint8Array[] = [];
+  const native = runtime({ notices, completions }), frame = moduleFrame(), { launch } = await moduleLaunch();
+  const driver = new JsProcessWorkers({ runtime: native, commands: { launch: () => launch }, moduleFrame: () => frame.port, active: () => true, wake: () => {} });
+  const running = driver.run(commandRequest, new AbortController().signal);
+  try {
+    await vi.waitFor(() => { expect(frame.spawns).toHaveLength(1); });
+    const service = (await frame.spawns[0]?.start)?.["port"];
+    if (!(service instanceof MessagePort)) throw new Error("no service port");
+    const received: unknown[] = [];
+    service.onmessage = event => { received.push(event.data); };
+    // Rust: SIGINT caught without restart interrupts the relayed read; its notice and the EINTR completion wait together.
+    notices.push(signalNotice(2, 0b10)); completions.push(completion(1, 4));
+    service.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "request", sequence: 1, sync: false, operation: 0, payload: new Writer().u64(0).u64(16).finish() });
+    await vi.waitFor(() => { expect(received).toHaveLength(2); });
+    expect(received).toEqual([
+      { version: JS_PROCESS_PROTOCOL_VERSION, type: "signal-notice", signal: 2, interrupt: true, code: 0, sender: 2, uid: 1000, value: 0n },
+      { version: JS_PROCESS_PROTOCOL_VERSION, type: "reply", sequence: 1, errno: 4, value: 0n, payload: new Uint8Array() },
+    ]);
+  } finally { native.retire(); driver.reconcile(); await running; }
+});
+
+it("ends a module process whose broker relays a synchronous request: its shared memory must stay in the frame", async () => {
+  const native = runtime(), frame = moduleFrame(), { launch } = await moduleLaunch();
+  const driver = new JsProcessWorkers({ runtime: native, commands: { launch: () => launch }, moduleFrame: () => frame.port, active: () => true, wake: () => {} });
+  const running = driver.run(commandRequest, new AbortController().signal);
+  await vi.waitFor(() => { expect(frame.spawns).toHaveLength(1); });
+  const service = (await frame.spawns[0]?.start)?.["port"];
+  if (!(service instanceof MessagePort)) throw new Error("no service port");
+  service.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "request", sequence: 1, sync: true, operation: 0, payload: new Uint8Array() });
+  await running;
+  expect([native.exits(), native.submitted]).toEqual([1, [1]]);
 });
 
 it("ends a module command whose registration was turned off with status 125 and a diagnostic line", async () => {

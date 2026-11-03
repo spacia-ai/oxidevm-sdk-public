@@ -2,11 +2,13 @@ import { integer } from "../../decode.js";
 import { Reader, Writer, protocol, writeBytes } from "../../js-process/codec.js";
 import { nativeStatus } from "./errors.js";
 import { decodeNativeMetadata, encodeNativeString } from "./strings.js";
+import { NATIVE_BRIDGE_VERSION, type NativeBridgeVersion } from "../../native-bridge-version.js";
 
 const arrayFrom = Array.from;
 const BigInt = globalThis.BigInt, Uint8Array = globalThis.Uint8Array;
 export const NATIVE_MAX_FRAME = 128 * 1024 * 1024 + 64 * 1024;
-export const NATIVE_FRAME_VERSION = 15;
+/** The newest bridge version; a process writes and reads frames at its host helper's version (OXCR 19). */
+export const NATIVE_FRAME_VERSION: NativeBridgeVersion = NATIVE_BRIDGE_VERSION;
 export interface NativeFrame { readonly kind: number; readonly sequence: number; readonly scope: bigint; readonly environment: bigint; readonly operation: string; readonly status: number; readonly args: readonly bigint[]; readonly bytes: Uint8Array }
 function validate(frame: NativeFrame): void {
   integer(frame.kind, "native frame kind", 1, 8); integer(frame.sequence, "native frame identity", 1, 0xffff_ffff);
@@ -15,9 +17,9 @@ function validate(frame: NativeFrame): void {
   if (frame.scope <= 0n || frame.scope > 0x1_ffff_ffffn || (frame.kind <= 2 && frame.scope !== BigInt(frame.sequence)) || (frame.kind >= 5 && frame.scope !== 0x1_0000_0000n + BigInt(frame.sequence))) protocol("Invalid native handle scope");
   if (!/^[a-z][a-z0-9_-]{0,63}$/u.test(frame.operation) || frame.args.length > 4096 || frame.bytes.byteLength > NATIVE_MAX_FRAME) protocol("Invalid native frame fields");
 }
-export function encodeNativeFrame(frame: NativeFrame): Uint8Array<ArrayBuffer> {
+export function encodeNativeFrame(frame: NativeFrame, version: NativeBridgeVersion = NATIVE_FRAME_VERSION): Uint8Array<ArrayBuffer> {
   validate(frame);
-  const writer = new Writer().u32(0x414e584f).u32(NATIVE_FRAME_VERSION).u32(frame.kind).u32(frame.sequence).u64(frame.scope).u64(frame.environment).blob(encodeNativeString(frame.operation, "utf8")).u32(frame.status).u32(frame.args.length);
+  const writer = new Writer().u32(0x414e584f).u32(version).u32(frame.kind).u32(frame.sequence).u64(frame.scope).u64(frame.environment).blob(encodeNativeString(frame.operation, "utf8")).u32(frame.status).u32(frame.args.length);
   for (const value of frame.args) writer.u64(value);
   const header = writer.u32(frame.bytes.byteLength).finish(), length = header.byteLength + frame.bytes.byteLength;
   if (length > NATIVE_MAX_FRAME) protocol("Native frame exceeds its byte limit");
@@ -26,14 +28,14 @@ export function encodeNativeFrame(frame: NativeFrame): Uint8Array<ArrayBuffer> {
   writeBytes(result, header, 4); writeBytes(result, frame.bytes, 4 + header.byteLength);
   return result;
 }
-export function decodeNativeFrame(bytes: Uint8Array): NativeFrame {
-  return decodeFrame(bytes, NATIVE_FRAME_VERSION);
-}
-/** Historical evidence decoding never negotiates a live transport version. */
-export function decodeCapturedNativeFrame(bytes: Uint8Array, version: 13 | 14 | 15): NativeFrame {
+export function decodeNativeFrame(bytes: Uint8Array, version: NativeBridgeVersion = NATIVE_FRAME_VERSION): NativeFrame {
   return decodeFrame(bytes, version);
 }
-function decodeFrame(bytes: Uint8Array, version: 13 | 14 | 15): NativeFrame {
+/** Historical evidence decoding never negotiates a live transport version. */
+export function decodeCapturedNativeFrame(bytes: Uint8Array, version: 13 | 14 | NativeBridgeVersion): NativeFrame {
+  return decodeFrame(bytes, version);
+}
+function decodeFrame(bytes: Uint8Array, version: 13 | 14 | NativeBridgeVersion): NativeFrame {
   if (bytes.byteLength < 48 || bytes.byteLength > NATIVE_MAX_FRAME) protocol("Invalid native frame length");
   const reader = new Reader(bytes);
   if (reader.u32() !== 0x414e584f || reader.u32() !== version) protocol("Native frame version mismatch");

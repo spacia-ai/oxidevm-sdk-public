@@ -5,7 +5,7 @@ import { captureFileStream, restoredFileStream } from "./snapshot-file-streams.j
 import type { UserspaceSnapshotManifest } from "./snapshot-manifest.js";
 import type { SnapshotObjects } from "./snapshot-objects.js";
 import type { WorkspaceSelections, NativeFileSession } from "./workspace-selections.js";
-import { decodeWorkspaceOverlayManifest, WorkspaceStore } from "./workspace-store.js";
+import { WorkspaceStore } from "./workspace-store.js";
 import { workspaceBytesInput,type WorkspaceStreams } from "./workspace-stream.js";
 
 type Durable = NonNullable<UserspaceSnapshotManifest["durable"]>;
@@ -92,26 +92,6 @@ export class NativeSnapshotFiles {
       return result;
     } catch (error) { await stage.abort(); throw error; }
   }
-
-  /** Uses a retained cold selection; no checkpoint catalogue or image closure is synthesized. */
-  async prepareSelected(id: string, root: string | undefined, signal: AbortSignal): Promise<PreparedNativeFiles> {
-    active(signal); await this.#selections.validate(id, signal);
-    const candidate = crypto.randomUUID(), stage = await this.#selections.stage(candidate, root, id);
-    return { ...stage, id: candidate, stageWorkspace: async (base, streams, signal) => {
-      // The original foreign generation remains pinned by id. Only the private
-      // candidate's workspace scope changes base; its selected root stays intact.
-      const encoded = await stage.backend.read("active.json", 128 * 1024, signal);
-      if (encoded !== undefined && coldWorkspaceBase(encoded) !== base) {
-        await stage.backend.remove("active.json");
-      }
-      return new WorkspaceStore(stage.backend).commitStreams(base, streams, signal);
-    } };
-  }
 }
 
 function active(signal: AbortSignal): void { if (signal.aborted) throw new VMError("ABORTED", "Native file selection cancelled"); }
-
-function coldWorkspaceBase(bytes:Uint8Array):string {
-  try {return decodeWorkspaceOverlayManifest(JSON.parse(new TextDecoder().decode(bytes))).workspaceBaseSha256;}
-  catch {throw new VMError("STORAGE_ERROR","Cold workspace metadata is damaged");}
-}

@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "lib": ["ES2024", "DOM", "DOM.Iterable"], "types": ["browser"], "typeRoots": ["../../types"] },
-  "include": ["asset-source/module-runner/entry.ts"]
+  "include": ["asset-source/module-runner/entry.ts", "asset-source/module-frame/bootstrap.ts"]
 }

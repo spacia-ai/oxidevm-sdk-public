@@ -10,6 +10,7 @@ import { defaultImage } from "./default-image.js";
 import { inspectRetainedStart } from "./retained-start.js";
 import { verifyImage } from "./verified-image.js";
 import { adaptVM, toBootProgress } from "./vm-adapter.js";
+import { browserModuleFrames } from "./module-frame-browser.js";
 import { createUserspaceRuntimeVM } from "./runtime/userspace-vm.js";
 import { createSystemRuntimeVM } from "./runtime/system-vm.js";
 import type { RuntimeVM } from "./runtime/vm-types.js";
@@ -21,6 +22,9 @@ export interface LocalVMHosting {
   readonly previewKeeperHost?: PreviewKeeperHost;
   /** The page that embeds the runtime frame; a self-hosted VM is its own embedder. */
   readonly embedderOrigin?: string;
+  /** Where `module-frame/` is served (ADR 0028): beside the engine release when self-hosted (the default), and beside
+   * the runtime frame's own page, `/v/<sdk>/`, in the hosted frame, whose engine release is elsewhere. */
+  readonly moduleFrameBase?: string;
 }
 
 /** Creates the VM in this page, from the engine release at `baseUrl`. The runtime frame runs this too. */
@@ -92,7 +96,7 @@ export async function createLocalVM(options: ValidatedVMOptions, baseUrl: string
     // This enters the existing Rust VFS owner and forces Userspace mount before ready.
     await runtime.workspace.entries("/", options.signal);
     abortIfRequested(options.signal);
-    const vm = await adaptVM(runtime, options, actual, assets, license, commandAcceleration, {...booted,...(booted.update!==undefined||retained?.update===undefined?{}:{update:retained.update})});
+    const vm = await adaptVM(runtime, options, actual, assets, license, commandAcceleration, {...booted,...(booted.update!==undefined||retained?.update===undefined?{}:{update:retained.update}), moduleFrames: browserModuleFrames(hosting.moduleFrameBase ?? baseUrl)});
     if (options.network.mode === "relay") await vm.network.connect(options.network.connection, options.signal === undefined ? {} : { signal: options.signal });
     options.onProgress?.({ phase: "ready" }); return vm;
   } catch (error) {

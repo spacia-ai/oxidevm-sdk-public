@@ -10,6 +10,7 @@ import {
   ciWorkflow, commandFor, moduleTest, noticeFile, readmeFile, releaseWorkflow,
 } from "./wasm-template-files.js";
 import type { TemplateShape } from "./wasm-template-files.js";
+import { NET_SOURCE, NETWORK_DISCLOSURE, netTest, reachToken, type TemplateReach } from "./wasm-template-network.js";
 
 export type ModuleKind = "command" | "service";
 
@@ -45,21 +46,27 @@ async function subjectFor(from: string | undefined, directory: string): Promise<
 }
 
 /** The manifest up to its license. `command` is the name a command module declares in `commands`, right after `process`. */
-const MANIFEST_HEAD = (id: string, subject: Subject, kind: ModuleKind, host: string, command?: string): string => `    id: ${JSON.stringify(id)},
+const MANIFEST_HEAD = (id: string, subject: Subject, kind: ModuleKind, host: string, reach: TemplateReach, command?: string): string => `    id: ${JSON.stringify(id)},
     version: "0.1.0",
     abi: ${JSON.stringify(subject.abi)},
     artifacts: [{ name: ${JSON.stringify(subject.artifact)}, from: ${JSON.stringify(`upstream/${subject.artifact}`)} }],
     process: { kind: ${JSON.stringify(kind)} },
-${command === undefined ? "" : `    commands: [${JSON.stringify(command)}],\n`}${kind === "service" ? `    expose: { main: { kind: "unix", path: ${JSON.stringify(`/workspace/_oxidevm/${id}.sock`)}, protocol: ${JSON.stringify(`${id}/1`)} } },\n` : ""}    requires: { host: [${host}] },
-    license: { spdx: "Apache-2.0" },`;
+${command === undefined ? "" : `    commands: [${JSON.stringify(command)}],\n`}${kind === "service" ? `    expose: { main: { kind: "unix", path: ${JSON.stringify(`/workspace/_oxidevm/${id}.sock`)}, protocol: ${JSON.stringify(`${id}/1`)} } },\n` : ""}    requires: { host: [${withReach(host, reach)}] },
+${reach === "internet" ? NETWORK_DISCLOSURE : ""}    license: { spdx: "Apache-2.0" },`;
 
-function commandSource(id: string, subject: Subject, command: string | undefined): string {
+/** The declared capabilities plus the reach token (engine ADR 0029, N-1). */
+function withReach(host: string, reach: TemplateReach): string {
+  const token = reachToken(reach);
+  return token === undefined ? host : host === "" ? JSON.stringify(token) : `${host}, ${JSON.stringify(token)}`;
+}
+
+function commandSource(id: string, subject: Subject, command: string | undefined, reach: TemplateReach): string {
   if (subject.skeleton) {
     return `import { defineModule } from "@oxidevm/sdk/wasm";
 
 export default defineModule({
   manifest: {
-${MANIFEST_HEAD(id, subject, "command", "", command)}
+${MANIFEST_HEAD(id, subject, "command", "", reach, command)}
   },
   adapter: async host => {
     // Compile the artifact once, at start. Instantiate it here with the imports its ABI needs;
@@ -75,7 +82,7 @@ import { addCommand } from "./src/command.ts";
 
 export default defineModule({
   manifest: {
-${MANIFEST_HEAD(id, subject, "command", "\"files.sync\"", command)}
+${MANIFEST_HEAD(id, subject, "command", "\"files.sync\"", reach, command)}
   },
   adapter: async host => {
     const instance = await WebAssembly.instantiate(await host.artifacts.compile("add.wasm"));
@@ -89,13 +96,13 @@ ${MANIFEST_HEAD(id, subject, "command", "\"files.sync\"", command)}
 `;
 }
 
-function serviceSource(id: string, subject: Subject): string {
+function serviceSource(id: string, subject: Subject, reach: TemplateReach): string {
   if (subject.skeleton) {
     return `import { defineModule } from "@oxidevm/sdk/wasm";
 
 export default defineModule({
   manifest: {
-${MANIFEST_HEAD(id, subject, "service", "")}
+${MANIFEST_HEAD(id, subject, "service", "", reach)}
   },
   adapter: async host => {
     // Compile the artifact once, at start, and keep what you build from it in this closure.
@@ -117,7 +124,7 @@ const MAX_LINE = 1024;
 
 export default defineModule({
   manifest: {
-${MANIFEST_HEAD(id, subject, "service", "").replace("expose: { main:", "expose: { add:")}
+${MANIFEST_HEAD(id, subject, "service", "", reach).replace("expose: { main:", "expose: { add:")}
   },
   adapter: async host => {
     const instance = await WebAssembly.instantiate(await host.artifacts.compile("add.wasm"));
@@ -164,12 +171,13 @@ function packageJson(id: string, kind: "command" | "service"): string {
  * through the same extractor the build uses before anything is written, so an id or file name that would make an
  * invalid manifest fails here, not later.
  */
-export async function initializeModule(directory: string, options: { readonly kind: ModuleKind; readonly id?: string; readonly from?: string }): Promise<WasmInitResult> {
+export async function initializeModule(directory: string, options: { readonly kind: ModuleKind; readonly id?: string; readonly from?: string; readonly network?: TemplateReach }): Promise<WasmInitResult> {
+  const reach = options.network ?? "none";
   const id = options.id ?? moduleIdFor(directory);
   const subject = await subjectFor(options.from, directory);
   // A command module declares its id as its command, so programs in a VM run it by the module's name.
   const shape: TemplateShape = options.kind === "command" ? { kind: "command", command: commandFor(id), skeleton: subject.skeleton } : { kind: "service" };
-  const source = shape.kind === "command" ? commandSource(id, subject, shape.command) : serviceSource(id, subject);
+  const source = shape.kind === "command" ? commandSource(id, subject, shape.command, reach) : serviceSource(id, subject, reach);
   try { extractManifest(source, "module.ts"); } catch (error) {
     if (error instanceof WasmBuildFailure) throw new VMError("INVALID_ARGUMENT", `the module cannot be created: ${error.findings[0]?.message ?? "invalid manifest"}`);
     throw error;
@@ -180,15 +188,16 @@ export async function initializeModule(directory: string, options: { readonly ki
   const files = new Map<string, string | Uint8Array>([
     ["module.ts", source],
     [`upstream/${subject.artifact}`, subject.bytes],
-    ["package.json", packageJson(id, options.kind)], ["tsconfig.json", TSCONFIG], ["test/tsconfig.json", TEST_TSCONFIG], ["test/module.test.ts", moduleTest(id, shape)], ["eslint.config.js", ESLINT_CONFIG], [".gitignore", GITIGNORE],
-    ["README.md", readmeFile(id, shape)], ["AGENTS.md", agentsFile(id, shape)],
+    ["package.json", packageJson(id, options.kind)], ["tsconfig.json", TSCONFIG], ["test/tsconfig.json", TEST_TSCONFIG], ["test/module.test.ts", moduleTest(id, shape, reach)], ["eslint.config.js", ESLINT_CONFIG], [".gitignore", GITIGNORE],
+    ["README.md", readmeFile(id, shape, reach)], ["AGENTS.md", agentsFile(id, shape)],
     ["LICENSE", await readFile(new URL("../LICENSE", import.meta.url), "utf8")], ["NOTICE", noticeFile(id)],
     [".github/workflows/ci.yml", ciWorkflow(npmrc !== undefined)], [".github/workflows/release.yml", releaseWorkflow(npmrc !== undefined)],
   ]);
   if (!subject.skeleton) { files.set("src/operands.ts", OPERANDS_SOURCE); files.set("test/operands.test.ts", OPERANDS_TEST); }
   if (!subject.skeleton && shape.kind === "command") { files.set("src/command.ts", addCommandSource(id, shape.command)); files.set("test/command.test.ts", addCommandTest(id, shape.command)); }
+  if (reach !== "none") { files.set("src/net.ts", NET_SOURCE); files.set("test/net.test.ts", netTest(reach)); }
   if (npmrc !== undefined) files.set(".npmrc", npmrc);
   for (const [path, content] of files) await file(directory, path, content);
   // Only a command module reports commands, so a service's result keeps its keys; an id with the reserved prefix declares none.
-  return { directory, id, kind: options.kind, abi: subject.abi, files: [...files.keys()].sort(), ...(shape.kind === "command" ? { commands: shape.command === undefined ? [] : [shape.command] } : {}) };
+  return { directory, id, kind: options.kind, abi: subject.abi, network: reach, files: [...files.keys()].sort(), ...(shape.kind === "command" ? { commands: shape.command === undefined ? [] : [shape.command] } : {}) };
 }

@@ -1,23 +1,54 @@
 import { expect, it, vi } from "vitest";
 import { openUserspaceRootStore } from "./userspace-root-store.js";
-import { NativeColdFiles } from "./native-cold-files.js";
-import { NativeSnapshotFiles } from "./snapshot-userspace-files.js";
+import { NativeColdFiles, type NativeColdEnvironment } from "./native-cold-files.js";
 import { WorkspaceSelections } from "./workspace-selections.js";
 import { WorkspaceStore } from "./workspace-store.js";
 import { opfsWorkspaceStoreBackend } from "./workspace-backend.js";
 import { MemoryDirectory } from "./opfs-double.test-support.js";
-import { SnapshotObjects } from "./snapshot-objects.js";
 import { workspaceBytesInput } from "./workspace-stream.js";
 const BASE = "a".repeat(64), NEXT = "b".repeat(64);
 const signal = () => new AbortController().signal;
 const streams = (value: number) => ({ snapshot: workspaceBytesInput(new Uint8Array([value])), delta: workspaceBytesInput(new Uint8Array()) });
 
+/** The verified image a cold start pins; the cold start has no restore-point storage at all. */
+function verifiedImage(rootTreeSha256: string, workspaceBaseSha256: string) {
+  const pins = new Set<string>(), rootfs = { origin: "managed", image: { id: "alpine", version: "v1" }, rootTreeSha256, manifest: { sha256: "c".repeat(64), bytes: 1 } } as const;
+  const image: NativeColdEnvironment["rootfs"] = {
+    pinImage: owner => { pins.add(owner.snapshotId); return Promise.resolve({ rootfs, manifest: new Uint8Array([1]) }); },
+    releaseCheckpoint: owner => { pins.delete(owner.snapshotId); return Promise.resolve(); },
+    currentRootfs: () => ({ id: "alpine", version: "v1", cpuProfile: "x86-64-v2", rootTreeSha256, workspaceBaseSha256, fileCount: 0, totalBytes: 0, metadata: new Uint8Array(), runtimes: { supportingFiles: [] } }),
+    beginCheckpointVerification: () => Promise.resolve(() => undefined),
+  };
+  return { image, pins };
+}
+
 async function fixture() {
   const backend = opfsWorkspaceStoreBackend(new MemoryDirectory()), selections = new WorkspaceSelections(backend);
-  const files = new NativeSnapshotFiles(selections, await SnapshotObjects.open(new MemoryDirectory()));
   await new WorkspaceStore(selections.backend).commitStreams(BASE, streams(1), signal());
-  return { backend, selections, cold: new NativeColdFiles(selections, files) };
+  const { image, pins } = verifiedImage(NEXT, NEXT);
+  return { backend, selections, pins, cold: new NativeColdFiles({ workspaceId: "test", selections, rootfs: image }) };
 }
+
+it("cold-starts from the workspace selections and the verified image alone, with no restore-point storage", async () => {
+  const f = await fixture();
+  const { sourceId } = await f.cold.select({ boot: "live", rootTreeSha256: NEXT, rootPersistence: "ephemeral" }, signal());
+  const session = await f.selections.session();
+  expect(session?.image).toMatch(/^[0-9a-f-]{36}$/u);
+  expect([...f.pins]).toEqual([session?.image]);
+  await f.cold.files(sourceId, NEXT).stageWorkspace(NEXT, streams(4), signal());
+  f.cold.staged(sourceId, false);
+  await f.cold.handle({ type: "publish-native-cold", sourceId }, signal());
+  await f.cold.handle({ type: "complete-native-cold", sourceId }, signal());
+  expect(await new WorkspaceStore(new WorkspaceSelections(f.backend).backend).read(NEXT)).toEqual(new Uint8Array([4]));
+  expect(f.cold.busy).toBe(false);
+});
+
+it("refuses a cold start whose verified image differs and leaves no image pin", async () => {
+  const f = await fixture();
+  await expect(f.cold.select({ boot: "live", rootTreeSha256: BASE, rootPersistence: "ephemeral" }, signal())).rejects.toMatchObject({ code: "STORAGE_ERROR" });
+  expect(f.pins.size).toBe(0);
+  expect(f.cold.busy).toBe(false);
+});
 it("retains a foreign cold source and publishes its reconciled stream only at the selected commit", async () => {
   const f = await fixture(), sourceId = await f.cold.begin(undefined, NEXT, signal());
   expect(f.cold.busy).toBe(true);

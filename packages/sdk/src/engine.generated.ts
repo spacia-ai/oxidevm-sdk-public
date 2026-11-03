@@ -3,19 +3,20 @@
 // verifies: engineReleaseId is the SHA-256 of release.json's exact bytes, which are
 // JSON.stringify(engineRelease, null, 2) followed by one newline. engineLicense identifies the
 // release's LICENSE, which release.json does not cover.
-export const engineReleaseId = "c8774bbb85ed08baf784d09afecc28ce2c177e371d064186776bf10cb8e35291";
+export const engineReleaseId = "8961dbccfaa1a68e62b9997319e78efa62108b8186df0c1273ae9bb911882d50";
 export const engineRelease = {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "engineSource": {
-    "commit": "1b412abbafd11f54448419747d6be3d46fc1f4d1",
+    "commit": "2be4ac8cb46117d06b76e9c575a0b96b00936972",
     "dirty": false,
-    "nativeInputsSHA256": "721d61209ce4715ac241e1605c64cc95dd84b602fb82c0396895a024760499ef"
+    "nativeInputsSHA256": "53ec6a7abc04225a39045cf23c76dd52dd72cee42bfc9dd092752d9a5db197fe"
   },
   "identities": {
     "coreApi": 19,
     "jitAbi": 93,
-    "userspaceApi": 145,
-    "netstackApi": 2
+    "userspaceApi": 146,
+    "netstackApi": 2,
+    "tlsApi": 2
   },
   "artifacts": [
     {
@@ -39,8 +40,14 @@ export const engineRelease = {
     {
       "name": "oxidevm_userspace.wasm",
       "mode": "userspace",
-      "bytes": 13982691,
-      "sha256": "59dff781b71adf7c72cef1f6b9fef56df6f19724e60a7263fd1a7ec808290d89"
+      "bytes": 14007309,
+      "sha256": "972f57e996979979f91e34e32d84c2c75af490067f57b5590384d5fe62b91fad"
+    },
+    {
+      "name": "oxidevm_tls.wasm",
+      "mode": "userspace",
+      "bytes": 620213,
+      "sha256": "c2840428cb9c543d7b27c589139032687ff8e84e69d25bea2575edd2658f55aa"
     }
   ]
 } as const;
@@ -50,11 +57,11 @@ export const engineLicense = {
 } as const;
 export const engineDownload = {
   "kind": "cdn",
-  "release": "engine-c8774bbb85ed08baf784d09afecc28ce2c177e371d064186776bf10cb8e35291",
-  "baseUrl": "https://cdn.oxidevm.dev/engine/c8774bbb85ed08baf784d09afecc28ce2c177e371d064186776bf10cb8e35291/"
+  "release": "engine-8961dbccfaa1a68e62b9997319e78efa62108b8186df0c1273ae9bb911882d50",
+  "baseUrl": "https://cdn.oxidevm.dev/engine/8961dbccfaa1a68e62b9997319e78efa62108b8186df0c1273ae9bb911882d50/"
 } as const;
 export const engineCompliance: unknown = {
-  "url": "https://cdn.oxidevm.dev/engine/c8774bbb85ed08baf784d09afecc28ce2c177e371d064186776bf10cb8e35291/compliance/f07c83f0e5b7fb3d73aefab00b27870a47924833d8e44f9c87c62c52d7f2ff31/compliance.json",
+  "url": "https://cdn.oxidevm.dev/engine/8961dbccfaa1a68e62b9997319e78efa62108b8186df0c1273ae9bb911882d50/compliance/afff29d49b6f2780041328853cf7587f1a1ef2f97f391c640c12844784238f3b/compliance.json",
   "bytes": 746,
-  "sha256": "f07c83f0e5b7fb3d73aefab00b27870a47924833d8e44f9c87c62c52d7f2ff31"
+  "sha256": "afff29d49b6f2780041328853cf7587f1a1ef2f97f391c640c12844784238f3b"
 };

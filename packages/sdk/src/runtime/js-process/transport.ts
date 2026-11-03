@@ -2,7 +2,7 @@ import { exactKeys, integer, record } from "../decode.js";
 import { VMError } from "../errors.js";
 import { postCounted, type AttentionCounter } from "../host-attention.js";
 import { JS_MAILBOX_BYTES, JS_PROCESS_PROTOCOL_VERSION, jsMailboxAttention, LinuxError, Reader, Writer, copyBytes, viewBytes, type LinuxOperation, type LinuxResult, protocol } from "./codec.js";
-import { isTrappableSignal, signalWords, takePendingSignals, type TrappableSignalNumber } from "./signals.js";
+import { interruptView, isTrappableSignal, signalBuffer, takeArrivals, type SignalArrival, type SignalBuffer, type TrappableSignalNumber } from "./signals.js";
 
 const Uint8Array = globalThis.Uint8Array;
 
@@ -23,13 +23,13 @@ export class LinuxClient {
   #cancelling = false;
   #sequence = 0;
   #closed = false;
-  /** JS process protocol 4: the driver's signal words, absent for a native process (engine ADR 0027). */
-  readonly #signals: Int32Array<SharedArrayBuffer> | undefined;
-  #onSignals: ((signals: readonly TrappableSignalNumber[]) => void) | undefined;
+  /** JS process protocol 5: the driver's signal buffer, absent for a native process (engine ADR 0027). */
+  readonly #signals: SignalBuffer | undefined;
+  #onSignals: ((arrivals: readonly SignalArrival[]) => void) | undefined;
   constructor(readonly port: MessagePort, mailbox: SharedArrayBuffer, signals?: SharedArrayBuffer) {
     if (mailbox.byteLength !== JS_MAILBOX_BYTES) protocol("Invalid Linux mailbox size");
     this.#header = new Int32Array(mailbox, 0, 4); this.#body = new Uint8Array(mailbox, 16); this.#attention = jsMailboxAttention(mailbox);
-    this.#signals = signals === undefined ? undefined : signalWords(signals);
+    this.#signals = signals === undefined ? undefined : signalBuffer(signals);
     port.onmessage = event => { try { this.#receive(event.data); } catch (error) { this.dispose(error instanceof Error ? error : new VMError("PROTOCOL_ERROR", "Linux reply failed")); } };
     port.onmessageerror = () => this.dispose(new VMError("PROTOCOL_ERROR", "Linux reply could not be decoded"));
     port.start();
@@ -89,14 +89,14 @@ export class LinuxClient {
       this.dispose(error instanceof Error ? error : new VMError("PROTOCOL_ERROR", "Linux cancellation failed")); finished();
     });
   }
-  /** Word 1 of the signal words, in Pyodide's interrupt-buffer format: the driver stores an interrupting signal there while it reads 0. */
+  /** The interrupt word at byte 8 of the signal buffer, in Pyodide's interrupt-buffer format: the driver stores an interrupting signal there while it reads 0. */
   get interruptWord(): Int32Array<SharedArrayBuffer> {
-    if (this.#signals === undefined) protocol("This JS process has no signal words");
-    return this.#signals.subarray(1, 2);
+    if (this.#signals === undefined) protocol("This JS process has no signal buffer");
+    return interruptView(this.#signals.buffer);
   }
-  /** Calls `listener` with the signals Rust caught for this process, each exactly once and lowest first: those already
-   * pending at once, then after each of the driver's nudges. One listener serves the process. */
-  listenForSignals(listener: (signals: readonly TrappableSignalNumber[]) => void): void {
+  /** Calls `listener` with the arrivals Rust caught for this process, each exactly once (`takeArrivals` order): those
+   * already pending at once, then after each of the driver's nudges. One listener serves the process. */
+  listenForSignals(listener: (arrivals: readonly SignalArrival[]) => void): void {
     if (this.#signals === undefined || this.#onSignals !== undefined) protocol("JS process signals have one listener");
     this.#onSignals = listener; this.#takeSignals();
   }
@@ -107,10 +107,10 @@ export class LinuxClient {
     postCounted(this.#attention, () => { this.port.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "signaled", signal }); });
   }
   #takeSignals(): void {
-    const listener = this.#onSignals, words = this.#signals;
-    if (listener === undefined || words === undefined) return;
-    const signals = takePendingSignals(words);
-    if (signals.length > 0) listener(signals);
+    const listener = this.#onSignals, buffer = this.#signals;
+    if (listener === undefined || buffer === undefined) return;
+    const arrivals = takeArrivals(buffer);
+    if (arrivals.length > 0) listener(arrivals);
   }
   #receive(input: unknown): void {
     const message = record(input, "Linux reply");

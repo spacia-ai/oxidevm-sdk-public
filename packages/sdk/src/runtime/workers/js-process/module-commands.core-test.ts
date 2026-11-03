@@ -15,6 +15,7 @@ import type { NativeChildSpec } from "../../../js-process-types.js";
 import { record } from "../../decode.js";
 import { encodeLaunchArgument } from "../../../wasm/runner/descriptor.js";
 import { JsProcessWorkers } from "./driver.js";
+import { ModuleCopies } from "./module-copies.js";
 import { ModuleCommands, nativeModuleCommandTable } from "./module-commands.js";
 import { commandRelease, enableRequest, live, server } from "./module-commands.test-support.js";
 import { enableModuleCommands } from "../../../wasm/commands.js";
@@ -22,6 +23,9 @@ import { pinsOf, relay } from "../../../wasm/commands.test-support.js";
 import { moduleHandle } from "../../../wasm/handle.js";
 import type { ModuleVM } from "../../../wasm/spawn.js";
 import type { OwnedModuleCommands } from "../../../vm-adapter.js";
+import { LinuxClient } from "../../js-process/transport.js";
+import { dispositionOperation } from "../../js-process/signals.js";
+import { ModuleBroker, type RunnerWorker } from "../module-frame/broker.js";
 
 /** The page half of `enableModuleCommands`: the VMs it may reach, as the owner accessor knows them. */
 const vms = vi.hoisted(() => new WeakMap<object, OwnedModuleCommands>());
@@ -30,19 +34,6 @@ vi.mock("../../../vm-adapter.js", () => ({
 }));
 
 afterEach(() => { vi.unstubAllGlobals(); });
-
-/** A dedicated worker that records the URL it was started from and the start message the driver sends it. */
-class StartedWorker {
-  static latest: StartedWorker | undefined;
-  onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
-  onerror: ((event: ErrorEvent) => void) | null = null;
-  onmessageerror: (() => void) | null = null;
-  bootstrap: Readonly<Record<string, unknown>> = {};
-  readonly url: string;
-  constructor(url: string | URL) { this.url = String(url); StartedWorker.latest = this; }
-  postMessage(value: unknown): void { this.bootstrap = record(value, "start message"); }
-  terminate(): void { /* the test ends the process through the driver */ }
-}
 
 const engine = WebAssembly.compile(new Uint8Array(await readFile(engineModulePath("oxidevm_userspace.wasm"))));
 const ROOT = { uid: 0, gid: 0 } as const;
@@ -101,9 +92,9 @@ function linux(fixture: Awaited<ReturnType<typeof mounted>>) {
   return { send, errno, next };
 }
 
-it("places root-owned 0755 stubs, keeps the root revision on an identical re-apply and launches a stub exec as OXCR 18 tag 4", async () => {
+it("places root-owned 0755 stubs, keeps the root revision on an identical re-apply and launches a stub exec as OXCR 19 tag 4", async () => {
   const fixture = await mounted(), release = await commandRelease(), changed = vi.fn();
-  const commands = new ModuleCommands({ runtime: () => nativeModuleCommandTable(fixture.runtime), environment: () => ({ crossOriginIsolated: true, initialUser: "user" }), fetch: server(release).fetch, changed });
+  const commands = new ModuleCommands({ copies: new ModuleCopies(), runtime: () => nativeModuleCommandTable(fixture.runtime), environment: () => ({ crossOriginIsolated: true, initialUser: "user" }), changed });
   try {
     const before = fixture.revision();
     const enabled = await commands.request(enableRequest(release, ["alpha", "beta"], 2), live());
@@ -133,7 +124,7 @@ it("places root-owned 0755 stubs, keeps the root revision on an identical re-app
 it("runs a stub no registration names, such as one an earlier session left in persistent system files, as an ordinary program that exits 126", async () => {
   // The stub's bytes, as this engine writes them.
   const first = await mounted(), release = await commandRelease();
-  const enabled = new ModuleCommands({ runtime: () => nativeModuleCommandTable(first.runtime), environment: () => ({ crossOriginIsolated: true, initialUser: "user" }), fetch: server(release).fetch, changed: () => {} });
+  const enabled = new ModuleCommands({ copies: new ModuleCopies(), runtime: () => nativeModuleCommandTable(first.runtime), environment: () => ({ crossOriginIsolated: true, initialUser: "user" }), changed: () => {} });
   let stub: Uint8Array<ArrayBuffer>;
   try {
     await enabled.request(enableRequest(release, ["alpha"]), live());
@@ -143,7 +134,7 @@ it("runs a stub no registration names, such as one an earlier session left in pe
   } finally { await first.runtime.jitRuntime.dispose(); }
   // A new session whose persisted system files hold that stub, before the application turns its commands on.
   const later = await mounted([file("/usr/local/bin/alpha", stub)]);
-  const fresh = new ModuleCommands({ runtime: () => nativeModuleCommandTable(later.runtime), environment: () => ({ crossOriginIsolated: true, initialUser: "user" }), fetch: server(release).fetch, changed: () => {} });
+  const fresh = new ModuleCommands({ copies: new ModuleCopies(), runtime: () => nativeModuleCommandTable(later.runtime), environment: () => ({ crossOriginIsolated: true, initialUser: "user" }), changed: () => {} });
   try {
     fresh.reapply(nativeModuleCommandTable(later.runtime));
     const process = linux(later);
@@ -156,26 +147,38 @@ it("runs a stub no registration names, such as one an earlier session left in pe
   } finally { await later.runtime.jitRuntime.dispose(); }
 });
 
-it("starts the SDK's module runner with the registration's verified copies for an exec of a stub, and ends one whose registration was turned off with 125", async () => {
-  vi.stubGlobal("Worker", StartedWorker);
-  const fixture = await mounted(), release = await commandRelease();
-  const commands = new ModuleCommands({ runtime: () => nativeModuleCommandTable(fixture.runtime), environment: () => ({ crossOriginIsolated: true, initialUser: "user" }), fetch: server(release).fetch, changed: () => {} });
-  const workers = new JsProcessWorkers({ runtime: fixture.runtime, commands, active: () => true, wake: () => {} });
+/** A runner the module frame's broker starts, which records the start message the broker hands it. */
+class RecordedRunner implements RunnerWorker {
+  onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  onmessageerror: ((event: MessageEvent<unknown>) => void) | null = null;
+  readonly started = Promise.withResolvers<Readonly<Record<string, unknown>>>();
+  postMessage(message: unknown): void { this.started.resolve(record(message, "runner start")); }
+  terminate(): void { /* the driver ends the process */ }
+}
+
+it("starts the SDK's module runner in the module frame with the registration's verified copies for an exec of a stub, and ends one whose registration was turned off with 125", async () => {
+  const fixture = await mounted(), release = await commandRelease(), frame = new MessageChannel(), runners: RecordedRunner[] = [];
+  new ModuleBroker({ startRunner: () => { const runner = new RecordedRunner(); runners.push(runner); return runner; } }).attach(frame.port2);
+  const commands = new ModuleCommands({ copies: new ModuleCopies(), runtime: () => nativeModuleCommandTable(fixture.runtime), environment: () => ({ crossOriginIsolated: true, initialUser: "user" }), changed: () => {} });
+  const workers = new JsProcessWorkers({ runtime: fixture.runtime, commands, moduleFrame: () => frame.port1, active: () => true, wake: () => {} });
   try {
     const enabled = await commands.request(enableRequest(release), live());
     if (enabled.operation !== "enable") throw new Error("not an enable result");
     const process = linux(fixture), child = process.send(spawnChild("/usr/local/bin/alpha", ["x.py"]));
     const launch = process.next();
     if (launch?.kind !== "command") throw new Error("Expected a module command launch");
-    const running = workers.run(launch, new AbortController().signal), worker = StartedWorker.latest;
-    if (worker === undefined) throw new Error("The driver started no worker");
-    expect(worker.url.endsWith("/assets/module-runner/runner.worker.js")).toBe(true);
-    const started = record(worker.bootstrap["launch"], "runner launch"), copies = record(started["artifacts"], "verified copies");
+    const running = workers.run(launch, new AbortController().signal);
+    await vi.waitFor(() => { expect(runners).toHaveLength(1); });
+    const runner = runners[0];
+    if (runner === undefined) throw new Error("The broker started no runner");
+    const start = await runner.started.promise, started = record(start["launch"], "runner launch"), copies = record(started["artifacts"], "verified copies");
     expect(started).toMatchObject({ kind: "module-command", invocation: { name: "alpha", path: "/usr/local/bin/alpha" }, terminals: { stdin: false, stdout: false, stderr: false }, descriptor: encodeLaunchArgument(release.descriptor) });
     expect(started["adapter"]).toBeInstanceOf(Blob);
+    // The broker compiled the core module inside the frame; the Userspace worker sent only bytes.
     expect(record(copies["tool.wasm"], "tool.wasm")["module"]).toBeInstanceOf(WebAssembly.Module);
     // The runner's exit ends the process like any JS process's.
-    worker.onmessage?.(new MessageEvent("message", { data: { version: JS_PROCESS_PROTOCOL_VERSION, type: "exit", code: 7 } }));
+    runner.onmessage?.(new MessageEvent("message", { data: { version: JS_PROCESS_PROTOCOL_VERSION, type: "exit", code: 7 } }));
     await running;
     expect(process.send(waitStatus(child.pid))).toBe(7 << 8);
     // Rust admitted this exec before the commands were turned off; by the time the driver serves it, nothing is left to run.
@@ -183,18 +186,20 @@ it("starts the SDK's module runner with the registration's verified copies for a
     const admitted = process.next();
     if (admitted?.kind !== "command" || late.stderr === null) throw new Error("Expected a module command launch with a standard error pipe");
     await commands.request({ operation: "disable", registration: enabled.registration }, live());
-    StartedWorker.latest = undefined;
     await workers.run(admitted, new AbortController().signal);
-    expect(StartedWorker.latest).toBeUndefined();
+    expect(runners).toHaveLength(1);
     expect(process.send(waitStatus(late.pid))).toBe(125 << 8);
     expect(new TextDecoder().decode(process.send(files.read(late.stderr, 4096)))).toBe("JS process failed: beta is no longer turned on in this VM\n");
-  } finally { workers.dispose(); await fixture.runtime.jitRuntime.dispose(); }
+  } finally { workers.dispose(); frame.port1.close(); await fixture.runtime.jitRuntime.dispose(); }
 });
 
 it("turns commands on and off from the page's enableModuleCommands through the worker protocol, and runs a stub exec as the registration the page got", async () => {
   const fixture = await mounted(), release = await commandRelease();
-  const registrations = new ModuleCommands({ runtime: () => nativeModuleCommandTable(fixture.runtime), environment: () => ({ crossOriginIsolated: true, initialUser: "user" }), fetch: server(release).fetch, changed: () => {} });
-  const link = relay(registrations), vm: ModuleVM = { spawnJS: () => Promise.reject(new Error("module commands start no JS process of their own")) };
+  const copies = new ModuleCopies(), served = server(release);
+  const registrations = new ModuleCommands({ copies, runtime: () => nativeModuleCommandTable(fixture.runtime), environment: () => ({ crossOriginIsolated: true, initialUser: "user" }), changed: () => {} });
+  // The page reads the files the VM's store lacks with its own fetch (ADR 0028).
+  vi.stubGlobal("fetch", (url: string, init?: { readonly signal?: AbortSignal | null }) => served.fetch(url, { signal: init?.signal ?? new AbortController().signal }));
+  const link = relay(registrations, copies), vm: ModuleVM = { spawnJS: () => Promise.reject(new Error("module commands start no JS process of their own")) };
   vms.set(vm, link.owned);
   try {
     const commands = await enableModuleCommands(vm, moduleHandle(release.manifest, pinsOf(release)), { commands: ["beta"], concurrency: 2 });
@@ -214,4 +219,55 @@ it("turns commands on and off from the page's enableModuleCommands through the w
     await expect(commands.status()).resolves.toEqual({ enabled: false, skipped: [] });
     await commands.disable();
   } finally { await fixture.runtime.jitRuntime.dispose(); }
+});
+
+/**
+ * A runner the module frame's broker starts, run in this thread instead of a nested worker: it catches SIGINT (OXJR
+ * 65550), blocks in an asynchronous read of its standard input, which the broker relays to the driver, and ends killed
+ * by the signal once the read is interrupted, as the SDK's runner does for a module that traps no signal.
+ */
+class InterruptedRunner implements RunnerWorker {
+  onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  onmessageerror: ((event: MessageEvent<unknown>) => void) | null = null;
+  readonly state: { reading: boolean; errno: number | undefined; signals: number[] } = { reading: false, errno: undefined, signals: [] };
+  postMessage(message: unknown): void {
+    const start = record(message, "runner start"), port = start["port"], mailbox = start["mailbox"], words = start["signals"];
+    if (!(port instanceof MessagePort) || !(mailbox instanceof SharedArrayBuffer) || !(words instanceof SharedArrayBuffer)) throw new Error("bad runner start");
+    const client = new LinuxClient(port, mailbox, words);
+    void (async () => {
+      expect(await client.call(dispositionOperation(2, "caught"))).toBe("default");
+      client.listenForSignals(arrivals => { this.state.signals.push(...arrivals.map(arrival => arrival.signal)); });
+      this.state.reading = true;
+      try { await client.call(files.read(0, 16)); } catch (error: unknown) { this.state.errno = error instanceof LinuxError ? error.errno : -1; }
+      client.signaled(2);
+    })();
+  }
+  terminate(): void { /* the driver ends the process */ }
+}
+
+it("relays a module command through the module frame's broker: a read reads EINTR after SIGINT and the command ends WIFSIGNALED", async () => {
+  vi.stubGlobal("self", { location: new URL("https://app.test/"), crossOriginIsolated: true });
+  const fixture = await mounted(), release = await commandRelease(), frame = new MessageChannel(), runner = new InterruptedRunner();
+  new ModuleBroker({ startRunner: () => runner }).attach(frame.port2);
+  const commands = new ModuleCommands({ copies: new ModuleCopies(), runtime: () => nativeModuleCommandTable(fixture.runtime), environment: () => ({ crossOriginIsolated: true, initialUser: "user" }), changed: () => {} });
+  const pump = (): void => { expect(call(fixture.runtime.instance, "oxidevm_userspace_run", 10_000, 0)).toBe(0); };
+  const workers = new JsProcessWorkers({ runtime: fixture.runtime, commands, moduleFrame: () => frame.port1, active: () => true, wake: pump });
+  try {
+    await commands.request(enableRequest(release), live());
+    const process = linux(fixture), child = process.send(spawnChild("/usr/local/bin/alpha", [], { stdin: "pipe" })), launch = process.next();
+    if (launch?.kind !== "command") throw new Error("Expected a module command launch");
+    let ended = false;
+    const running = workers.run(launch, new AbortController().signal).then(() => { ended = true; });
+    await vi.waitFor(() => { workers.reconcile(); expect(runner.state.reading).toBe(true); });
+    // The read is in Rust now; SIGINT interrupts it. Its notice reaches the broker ahead of the EINTR completion.
+    expect(call(fixture.runtime.instance, "oxidevm_userspace_process_signal", child.pid, 2)).toBe(0);
+    pump();
+    await vi.waitFor(() => { workers.reconcile(); expect(runner.state.errno).toBe(4); });
+    expect(runner.state.signals).toEqual([2]);
+    await vi.waitFor(() => { workers.reconcile(); pump(); expect(ended).toBe(true); });
+    await running;
+    // WIFSIGNALED with SIGINT: the raw wait status is the signal number, and no exit status follows.
+    expect(process.send(waitStatus(child.pid))).toBe(2);
+  } finally { workers.dispose(); frame.port1.close(); await fixture.runtime.jitRuntime.dispose(); }
 });

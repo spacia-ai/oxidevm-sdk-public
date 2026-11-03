@@ -32,11 +32,83 @@ Building a package does not deploy that hosted frame. Private qualification
 serves matching assets through a browser fixture without deployment.
 
 Project locks bind the SDK version, engine release, image, and staging paths.
-Updating a dependency alone does not migrate a project lock. Select and verify
-the replacement release and image before regenerating it.
+Updating a dependency alone does not migrate a project lock: follow
+[Upgrade the SDK](#upgrade-the-sdk), which stages and verifies the replacement
+release and image before it rewrites the lock.
 
 Restore point formats and runtime support remain experimental. A package
 version change does not establish snapshot compatibility or runtime GA.
+
+## Upgrade the SDK
+
+`oxidevm.lock.json` binds one release: the SDK and CLI version, the engine
+release, the image and the staging paths. After an upgrade,
+`oxidevm assets install` (the starter's `npm run assets`) refuses the old lock
+and says what differs and how to update it:
+
+```text
+INVALID_ARGUMENT: project lock oxidevm.lock.json does not match the installed SDK release and project configuration (differing fields: sdkVersion, cliVersion, engine, engineRelease): locked SDK 0.0.9, engine sha256:<old engine>, image sha256:<image>; installed SDK 0.0.10, engine sha256:<new engine>, image sha256:<image>; run `npx oxidevm assets install --update-lock` to stage this release's assets and rewrite the lock (pass --image and --trust again for an image the project configuration does not name)
+```
+
+1. Update `@oxidevm/sdk` and `@oxidevm/cli` together, to the same version:
+   `npm install @oxidevm/sdk@<version>` and
+   `npm install --save-dev @oxidevm/cli@<version>` (`pnpm add` or `bun add`
+   likewise).
+2. Run `npx oxidevm assets install --update-lock` with the options you stage
+   with, such as `--config`, `--engine-dir` or `--reference`. The old lock never
+   vouches for an image: for an image that the project configuration does not
+   name, pass `--image <bundle> --trust <author.public.json>` again.
+   - The command refuses to run unless the project's `@oxidevm/sdk` and the CLI
+     are the same version, before it stages anything.
+   - It stages and verifies this release's assets as `assets install` always
+     does. Only then does it write `oxidevm.lock.json`, in one step: a
+     temporary file renamed over the old lock. A failed or interrupted run
+     keeps the old lock; fix the cause and run it again.
+   - It prints the change on stderr:
+
+     ```text
+     Updated oxidevm.lock.json for this SDK release:
+       SDK     0.0.9 → 0.0.10
+       engine  sha256:<old engine> → sha256:<new engine>
+       image   sha256:<image> (unchanged)
+     ```
+
+     A lock that already matches is not rewritten.
+3. Review `oxidevm.lock.json` and commit it with the package update.
+4. Start the application and run `npx oxidevm doctor` in the project
+   directory. Its `lock` check passes once the lock matches the installed SDK,
+   and fails with the explanation above until then.
+
+What changed for code and scripts:
+
+- `InstallAssetsOptions.updateLock` is the option behind `--update-lock`, and
+  `InstallAssetsResult.lock` (`ProjectLockChange`: `updated`, `from` and `to`,
+  each a `ProjectLockIdentity` of `sdkVersion`, `engineRelease` and
+  `manifestSHA256`) reports what installation did to the lock. `from` is present
+  only when an existing lock was replaced. Without `updateLock`, a missing lock
+  is still written before staging (`updated: true` without `from`) and an
+  existing one is never replaced. `assets install` prints on stderr whatever it
+  writes to the lock.
+- The refusal of an outdated lock stays `INVALID_ARGUMENT` and gains
+  `detail: { reason: "project-lock-stale", fields, locked, installed }`. A lock
+  whose structure, `image.trust` or `staging` fields, SDK version, engine
+  release or image digest cannot be read is refused with `PROTOCOL_ERROR`;
+  earlier releases reported some of these as `INVALID_ARGUMENT`.
+- With `updateLock`, an image that the configuration does not name needs
+  `trust` (`INVALID_ARGUMENT`, reason `project-lock-image-trust`), and a lock
+  that changes while assets are staged is left alone (`PERMISSION_DENIED`,
+  reason `project-lock-changed`).
+- The CLI JSON report is schema 3: every `--json` report has
+  `schemaVersion: 3`, the `assets install` result has `lock`, and
+  `decodeCliReport` refuses schema 2 reports with
+  `unsupported CLI report schema`. Update scripts that compare
+  `schemaVersion` with 2.
+- `oxidevm doctor` has a new closed check, `lock` (`DoctorCheck`), which reads
+  the project configuration named by `--config` or, without it,
+  `oxidevm.config.ts` in the current directory. Without either it is
+  `not-configured`. `DoctorOptions.project` selects the configuration for
+  `doctorProject`. A doctor report without the `lock` check is refused by
+  `decodeDoctorReport`.
 
 ## Hosted starter development
 
@@ -128,3 +200,174 @@ API is unsupported").
   adds `test/command.test.ts`, a README section "Run it from a shell" and
   `AGENTS.md` rules for runs that programs in the VM start. A service project is
   unchanged.
+
+## Isolated module workers
+
+This release moves every module worker out of the application's origin (engine
+ADR 0028), together with the signal and network changes below. Worker protocol
+178, JS process protocol 5, frame protocol 17, module broker protocol 1 and
+module frame bootstrap 2 change together; `module.json` stays at schema 1.
+
+- **Module frame.** Module code (`spawnModule`, module commands and services)
+  runs in a per-VM sandboxed frame with an opaque origin, opened on first use.
+  It can no longer reach the page's cookies, IndexedDB, OPFS, CacheStorage, Web
+  Locks, BroadcastChannels or the browser's network. A self-hosted application
+  serves the SDK's `assets/module-frame/` at `<runtime.baseUrl>module-frame/`
+  with the headers in its `frame.json` (see
+  [Deployment](deployment.md#webassembly-modules)); `oxidevm assets install`
+  stages it there beside the engine. Under a page CSP, allow the module frame
+  in `frame-src`.
+- **No fallback.** A browser that cannot isolate module workers refuses modules
+  with `FEATURE_NOT_AVAILABLE` `wasm-module-isolation-unavailable` and a
+  `detail.capability`. WebKit and Safari refuse modules (`blob-workers`);
+  Chromium and Firefox run them.
+- **The frame checks its own policy.** A module frame served without the
+  `Content-Security-Policy` of its `frame.json` would still be opaque and
+  isolated, but module code would have the browser's network. The frame now
+  checks that its policy is in force (a fetch of a `data:` URL from the frame,
+  and `importScripts` of one from a runner, must be refused) and otherwise
+  refuses modules with `capability: "frame-policy"`. A development server or
+  middleware made for 0.0.9 that serves `module-frame/` like any other asset
+  fails this way; serve it with the frame's headers.
+- **Hosted runtime frame.** `spawnModule` and `enableModuleCommands` now work
+  with a VM in the hosted runtime frame (frame protocol 17). The page reads the
+  module's staged files from its own origin and sends the VM those it lacks;
+  `wasm-module-command-unavailable` no longer names the hosted frame.
+- **Verify once per VM.** Each pinned file is checked once per VM, by the VM's
+  Userspace worker, before any of the module's code runs; later starts and
+  command runs reuse the checked copy. A file that does not match makes
+  `spawnModule` or `enableModuleCommands` reject with `GUEST_CRASH`
+  `wasm-module-integrity` before any process exists, so status `121` no longer
+  occurs. A VM holds at most 512 MiB of checked copies (`QUOTA_EXCEEDED`
+  `wasm-module-copy-limit`); `wasm-module-command-limit` now counts only command
+  sets and names. `host.artifacts.url(name)` is always a `blob:` URL of the
+  checked copy. The `integrity` property of `oxidevm wasm test` accepts that
+  rejection.
+- **Exclusive services.** The VM's Userspace worker takes the workspace lease of
+  an `exclusive: "workspace"` service before the process starts. A manifest whose
+  `requires.browser` names `indexeddb` or `web-locks` is refused with
+  `FEATURE_NOT_AVAILABLE` `wasm-module-prerequisite`, because the module frame has
+  neither; drop the declaration when the adapter does not use them.
+- **WebCrypto.** In Chromium, `crypto.subtle` is unavailable to module code (its
+  workers are not secure contexts); `crypto.getRandomValues` remains.
+- **Lost frames.** A module frame that leaves the document or stops answering
+  ends the VM's module processes with status `125`; the next start opens a new
+  frame.
+
+## Module signals and network reach
+
+This release needs an engine release with Userspace API 146 and release.json
+schema 4, which adds a fifth module, `oxidevm_tls.wasm` (identity `tlsApi`
+1). With an engine that reports Userspace API 145 the VM does not start
+(`CORE_LOAD_FAILED`, "Userspace Wasm API is unsupported"), and `pnpm
+engine:pin` refuses a schema 3 release.
+
+- **Every module process carries a network reach (engine ADR 0029).** Rust
+  refuses a connection or an addressed datagram beyond it with `EACCES`. A
+  module whose `module.json` names `sockets.connect` without a reach token, as
+  every module built by an earlier CLI does, has VM-only reach: it still reaches
+  programs in its own VM, but no longer the internet. A module without
+  `sockets.connect` has no client network at all; the listeners its runner
+  exposes still serve VM clients.
+- **JS trace 18.** `JSProcessTrace` gains `refusals`, one
+  `JSProcessRefusalEvent` (reason `module-network-reach`, the declared reach,
+  the attempted scope and the destination) per refused request, empty for
+  traces 15 to 17. The request's own service row still carries the errno.
+- **JS process protocol 5 signal buffer.** A non-native start message's
+  `signals` is now a 1,568-byte buffer: 64 pending bits, Pyodide's interrupt
+  word at byte 8 and a ring of 64 real-time arrivals with their details. The
+  eight-byte signal words of protocol 4 are refused; rebuild the workers you
+  start with `spawnJS` with this SDK. A module's `interruptBuffer` is the view
+  of the interrupt word, as before.
+- **`host.process.signals` masks.** `block`, `unblock` and `pending` are new
+  (types `BlockableSignal` and `SignalName`), and the process keeps the mask it
+  inherited. `raise` is now `kill(getpid(), signal)`: a blocked signal stays
+  pending instead of reaching its trap at once.
+- **Real-time signals.** `trap` also takes `SIGRTMIN` to `SIGRTMAX`, by name
+  or number (35 to 64), and is generic in the signals it names: a real-time
+  signal yields a `RealtimeArrival` (`signal`, `value`, `code`, `pid`, `uid`), a
+  standard one its name as before. New types: `TrapSignal`, `TrapArrival`,
+  `TrappedSignal`, `RealtimeArrival` and `RealtimeSignalNumber`. `SignalTrap`
+  takes the trapped signals as a type argument, which defaults to
+  `TrappableSignal`, so existing code is unchanged.
+- **Network reach tokens.** `requires.host` takes `net.vm` or `net.internet`
+  (at most one; both need Userspace API 146), and an internet module may add
+  `network: { hosts?, purpose? }`, which follows `requires` in `module.json`
+  (still `schemaVersion: 1`). SDK 0.0.9 and earlier refuse the new tokens and
+  the field: update the SDK and the CLI together before you install or build
+  such a module. `oxidevm wasm build` now refuses `sockets.connect` without a
+  reach token; add `net.vm` to keep what an earlier build reached. New types:
+  `NetHost`, `NetConnectOptions`, `NetConnection`, `NetworkDecl` and
+  `ModuleReach`.
+- **Module network client.** A module with a reach gets a working `host.net`
+  (`resolve`, `connect`, `resolveSync`, `connectSync`, `tls`) and `fetch` and
+  `WebSocket` globals on its own VM sockets; a module without one gets
+  "network not declared" stand-ins, and `XMLHttpRequest`, `EventSource`,
+  `WebTransport` and `RTCPeerConnection` no longer exist in module workers.
+  Failures are `NetError` (or `TypeError("fetch failed")` with a `NetError`
+  cause); new exports `NetError`, `TlsError`, `NetSyncConnection`,
+  `NetTlsSession`, `kit.net`, `kit.tls`, `kit.emscripten.network` and
+  `MODULE_EXIT.unavailable` (69). `oxidevm wasm test` reports three more
+  properties: `network-direct`, `network-declared` and `network-offline`. The
+  engine's TLS module is no longer fetched when a Userspace VM boots.
+- **`@oxidevm/sdk/wasm/testing`.** A new export, `testHost(definition, inputs)`,
+  runs a module definition through the real runner against an in-memory Linux
+  process and VM network for unit tests.
+- **`oxidevm wasm init --network none|vm|internet`.** Generated modules declare
+  their reach, carry a README "Network" section and AGENTS.md networking rules,
+  test their command through `testHost`, and (with a reach) get `src/net.ts`
+  and `test/net.test.ts`. The `--json` result of `wasm init` has a new
+  `network` field.
+- **Install review and doctor.** The consent card has a `network` row (and
+  `ConsentCard.network`), a release that widens its reach asks for consent
+  again (`+ host:net.internet`), `oxidevm wasm doctor` has a new closed check,
+  `network`, and `oxidevm wasm add --json` reports `network` for a module with
+  a reach. `oxidevm wasm build` has a new warning, `adapter-network`.
+- **Native Node signal listeners (bridge 16).** Images built by this SDK write
+  `bridge\t16` into their acceleration profile, and Rust passes it to the SDK in
+  the launch record (OXCR 19). Accelerated `node` then lets `process.on` listen
+  for SIGQUIT, SIGUSR1, SIGUSR2 and every other catchable standard signal. An
+  image built by an earlier SDK keeps bridge 15: SIGHUP, SIGINT and SIGTERM
+  listeners work as before, and a listener for another signal throws
+  `FEATURE_NOT_AVAILABLE` with reason `native-bridge-signal-listener` until the
+  image is rebuilt.
+
+## Module author fixes
+
+Fixes found while building a large interpreter module (Pyodide) against the
+private alpha, released with the module networking changes above.
+
+- **`oxidevm wasm test` starts modules.** The conformance page now serves the
+  module frame (`module-frame/` beside the runtime, engine ADR 0028) with the
+  headers its `frame.json` names, so the `integrity`, `exit-range` and
+  `network-offline` properties start the module instead of failing on HTTP 404
+  for `module-frame/broker.js`.
+- **Up to 64 upstream components.** A manifest's `upstream` list now takes up
+  to 64 entries, as many as a release carries artifacts (it took 16). An SDK
+  0.0.9 or earlier refuses a manifest with more than 16.
+- **Emscripten name lookups and read timeouts.** `kit.emscripten.networkImports(imports)`
+  is new: applied to an Emscripten program's imports before instantiation, it
+  makes `getaddrinfo` fail with `EAI_NONAME` or `EAI_AGAIN` for a name the VM
+  cannot resolve, where the program got `0.0.0.0` before (it still does without
+  it). `kit.emscripten.network` now returns an `EmscriptenNetwork` with
+  `receiveTimeout(fd, ms | null)`. `NetSyncConnection.read` takes
+  `{ timeoutMs }` (`NetReadOptions`): a read that waits longer fails with
+  `ETIMEDOUT`, `errno` 11.
+- **`data:` URLs are not network use.** The runner no longer writes a
+  `network-direct` warning on the module's standard error, and `oxidevm wasm
+  test` no longer fails `network-direct`, for `importScripts("data:...")` or a
+  policy refusal of a `data:` URL (Pyodide's classic-worker probe); remote URLs
+  are still reported. `oxidevm wasm build --check` no longer warns
+  `adapter-network` for a literal `data:` URL.
+- **Blocking reads in `testHost`.** A synchronous read on the in-memory network
+  now waits, as in the browser, instead of failing with `EAGAIN` when nothing
+  has arrived yet; a read nothing will ever answer fails with
+  `FEATURE_NOT_AVAILABLE` (`testhost-blocked-read`). `TestNet.tcp` serves raw TCP
+  services by `host:port` for blocking clients (new types `TestTcpService` and
+  `TestConnection`, with `after(ms, action)` on the network's clock).
+- **Synchronous artifact reads.** `HostArtifacts` gains `blob(name)`, the VM's
+  verified copy as a `Blob`, and `bytesSync(name)`, its bytes read without
+  awaiting, both typed by the declared artifact names and served from the
+  copies the VM already checked. A hand-written fake `HostArtifacts` in an
+  adapter's unit tests needs the two members; `testHost` serves them from the
+  artifact bytes it is given.

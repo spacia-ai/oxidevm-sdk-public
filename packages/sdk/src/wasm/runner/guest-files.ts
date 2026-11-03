@@ -3,6 +3,7 @@ import { linuxErrno } from "../kit/errno.js";
 import type { ResolvedManifest } from "../manifest-types.js";
 import type { VerifiedArtifacts } from "./artifacts.js";
 import { ModuleFailure } from "./failure.js";
+import { uniqueSuffix } from "../kit/unique.js";
 
 const ENOENT = 2, EEXIST = 17;
 const S_IFMT = 0o170000, S_IFREG = 0o100000;
@@ -41,7 +42,7 @@ async function place(files: LinuxFiles, path: string, bytes: Uint8Array, mode: n
     if ((existing.mode & S_IFMT) !== S_IFREG) throw new ModuleFailure("launch", `${path} exists and is not a regular file, so the module will not replace it`);
     if ((existing.mode & 0o7777) === mode && existing.size === BigInt(bytes.length) && sameBytes(await files.readFile(path, bytes.length + 1), bytes)) return;
   }
-  const temporary = `${path}.${crypto.randomUUID()}.tmp`;
+  const temporary = `${path}.${uniqueSuffix()}.tmp`;
   try {
     await files.writeFile(temporary, bytes);
     await files.chmod(temporary, mode);

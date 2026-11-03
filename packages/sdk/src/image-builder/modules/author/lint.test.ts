@@ -17,7 +17,7 @@ describe("lintAdapter", () => {
     ["a dynamic import", `export default async () => (await import("./late.js")).value;\n`, "dynamic import()"],
     ["importScripts", `export default () => importScripts("https://example.test/x.js");\n`, "importScripts()"],
   ])("rejects %s as an error", (_label, code, fragment) => {
-    const found = lintAdapter(code);
+    const found = lintAdapter(code).filter(item => item.code !== "adapter-network");
     expect(codes(found)).toEqual(["error:adapter-import"]);
     expect(found[0]?.message).toContain(fragment);
   });
@@ -30,7 +30,7 @@ describe("lintAdapter", () => {
 
   it("treats a dynamic import or importScripts in dependency code as a warning, since dormant branches are common there, and the author's own as an error", () => {
     const where = (line: number): { file: string; line: number } => ({ file: line === 2 ? "src/own.ts" : "node_modules/lib/index.js", line });
-    const found = lintAdapter(`const a = name => import(name);\nconst b = name => import(name);\nconst c = () => importScripts("x");\nconst d = () => importScripts("y");\nexport default () => [a, b, c, d];\n`, where);
+    const found = lintAdapter(`const a = name => import(name);\nconst b = name => import(name);\nconst c = () => importScripts("x");\nconst d = () => importScripts("y");\nexport default () => [a, b, c, d];\n`, where).filter(item => item.code !== "adapter-network");
     expect(found.map(item => `${item.severity}:${item.code}:${item.file ?? ""}`)).toEqual(["warning:adapter-import:node_modules/lib/index.js", "error:adapter-import:src/own.ts", "warning:adapter-import:node_modules/lib/index.js"]);
     expect(found[2]?.message).toContain("(2 places in this file)");
   });
@@ -102,5 +102,32 @@ describe("lintAdapter", () => {
 
   it("fails the build when the bundle does not parse", () => {
     expect(() => lintAdapter("export default (")).toThrow(BuildFailure);
+  });
+});
+
+describe("adapter-network (engine ADR 0029, N-3)", () => {
+  it("warns, with its location, about each browser network API that does not exist in the module frame, and not about fetch or WebSocket", () => {
+    const code = [
+      `const a = () => new XMLHttpRequest();`,
+      `const b = () => new EventSource("/events");`,
+      `const c = () => navigator.sendBeacon("/log", "x");`,
+      `const d = () => new RTCPeerConnection();`,
+      `const e = () => new WebTransport("https://example.test/");`,
+      `const f = () => importScripts("https://cdn.example.test/lib.js");`,
+      `const g = () => import("https://cdn.example.test/lib.mjs");`,
+      `const h = () => fetch("https://example.test/") && new WebSocket("wss://example.test/");`,
+      `const i = url => import(url.startsWith("blob:") ? url : "blob:x");`,
+      // A data: URL carries its bytes itself (Pyodide probes for a classic worker this way): not a network use.
+      `const j = () => importScripts("data:text/javascript,") && import("DATA:text/javascript,export{}");`,
+      `export default () => [a, b, c, d, e, f, g, h, i, j];`,
+    ].join("\n");
+    const network = lintAdapter(code).filter(item => item.code === "adapter-network");
+    expect(network.map(item => [item.severity, item.line])).toEqual([["warning", 1], ["warning", 2], ["warning", 3], ["warning", 4], ["warning", 5], ["warning", 6], ["warning", 7]]);
+    expect(network.map(item => item.message.split(" ")[0])).toEqual(["XMLHttpRequest", "EventSource", "navigator.sendBeacon", "RTCPeerConnection", "WebTransport", "importScripts", "import()"]);
+    expect(network.every(item => item.file === "adapter.mjs" && item.column !== undefined)).toBe(true);
+  });
+
+  it("leaves a local binding with one of those names alone", () => {
+    expect(lintAdapter(`const XMLHttpRequest = class {};\nexport default () => new XMLHttpRequest();\n`)).toEqual([]);
   });
 });

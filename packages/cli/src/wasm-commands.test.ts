@@ -78,7 +78,7 @@ describe("oxidevm wasm add", () => {
     expect(declined.stderr).toContain("process.spawn");
     expect(declined.stderr).toContain("/usr/bin/python3");
     expect(declined.stderr).toContain("copyleft");
-    expect(declined.stderr).toContain("it is not sandboxed from your application");
+    expect(declined.stderr).toContain("it is not a sandbox for the programs that run it");
     expect((await readdir(dir)).sort()).toEqual(["dist"]);
     const accepted = await run(dir, ["wasm", "add", "file:dist"], true);
     expect(accepted.code).toBe(0);

@@ -2,7 +2,9 @@ import type { FileDescriptor, LinuxSyncFiles } from "../../../js-process-types.j
 import { descriptor, protocol, Reader, viewBytes, writeBytes, type LinuxOperation } from "../../js-process/codec.js";
 import { files } from "../../js-process/file-operations.js";
 import { integer } from "../../decode.js";
-import { decodeNativeFrame, encodeNativeFrame, NATIVE_MAX_FRAME, type NativeFrame } from "./codec.js";
+import { decodeNativeFrame, encodeNativeFrame, NATIVE_FRAME_VERSION, NATIVE_MAX_FRAME, type NativeFrame } from "./codec.js";
+import type { NativeBridgeVersion } from "../../native-bridge-version.js";
+import { VMError } from "../../errors.js";
 import { NativeValues } from "./values.js";
 import { decodeNativeMetadata, encodeNativeString } from "./strings.js";
 import { nativeMapSize, nativeSetSize } from "./collection-size.js";
@@ -12,7 +14,7 @@ const arrayFrom = Array.from;
 const Number = globalThis.Number, BigInt = globalThis.BigInt, Uint8Array = globalThis.Uint8Array;
 
 type NativeInvocation = "load" | "call" | "finalize" | "claim-callback" | "retire-callback" | "release-buffer"
-  | "cleanup" | "finalize-environments" | "retire-environment" | "create-environment" | "raise-signal";
+  | "cleanup" | "finalize-environments" | "retire-environment" | "create-environment" | "raise-signal" | "watch-signal" | "unwatch-signal";
 type NativeClient = { call<T>(operation: LinuxOperation<T>, signal?: AbortSignal): Promise<T> };
 type PendingInvocation = { readonly operation: NativeInvocation; completion: NativeFrame | undefined };
 const pending = new Set<bigint>(), references = new Map<bigint, boolean>(), loading = new Map<bigint, string>(), invocations = new Map<number, PendingInvocation>(), apply = Reflect.apply;
@@ -21,6 +23,17 @@ const referenceHas = Reflect.get(references, "has"), referenceSet = Reflect.get(
 const referenceNext = Reflect.get(apply(referenceValues, references, []), "next");
 const loadingGet = Reflect.get(loading, "get"), loadingSet = Reflect.get(loading, "set"), loadingDelete = Reflect.get(loading, "delete");
 const invocationGet = Reflect.get(invocations, "get"), invocationSet = Reflect.get(invocations, "set"), invocationDelete = Reflect.get(invocations, "delete");
+
+/** The signals bridge 15 always catches and delivers: SIGHUP, SIGINT and SIGTERM. Plain comparisons, so application code cannot reach them. */
+function bridge15Signal(signal: number): boolean { return signal === 1 || signal === 2 || signal === 15; }
+/** Standard signals Node lets JavaScript listen to: 1-31 but KILL and STOP, which cannot be caught, and the synchronous faults. */
+function listenable(signal: number): boolean {
+  return signal >= 1 && signal <= 31 && signal % 1 === 0 && signal !== 4 && signal !== 5 && signal !== 7 && signal !== 8 && signal !== 9 && signal !== 11 && signal !== 19;
+}
+/** Whether the helper of `version` can deliver `signal` to JavaScript. */
+function deliverable(version: NativeBridgeVersion, signal: number): boolean {
+  return version === 15 ? bridge15Signal(signal) : listenable(signal);
+}
 
 export interface NativeTransportEvent {
   readonly sequence: number;
@@ -41,6 +54,8 @@ export class NativeBridge {
   #sequence = 0;
   #nativeSequence = 0;
   #signalSequence = 0;
+  readonly #version: NativeBridgeVersion;
+  #refused = false;
   #revision = 0;
   #closed = false;
   #watching: AbortController | undefined;
@@ -49,9 +64,11 @@ export class NativeBridge {
   #failure: Error | undefined;
   #deliveringException: { readonly value: unknown } | undefined;
   constructor(readonly client: NativeClient, readonly files: Pick<LinuxSyncFiles, "read" | "writeAll">, input: number, output: number, readonly events: {
-    changed(): void; failed(error: unknown): void; uncaught(error: unknown, deliver: (handler: () => void) => void): void; signal?(signal: 1 | 2 | 15): void; trace?(frame: NativeFrame): void; transport?(event: NativeTransportEvent): void; readonly environment?: number; readonly runtime?: "node" | "bun";
+    changed(): void; failed(error: unknown): void; uncaught(error: unknown, deliver: (handler: () => void) => void): void; signal?(signal: number): void; trace?(frame: NativeFrame): void; transport?(event: NativeTransportEvent): void; readonly environment?: number; readonly runtime?: "node" | "bun";
+    /** The host helper's bridge version from the image's acceleration profile (OXCR 19); the newest when absent. */
+    readonly bridgeVersion?: NativeBridgeVersion;
   }) {
-    this.#input = descriptor(input); this.#output = descriptor(output);
+    this.#input = descriptor(input); this.#output = descriptor(output); this.#version = events.bridgeVersion ?? NATIVE_FRAME_VERSION;
     this.values = new NativeValues((callback, receiver, target, args) => this.#call("call", () => {
       const receiverId = this.values.add(receiver), targetId = target === undefined ? 0n : this.values.add(target), arrayLike = { __proto__: null, length: args.length + 3 };
       return arrayFrom(arrayLike, (_value, index) => index === 0 ? callback : index === 1 ? receiverId : index === 2 ? targetId : this.values.add(args[index - 3]));
@@ -80,7 +97,25 @@ export class NativeBridge {
       return arrayFrom(arrayLike, (_value, index) => BigInt(integer(channels[index], "native channel descriptor", 0, 0x7fff_ffff)));
     }), "native TID", 1, 0x7fff_ffff);
   }
-  raiseSignal(signal: 1 | 2 | 9 | 15): void { this.#call("raise-signal", () => [BigInt(signal)]); }
+  /** The default action of `signal`, which nothing listens to any more (as Node); bridge 15 knows SIGHUP, SIGINT, SIGTERM and SIGKILL only. */
+  raiseSignal(signal: number): void {
+    if (signal !== 9 && !deliverable(this.#version, signal)) protocol(`Bridge ${String(this.#version)} cannot apply signal ${String(signal)}'s default action`);
+    this.#call("raise-signal", () => [BigInt(signal)]);
+  }
+  /**
+   * A JavaScript listener for `signal` came or went. Bridge 16 installs or removes the helper's handler (watch-signal and
+   * unwatch-signal; SIGINT and SIGTERM stay caught) and reports a refusal as the result's EINVAL status. Bridge 15 always
+   * catches SIGHUP, SIGINT and SIGTERM and has no handler for anything else, so a listener for another signal is refused.
+   */
+  watchSignal(signal: number, watching: boolean): void {
+    if (!listenable(signal)) throw new VMError("INVALID_ARGUMENT", `Signal ${String(signal)} cannot be listened to`, { reason: "native-signal-refused", signal });
+    if (this.#version === 15) {
+      if (bridge15Signal(signal)) return;
+      throw new VMError("FEATURE_NOT_AVAILABLE", `This image's native Node helper (bridge 15) delivers only SIGHUP, SIGINT and SIGTERM; rebuild the image with this SDK to listen for signal ${String(signal)}`, { reason: "native-bridge-signal-listener", signal, bridgeVersion: 15 });
+    }
+    this.#call(watching ? "watch-signal" : "unwatch-signal", () => [BigInt(signal)]);
+    if (this.#refused) { this.#refused = false; throw new VMError("INVALID_ARGUMENT", `The native Node helper refused a listener for signal ${String(signal)}`, { reason: "native-signal-refused", signal }); }
+  }
   #readAll(count: number): Uint8Array<ArrayBuffer> {
     integer(count, "native read length", 0, NATIVE_MAX_FRAME);
     const result = new Uint8Array(count); let offset = 0;
@@ -106,10 +141,10 @@ export class NativeBridge {
   }
   #read(): NativeFrame {
     const length = new Reader(this.#readAll(4)).u32();
-    return decodeNativeFrame(this.#readAll(integer(length, "native frame length", 48, NATIVE_MAX_FRAME)));
+    return decodeNativeFrame(this.#readAll(integer(length, "native frame length", 48, NATIVE_MAX_FRAME)), this.#version);
   }
   #write(frame: NativeFrame): void {
-    const bytes = encodeNativeFrame(frame), started = this.events.transport === undefined ? 0 : performance.now();
+    const bytes = encodeNativeFrame(frame, this.#version), started = this.events.transport === undefined ? 0 : performance.now();
     this.files.writeAll(this.#output, bytes);
     this.events.transport?.({ sequence: frame.sequence, operation: "write", bytes: bytes.byteLength, milliseconds: performance.now() - started });
   }
@@ -147,8 +182,9 @@ export class NativeBridge {
       this.events.changed();
     } else if (frame.kind === 8) {
       const signal = frame.args[0];
-      if (frame.operation !== "signal" || frame.sequence <= this.#signalSequence || frame.args.length !== 1 || frame.status !== 0 || frame.bytes.byteLength !== 0 || (signal !== 1n && signal !== 2n && signal !== 15n) || this.events.signal === undefined) protocol("Invalid or stale native process signal");
-      this.#signalSequence = frame.sequence; this.events.signal(signal === 1n ? 1 : signal === 2n ? 2 : 15);
+      const number = signal === undefined || signal > 64n ? 0 : Number(signal);
+      if (frame.operation !== "signal" || frame.sequence <= this.#signalSequence || frame.args.length !== 1 || frame.status !== 0 || frame.bytes.byteLength !== 0 || !deliverable(this.#version, number) || this.events.signal === undefined) protocol("Invalid or stale native process signal");
+      this.#signalSequence = frame.sequence; this.events.signal(number);
     } else protocol("Unexpected native frame outside invocation");
   }
   #call(name: NativeInvocation, argumentsForScope: () => readonly bigint[], bytes = new Uint8Array()): unknown {
@@ -177,8 +213,10 @@ export class NativeBridge {
           if (frame.kind !== 2) { this.#service(frame); continue; }
           this.events.trace?.(frame);
           const target = apply(invocationGet, this.#invocations, [frame.sequence]);
-          if (target === undefined || target.completion !== undefined || frame.operation !== target.operation || frame.status !== 0 || frame.args.length !== 1 || frame.bytes.byteLength !== 0) protocol("Stale native invocation completion");
-          target.completion = frame;
+          // Bridge 16 answers a refused signal listener with EINVAL (22) in the result's status; every other result is 0.
+          const refusal = frame.status === 22 && (frame.operation === "watch-signal" || frame.operation === "unwatch-signal");
+          if (target === undefined || target.completion !== undefined || frame.operation !== target.operation || frame.status !== 0 && !refusal || frame.args.length !== 1 || frame.bytes.byteLength !== 0) protocol("Stale native invocation completion");
+          target.completion = frame; if (refusal) this.#refused = true;
         }
       } catch (error) {
         this.#failure = error instanceof Error ? error : new Error("Native invocation failed", { cause: error });

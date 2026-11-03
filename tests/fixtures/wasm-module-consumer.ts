@@ -55,7 +55,8 @@ export const service = defineModule({
     const database = openDatabase(host.options.dataDir);
     const errno: number = host.kit.errno.toEmscripten(2);
     const gate: Gate = host.kit.gate();
-    void [strict, packages, host.artifacts.url("pglite.wasm"), errno, gate, host.stdio.stdout];
+    const copy: Blob = host.artifacts.blob("pglite.wasm"), installed: Uint8Array<ArrayBuffer> = host.artifacts.bytesSync("pglite.wasm");
+    void [strict, packages, host.artifacts.url("pglite.wasm"), copy, installed, errno, gate, host.stdio.stdout];
     return {
       info: async () => ({ rows: (await database.query("select 1")).length }),
       protocols: {
@@ -78,6 +79,8 @@ export function authorContract(): void {
       void host.files;
       // @ts-expect-error artifact names are checked against the manifest
       void host.artifacts.url("unknown.wasm");
+      // @ts-expect-error the synchronous read checks the name too
+      void host.artifacts.bytesSync("unknown.wasm");
       return { main: () => 0 };
     },
   });

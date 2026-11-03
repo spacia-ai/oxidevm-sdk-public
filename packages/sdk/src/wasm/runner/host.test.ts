@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { Capability, ProcessSignals } from "../capabilities.js";
 import type { HostArtifacts } from "../define.js";
 import { buildHost } from "./host.js";
-import { fakeLinux } from "./linux.test-support.js";
+import { fakeLinux } from "../testing/memory-linux.js";
+import { MemoryNetwork, PASS_THROUGH_TLS } from "../net/memory-network.js";
+import { createModuleNetwork } from "../net/surface.js";
 
-const artifacts: HostArtifacts = { compile: () => Promise.reject(new Error("unused")), bytes: () => Promise.reject(new Error("unused")), url: name => `https://app.test/${name}` };
-const signals: ProcessSignals = Object.freeze({ trap: () => Promise.reject(new Error("unused")), raise: () => Promise.reject(new Error("unused")) });
+const artifacts: HostArtifacts = { compile: () => Promise.reject(new Error("unused")), bytes: () => Promise.reject(new Error("unused")), blob: () => { throw new Error("unused"); }, bytesSync: () => { throw new Error("unused"); }, url: name => `https://app.test/${name}` };
+const signals: ProcessSignals = Object.freeze({ trap: () => Promise.reject(new Error("unused")), raise: () => Promise.reject(new Error("unused")), block: () => Promise.reject(new Error("unused")), unblock: () => Promise.reject(new Error("unused")), pending: () => Promise.reject(new Error("unused")) });
 const build = (capabilities: readonly Capability[], lines: string[] = []) => {
   const linux = fakeLinux({ args: [] });
   const built = buildHost({ linux, capabilities, options: { mode: "fast" }, artifacts, signal: new AbortController().signal, signals });
@@ -35,6 +37,29 @@ describe("host construction", () => {
     expect(memberNames(host, "sockets")).toEqual(["address", "close", "connect", "read", "shutdown", "socket", "write"]);
     expect(memberNames(host, "process")).toEqual(["cwd", "info", "signal", "spawn", "wait"]);
     expect(memberNames(build(["process.info"]).host, "process")).toEqual(["cwd", "info"]);
+  });
+
+  it("gives host.net to a module with a reach: the module process's own VM network, local-only until the VM is connected", async () => {
+    for (const capability of ["net.vm", "net.internet"] as const) {
+      const reach = capability === "net.vm" ? "vm" : "internet", network = new MemoryNetwork(reach);
+      network.file("/etc/hosts", "10.0.2.15 vm\n");
+      network.file("/etc/resolv.conf", "nameserver 10.0.2.3\n");
+      const net = createModuleNetwork({ ports: { sockets: network.sockets(), sync: network.syncSockets(), tls: null }, reach, signal: new AbortController().signal, tls: PASS_THROUGH_TLS }).host;
+      const linux = fakeLinux({ args: [] });
+      const { host } = buildHost({ linux, capabilities: [capability], options: {}, artifacts, signal: new AbortController().signal, signals, ...(net === undefined ? {} : { net }) });
+      expect(Object.keys(host).sort()).toEqual([...BASE, "net"].sort());
+      expect(memberNames(host, "net")).toEqual(["connect", "connectSync", "resolve", "resolveSync", "tls"]);
+      const member: unknown = Reflect.get(host, "net");
+      const call = (name: string, ...args: unknown[]): Promise<unknown> => Promise.resolve().then((): unknown => {
+        const method: unknown = typeof member === "object" && member !== null ? Reflect.get(member, name) : undefined;
+        if (typeof method !== "function") throw new Error(`no ${name}`);
+        const result: unknown = Reflect.apply(method, member, args);
+        return result;
+      });
+      expect(await call("resolve", "vm")).toEqual(["10.0.2.15"]);
+      await expect(call("connect", { host: "93.184.215.14", port: 443 })).rejects.toMatchObject(capability === "net.vm" ? { code: "EACCES", reason: "module-network-reach" } : { code: "EPERM", reason: "vm-local-only" });
+    }
+    expect(build(["sockets.connect"]).members).not.toContain("net");
   });
 
   it("freezes the host and its descriptor record so an adapter cannot widen its own access", () => {

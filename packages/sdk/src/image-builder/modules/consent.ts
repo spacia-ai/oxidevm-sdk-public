@@ -6,6 +6,7 @@ import { moduleCommandPath } from "../../runtime/module-command-names.js";
 import type { ResolvedManifest } from "../../wasm/manifest-types.js";
 import { isServiceDecl } from "../../wasm/manifest.js";
 import type { Resolution } from "./resolve.js";
+import { moduleReach, type ModuleReach } from "../../wasm/reach.js";
 
 /** Everything the person adding a module is asked to accept, taken from `module.json` and never from prose. */
 export interface ConsentCard {
@@ -22,6 +23,11 @@ export interface ConsentCard {
   /** Commands an application can turn on per VM, each with the path any program there runs it as (engine ADR 0027). */
   readonly commands: readonly { readonly name: string; readonly path: string }[];
   readonly guestFiles: readonly string[];
+  /**
+   * How far the module reaches on the network (engine ADR 0029), the hosts it discloses it contacts by default and why
+   * (disclosure only, never enforced), and whether programs it starts follow the VM's own policy instead.
+   */
+  readonly network: { readonly reach: ModuleReach; readonly hosts: readonly string[]; readonly purpose?: string; readonly children: boolean };
   readonly durablePaths: readonly string[];
   readonly options: readonly string[];
   readonly artifacts: readonly { readonly name: string; readonly bytes: number }[];
@@ -72,6 +78,10 @@ export function consentCard(resolution: Resolution, source: ModuleSource): Conse
     endpoints: isServiceDecl(manifest) ? Object.entries(manifest.expose).map(([name, endpoint]) => `${name}: ${endpoint.kind === "unix" ? endpoint.path : `127.0.0.1:${String(endpoint.port)}`} (${endpoint.protocol})`) : [],
     commands: (manifest.commands ?? []).map(name => ({ name, path: moduleCommandPath(name) })),
     guestFiles: (manifest.guestFiles ?? []).map(file => file.to),
+    network: {
+      reach: moduleReach(manifest.requires.host), hosts: manifest.network?.hosts ?? [],
+      ...(manifest.network?.purpose === undefined ? {} : { purpose: manifest.network.purpose }), children: manifest.requires.host.includes("process.spawn"),
+    },
     durablePaths: manifest.state?.durable ?? [],
     options: Object.keys(manifest.options ?? {}),
     artifacts: manifest.artifacts.map(artifact => ({ name: artifact.name, bytes: artifact.bytes })),

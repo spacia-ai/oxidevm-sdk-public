@@ -1,4 +1,6 @@
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+
+afterEach(() => { vi.unstubAllGlobals(); });
 import type { FileDescriptor, LinuxFileStat } from "../../js-process-types.js";
 import { LinuxError, descriptor } from "../../runtime/js-process/codec.js";
 import { createDirectoryAtomically, syncPath, type AtomicDirectory } from "./directory.js";
@@ -71,4 +73,13 @@ it("closes the descriptor even when the flush fails, and reports the failure", (
   expect(() => { syncPath(fs, "/workspace/file"); }).toThrow(LinuxError);
   expect(open.size).toBe(0);
   expect(log).toEqual(["open /workspace/file 0", "fsync /workspace/file", "close /workspace/file"]);
+});
+
+it("names a failed staging directory without crypto.randomUUID, which a module worker of an opaque origin lacks", async () => {
+  const { fs, paths } = memoryFs(["/workspace/_oxidevm/data-staging"]);
+  const random = globalThis.crypto;
+  vi.stubGlobal("crypto", { getRandomValues: (array: Uint8Array<ArrayBuffer>) => random.getRandomValues(array) });
+  const withoutUnique: AtomicDirectory = { destination: "/workspace/data", staging: "/workspace/_oxidevm/data-staging", populate: () => undefined };
+  await expect(createDirectoryAtomically(fs, withoutUnique)).resolves.toBe("created");
+  expect([...paths].filter(path => path.includes("-failed-"))).toEqual([expect.stringMatching(/^\/workspace\/_oxidevm\/data-staging-failed-[0-9a-f]{32}$/u)]);
 });

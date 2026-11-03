@@ -26,7 +26,9 @@ function code(run: () => unknown): string {
 }
 
 it("rejects the previous frame protocol before it can drop trace requests", () => {
-  expect(FRAME_PROTOCOL_VERSION).toBe(16);
+  expect(FRAME_PROTOCOL_VERSION).toBe(17);
+  // Protocol 17 adds module operations (ADR 0028); a protocol 16 frame would refuse them.
+  expect(code(() => negotiateFrameProtocol({ kind: "oxidevm-runtime-ready", protocol: { min: 16, max: 16 } }))).toBe("FEATURE_NOT_AVAILABLE");
   expect(code(() => negotiateFrameProtocol({ kind: "oxidevm-runtime-ready", protocol: { min: 11, max: 11 } }))).toBe("FEATURE_NOT_AVAILABLE");
   // Protocol 16 adds acceleration notices; a protocol 15 frame would reject the request.
   expect(code(() => negotiateFrameProtocol({ kind: "oxidevm-runtime-ready", protocol: { min: 15, max: 15 } }))).toBe("FEATURE_NOT_AVAILABLE");
@@ -60,7 +62,7 @@ describe("frame handshake", () => {
     // A frame of the previous release, which speaks only protocol 1, is refused before connecting.
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 1, max: 1 } }))).toBe("FEATURE_NOT_AVAILABLE");
     // Protocol 6 preserves byte progress and distinguishes checkpoint downloads.
-    expect(FRAME_PROTOCOL_VERSION).toBe(16);
+    expect(FRAME_PROTOCOL_VERSION).toBe(17);
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 9, max: 9 } }))).toBe("FEATURE_NOT_AVAILABLE");
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 8, max: 8 } }))).toBe("FEATURE_NOT_AVAILABLE");
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 7, max: 7 } }))).toBe("FEATURE_NOT_AVAILABLE");
@@ -217,4 +219,33 @@ it("frame protocol 15 carries common starts and Userspace cold-workspace details
   const start = { kind: "booted", reason: "first-start", workspaceDetails: details };
   expect(decodeVMDescription({ ...common, start })).toMatchObject({ mode: "userspace", start });
   expect(code(() => decodeVMDescription({ ...common, start: { ...start, workspaceDetails: { ...details, state: "bad" } } }))).toBe("PROTOCOL_ERROR");
+});
+
+describe("module operations (frame protocol 17, ADR 0028)", () => {
+  const key = (index: number) => `${index.toString(16).padStart(64, "0")}:4`;
+  const files = Object.fromEntries(Array.from({ length: 66 }, (_, index) => [key(index), new Blob([Uint8Array.of(1, 2, 3, 4)])]));
+  it("module.spawn carries a description, at most 66 Blobs and the process's own arguments, with exact fields", () => {
+    const io = new MessageChannel();
+    try {
+      const spawn = { v: FRAME_PROTOCOL_VERSION, id: 4, type: "module.spawn", descriptor: "{\"v\":1}", files, args: ["in.md"], cwd: "/workspace", env: { MODE: "fast" }, io: io.port1 };
+      expect(decodeFrameMessage(spawn)).toEqual({ id: 4, type: "module.spawn", descriptor: "{\"v\":1}", files, args: ["in.md"], cwd: "/workspace", env: { MODE: "fast" }, io: io.port1 });
+      expect(decodeFrameMessage({ ...spawn, files: {}, args: undefined, cwd: undefined, env: undefined })).toMatchObject({ type: "module.spawn", files: {} });
+      for (const invalid of [
+        { extra: 1 }, { v: FRAME_PROTOCOL_VERSION - 1 }, { files: { ...files, [key(66)]: new Blob([]) } }, { files: { "not-a-key": new Blob([]) } },
+        { descriptor: "x".repeat(512 * 1024 + 1) }, { io: null }, { args: [1] }, { env: { A: 1 } }, { worker: "https://example.test/runner.js" },
+      ]) expect(() => decodeFrameMessage({ ...spawn, ...invalid }), JSON.stringify(Object.keys(invalid))).toThrow(VMError);
+    } finally { io.port1.close(); io.port2.close(); }
+  });
+
+  it("module.files names at most 66 pins, and module.commands carries exactly one module-commands request", () => {
+    const pin = { sha256: "c".repeat(64), bytes: 9 };
+    expect(decodeFrameMessage({ v: FRAME_PROTOCOL_VERSION, id: 5, type: "module.files", pins: [pin] })).toEqual({ id: 5, type: "module.files", pins: [pin] });
+    expect(() => decodeFrameMessage({ v: FRAME_PROTOCOL_VERSION, id: 5, type: "module.files", pins: Array.from({ length: 67 }, () => pin) })).toThrow(VMError);
+    const enable = { operation: "enable", descriptor: "{}", commands: ["python"], concurrency: 4, files: { [key(1)]: new Blob([Uint8Array.of(1, 2, 3, 4)]) } };
+    expect(decodeFrameMessage({ v: FRAME_PROTOCOL_VERSION, id: 6, type: "module.commands", request: enable })).toEqual({ id: 6, type: "module.commands", request: enable });
+    expect(decodeFrameMessage({ v: FRAME_PROTOCOL_VERSION, id: 7, type: "module.commands", request: { operation: "status", registration: 2 } })).toMatchObject({ request: { operation: "status", registration: 2 } });
+    for (const request of [{ ...enable, extra: 1 }, { ...enable, files: undefined }, { operation: "toggle", registration: 1 }, { operation: "status", registration: 0 }]) {
+      expect(() => decodeFrameMessage({ v: FRAME_PROTOCOL_VERSION, id: 8, type: "module.commands", request })).toThrow(VMError);
+    }
+  });
 });

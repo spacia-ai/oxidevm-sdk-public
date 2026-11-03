@@ -1,67 +1,107 @@
-import type { RunnerVerifiedFile } from "../../js-process/launch.js";
-import type { LaunchDescriptor } from "../../../wasm/runner/descriptor.js";
-import { ADAPTER_FILE, loadPinned, type Fetcher } from "../../../wasm/runner/pinned.js";
+import type { RunnerHostLaunch, RunnerVerifiedFile } from "../../js-process/launch.js";
+import { moduleReach, type ModuleReach } from "../../../wasm/reach.js";
+import { parseLaunchArgument, type LaunchDescriptor } from "../../../wasm/runner/descriptor.js";
+import { ADAPTER_FILE } from "../../../wasm/runner/pinned.js";
+import { copyKey } from "../../protocol/userspace-module-files.js";
+import type { CopyHolder, CopyRequest, ModuleCopies } from "./module-copies.js";
+import { MODULE_PREREQUISITE_REASON, takeModuleLease, type LeaseLocks, type ModuleLease } from "./module-leases.js";
+import { VMError } from "../../errors.js";
+import { startsWithTls, TLS_FILE, tlsPin } from "../../../wasm/net/tls-file.js";
+import type { ResolvedManifest } from "../../../wasm/manifest-types.js";
 
 /**
- * Verify-once copies of an enabled module's files (engine ADR 0027). Turning a module's commands on fetches every
- * pinned file once, checks its size and sha256, and keeps it as an immutable Blob; each WebAssembly core module is
- * compiled once. Every run of the commands uses these copies, so a file that changes on the server afterwards has no
- * effect, and nothing is fetched or hashed again until the commands are turned off and on.
+ * A module start's view of the VM's verified copies (engine ADR 0028): the files a launch description pins, held for one
+ * holder in the VM's store (`module-copies.ts`), typed for their blob: URLs. Every run of the module uses these copies,
+ * so a file that changes on the server afterwards has no effect.
  */
 
 export interface VerifiedModuleFiles {
   /** The adapter bundle, typed as JavaScript so the runner can import it from a blob: URL. */
   readonly adapter: Blob;
   readonly artifacts: Readonly<Record<string, RunnerVerifiedFile>>;
-  /** What the copies hold: every pin's size. */
-  readonly bytes: number;
+  /** The engine's TLS module, for a module with a network reach (engine ADR 0029); null otherwise. */
+  readonly tls: RunnerVerifiedFile | null;
 }
+
+/** Reads the files the VM lacks, by key; nothing else. */
+export type ModuleFileSupply = (files: readonly CopyRequest[], signal: AbortSignal) => Promise<ReadonlyMap<string, Blob>>;
 
 export interface ModuleFileSources {
-  readonly fetch: Fetcher;
-  /** Compiles a WebAssembly core module; the browser's compiler unless a test supplies one. */
-  readonly compile?: (bytes: Uint8Array<ArrayBuffer>) => Promise<WebAssembly.Module>;
+  readonly copies: ModuleCopies;
+  readonly supply: ModuleFileSupply;
 }
 
-/** The bytes a release's pins claim. A verified copy is exactly that large, so budgets are checked before any fetch. */
-export function pinnedBytes(descriptor: LaunchDescriptor): number {
-  return Object.values(descriptor.artifacts).reduce((total, pin) => total + pin.bytes, descriptor.adapter.bytes);
+/** The files of a launch description, the adapter first, each with the name failures report in `detail.file`. */
+export function moduleFileRequests(descriptor: LaunchDescriptor): CopyRequest[] {
+  return [{ file: ADAPTER_FILE, pin: descriptor.adapter }, ...Object.entries(descriptor.artifacts).map(([file, pin]) => ({ file, pin }))];
 }
 
-/** A WebAssembly core module (magic and version 1). Component binaries carry another version and are never compiled. */
-const CORE_MODULE = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00] as const;
-
-function isCoreModule(bytes: Uint8Array): boolean {
-  return bytes.length >= CORE_MODULE.length && CORE_MODULE.every((byte, index) => bytes[index] === byte);
+/** The engine files a module starts with beyond its own: the TLS module when it has a network reach (engine ADR 0029). */
+export function engineFileRequests(descriptor: LaunchDescriptor): CopyRequest[] {
+  return startsWithTls(moduleReach(descriptor.manifest.requires.host)) ? [{ file: TLS_FILE, pin: tlsPin() }] : [];
 }
 
 /** The media types the browser checks when a copy is loaded through its blob: URL: module scripts and streaming compiles. */
-function mediaType(name: string): string {
+export function mediaType(name: string): string {
   if (name.endsWith(".wasm")) return "application/wasm";
   return /\.(?:m|c)?js$/u.test(name) ? "text/javascript" : "";
 }
 
 /**
- * A compile failure is not the enable's failure: the module may never compile that file, and an adapter that does gets
- * the same error from the verified bytes at run time, as it would when the application starts it.
+ * Holds every file of `descriptor` for `holder`: the budget is checked from the pins first, then the files the VM lacks
+ * are supplied and checked once. A file that cannot be read is CORE_LOAD_FAILED `wasm-module-artifact` and one that does
+ * not match its pin GUEST_CRASH `wasm-module-integrity`, each naming the file in `detail.file`; the holder then holds
+ * nothing new.
  */
-async function compiledOrNull(compile: NonNullable<ModuleFileSources["compile"]>, bytes: Uint8Array<ArrayBuffer>): Promise<WebAssembly.Module | null> {
-  try { return await compile(bytes); } catch { return null; }
+export async function holdModuleFiles(descriptor: LaunchDescriptor, holder: CopyHolder, sources: ModuleFileSources, signal: AbortSignal): Promise<VerifiedModuleFiles> {
+  const own = moduleFileRequests(descriptor), engine = engineFileRequests(descriptor), requests = [...own, ...engine], { copies } = sources;
+  copies.assertFits(requests);
+  const lacking = new Set<string>(copies.missing(requests.map(request => request.pin)));
+  const supplied = await sources.supply(requests.filter(request => lacking.has(copyKey(request.pin))), signal);
+  const held = await copies.hold(holder, requests, supplied, signal);
+  const copyOf = (request: CopyRequest): Blob => held.get(copyKey(request.pin)) ?? new Blob();
+  const [adapter, ...artifacts] = own, tls = engine[0];
+  const files: Record<string, RunnerVerifiedFile> = {};
+  // Compiled modules never cross the module frame boundary: its broker compiles each core module once per VM (ADR 0028).
+  for (const request of artifacts) files[request.file] = Object.freeze({ blob: new Blob([copyOf(request)], { type: mediaType(request.file) }), module: null });
+  return Object.freeze({
+    adapter: new Blob([adapter === undefined ? new Blob() : copyOf(adapter)], { type: "text/javascript" }), artifacts: Object.freeze(files),
+    tls: tls === undefined ? null : Object.freeze({ blob: new Blob([copyOf(tls)], { type: "application/wasm" }), module: null }),
+  });
+}
+
+/** The files a page supplied with a start or an enable, by key, as the store takes them. */
+export function suppliedFiles(files: Readonly<Record<string, Blob>>): ModuleFileSupply {
+  const supplied: ReadonlyMap<string, Blob> = new Map(Object.entries(files));
+  return () => Promise.resolve(supplied);
 }
 
 /**
- * Fetches and checks the adapter and every artifact once, in turn, so at most one file is in flight. A file that cannot be
- * fetched is CORE_LOAD_FAILED `wasm-module-artifact` and one that does not match its pin GUEST_CRASH
- * `wasm-module-integrity`, each naming the file in `detail.file`; nothing is kept then.
+ * Refuses a module the module frame cannot run (ADR 0028): the frame's opaque origin has no IndexedDB and no Web Locks,
+ * so a manifest whose `requires.browser` names either is FEATURE_NOT_AVAILABLE `wasm-module-prerequisite` before anything
+ * is read or started.
  */
-export async function verifyModuleFiles(descriptor: LaunchDescriptor, sources: ModuleFileSources, signal: AbortSignal): Promise<VerifiedModuleFiles> {
-  const compile = sources.compile ?? (bytes => WebAssembly.compile(bytes));
-  const adapter = new Blob([await loadPinned(descriptor.adapter, "The adapter bundle", ADAPTER_FILE, sources.fetch, signal)], { type: "text/javascript" });
-  const artifacts: Record<string, RunnerVerifiedFile> = {};
-  for (const [name, pin] of Object.entries(descriptor.artifacts)) {
-    const bytes = await loadPinned(pin, `Artifact ${name}`, name, sources.fetch, signal);
-    const module = isCoreModule(bytes) ? await compiledOrNull(compile, bytes) : null;
-    artifacts[name] = Object.freeze({ blob: new Blob([bytes], { type: mediaType(name) }), module });
-  }
-  return Object.freeze({ adapter, artifacts: Object.freeze(artifacts), bytes: pinnedBytes(descriptor) });
+export function assertRunsInModuleFrame(manifest: ResolvedManifest): void {
+  const missing = (manifest.requires.browser ?? []).filter(feature => feature === "indexeddb" || feature === "web-locks");
+  if (missing.length > 0) throw new VMError("FEATURE_NOT_AVAILABLE", `${manifest.id} needs ${missing.join(" and ")}, which isolated module workers do not have`, { reason: MODULE_PREREQUISITE_REASON, missing: missing.map(feature => `browser feature ${feature}`) });
+}
+
+/** `spawnModule`'s start before admission: the runner's launch, and the workspace lease of an exclusive service. */
+/** `spawnModule`'s start: the runner's launch, an exclusive service's lease, and the network reach Rust gives the process (engine ADR 0029). */
+export interface ModuleStart { readonly launch: RunnerHostLaunch; readonly lease: ModuleLease | undefined; readonly reach: ModuleReach }
+
+/**
+ * Prepares `spawnModule`'s start (engine ADR 0028). An exclusive service's workspace lease comes first, so a busy one is
+ * refused before any file is read; then the description's copies are held for the VM's spawn holder, which keeps them
+ * until the VM goes, so the next start supplies nothing. A description that does not parse is INVALID_ARGUMENT. On any
+ * failure the lease is released.
+ */
+export async function prepareModuleStart(descriptor: string, files: Readonly<Record<string, Blob>>, sources: Omit<ModuleFileSources, "supply"> & { readonly locks: LeaseLocks | undefined }, signal: AbortSignal): Promise<ModuleStart> {
+  const parsed = parseLaunchArgument(descriptor);
+  assertRunsInModuleFrame(parsed.manifest);
+  const lease = await takeModuleLease(parsed, sources.locks);
+  try {
+    const copies = await holdModuleFiles(parsed, { kind: "spawn" }, { copies: sources.copies, supply: suppliedFiles(files) }, signal);
+    return { launch: { kind: "host", descriptor, adapter: copies.adapter, artifacts: copies.artifacts, tls: copies.tls }, lease, reach: moduleReach(parsed.manifest.requires.host) };
+  } catch (error: unknown) { lease?.release(); throw error; }
 }

@@ -4,7 +4,7 @@ import { consentText, printable, testText, type ConsentView } from "./wasm-text.
 
 const CARD: ConsentCard = {
   id: "tool", version: "1.0.0", source: "github:acme/tool@v1.0.0", release: "r".repeat(64), license: { spdx: "MIT", copyleft: false },
-  capabilities: ["files.sync"], browser: [], guestExecutables: [], mounts: [], endpoints: [], commands: [], guestFiles: [], durablePaths: [], options: [],
+  capabilities: ["files.sync"], browser: [], guestExecutables: [], mounts: [], endpoints: [], commands: [], guestFiles: [], network: { reach: "none", hosts: [], children: false }, durablePaths: [], options: [],
   artifacts: [{ name: "tool.wasm", bytes: 1500 }], signals: {}, minApi: 143,
 };
 function view(overrides: Omit<Partial<ConsentView>, "card"> & { readonly card?: Partial<ConsentCard> } = {}): ConsentView {
@@ -15,7 +15,8 @@ const rows = (text: string): string[] => text.split("\n").filter(line => /^ {2}\
 describe("the consent card", () => {
   it("lists only what the module declares, with no label that has nothing after it", () => {
     const text = consentText(view());
-    expect(rows(text)).toEqual(["from", "license", "host", "size"]);
+    expect(rows(text)).toEqual(["from", "license", "host", "network", "size"]);
+    expect(text).toContain("  network  none: it opens no network connections of its own");
     expect(text).toContain("Add module tool 1.0.0");
     expect(text).toContain("  host     files.sync");
     expect(text).toContain("  size     1 KB in 1 file");
@@ -27,7 +28,7 @@ describe("the consent card", () => {
       browser: ["jspi", "web-locks"], guestExecutables: ["/usr/bin/python3"], mounts: ["/workspace (rw)"], endpoints: ["unix /workspace/_oxidevm/db.sock (oxidevm-sql/1)"],
       guestFiles: ["/workspace/_oxidevm/client.py"], durablePaths: ["/workspace/pgdata"], options: ["dataDir (string)"], capabilities: [],
     } }));
-    expect(rows(text)).toEqual(["from", "license", "host", "browser", "guest", "mounts", "listens", "writes", "options", "size"]);
+    expect(rows(text)).toEqual(["from", "license", "host", "browser", "guest", "mounts", "network", "listens", "writes", "options", "size"]);
     expect(text).toContain("  host     nothing beyond its own files");
     expect(text).toContain("  browser  jspi, web-locks");
     expect(text).toContain("  writes   /workspace/_oxidevm/client.py\n           /workspace/pgdata (durable)");
@@ -59,18 +60,18 @@ describe("the consent card", () => {
     expect(text).toContain("Compared with the installed release:\n  + host:sockets.connect\n  + listen:tcp:5432\n  - host:files.async");
   });
 
-  it("lists a module's commands, says who can run them and what they replace, and warns that interpreters reach the page's origin", () => {
+  it("lists a module's commands, says who can run them and what they replace, and warns that interpreters lend programs the module's capabilities", () => {
     const commands = [{ name: "python", path: "/usr/local/bin/python" }, { name: "python3", path: "/usr/local/bin/python3" }];
     const text = consentText(view({ card: { commands } }));
-    expect(rows(text)).toEqual(["from", "license", "host", "commands", "size"]);
+    expect(rows(text)).toEqual(["from", "license", "host", "network", "commands", "size"]);
     expect(text).toContain([
       "  commands python, python3",
       "           Your application turns them on per VM; then any program in the VM can run them as /usr/local/bin/<name>,",
-      "           with its own arguments and input, and the module does that work in a worker of your page.",
+      "           with its own arguments and input, and the module does that work in the VM's module frame, apart from your page.",
       "           /usr/local/bin comes before /usr/bin on PATH: they take the place of image programs with these names,",
       "           including scripts that start with #!/usr/bin/env <name>.",
-      "           A module that runs code it is given (an interpreter such as Python) lets those programs run code in",
-      "           your page's origin.",
+      "           A module that runs code it is given (an interpreter such as Python) lets those programs use everything",
+      "           it declares: its host operations and its network reach. That code runs in the module frame, not in your page.",
       "  size     1 KB in 1 file",
     ].join("\n"));
     expect(consentText(view())).not.toContain("/usr/local/bin");
@@ -91,9 +92,9 @@ describe("the consent card", () => {
     expect(consentText(view({ card: { source: "file:vendor/tool" } }))).not.toContain('"trusted"');
   });
 
-  it("always says that the module is not sandboxed", () => {
+  it("always says where the module runs and that it is not a sandbox for the programs that run it", () => {
     for (const text of [consentText(view()), consentText(view({ card: { source: "file:vendor/tool" }, consent: { reasons: [] } }))]) {
-      expect(text).toContain("This is what the module declares. Its code runs in a worker of your page with that authority; it is not sandboxed from your application.");
+      expect(text).toContain("This is what the module declares. Its code runs with that authority in the VM's module frame, an opaque origin apart from your page; it is not a sandbox for the programs that run it.");
     }
   });
 });
@@ -130,5 +131,23 @@ describe("the wasm test report", () => {
       ],
     });
     expect(text).toBe("kv 1.0.0 (service, release 0123456789ab) in chromium 140.0\nok    integrity\nn/a   exit-range: a service is stopped, not run to completion\nFAIL  eof-stop: it did not exit within 20 s of end of input and was killed\n1 property failed.\n");
+  });
+});
+
+describe("the network row (engine ADR 0029)", () => {
+  it("says the reach, the disclosed hosts and purpose, and that programs the module starts follow the VM", () => {
+    expect(consentText(view({ card: { network: { reach: "vm", hosts: [], children: false } } }))).toContain("  network  this VM only: programs in the VM, not the internet\n");
+    const text = consentText(view({ card: { capabilities: ["net.internet", "process.spawn"], network: { reach: "internet", hosts: ["*.pythonhosted.org", "pypi.org"], purpose: "Python programs reach the internet through the VM", children: true } } }));
+    expect(text).toContain([
+      "  network  the internet, through the VM's connection (TCP 80 and 443, and DNS), once your application connects the VM and the user allows it",
+      "           contacts by default: *.pythonhosted.org, pypi.org (disclosed by the module, not enforced)",
+      "           purpose: Python programs reach the internet through the VM",
+      "           programs it starts follow the VM's own network policy, not this reach",
+    ].join("\n"));
+  });
+
+  it("escapes what a module discloses, so a host or purpose cannot start a line of its own", () => {
+    const text = consentText(view({ card: { network: { reach: "internet", hosts: ["a.com"], purpose: "x\nnetwork  none", children: false } } }));
+    expect(text).toContain("purpose: x\\u{a}network  none");
   });
 });

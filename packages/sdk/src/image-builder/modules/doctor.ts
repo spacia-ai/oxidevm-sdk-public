@@ -8,6 +8,7 @@ import { parseModuleSource, type ModuleSource } from "../../wasm/declaration.js"
 import { lockedEntry, type LockedSource } from "../../wasm/lock.js";
 import { DEFAULT_GENERATED_FILE, STAGE_ROOT } from "./stage.js";
 import { manifestMinApi } from "../../wasm/capabilities.js";
+import { moduleReach } from "../../wasm/reach.js";
 import { moduleCommandPath } from "../../runtime/module-command-names.js";
 import { readProjectFile } from "./project-files.js";
 import { VMError } from "../../runtime/errors.js";
@@ -54,7 +55,7 @@ function hostingNote(ids: readonly string[], committed: Committed): string {
     const parts = [...browser.length === 0 ? [] : [`the browser features ${browser.join(", ")}`], ...guest.length === 0 ? [] : [`the programs ${guest.join(", ")} in the image`]];
     if (parts.length > 0) needs.push(`${id} needs ${parts.join(" and ")}`);
   }
-  return `Modules start Userspace JS processes, so they need a self-hosted runtime and a cross-origin isolated page. JS processes, worker threads, esbuild runs and native commands share one lane of at most 32 host commands.${needs.length === 0 ? "" : ` ${needs.join("; ")}. The doctor cannot see the browser or the image: a start that finds one missing exits with code 122 and names it.`}`;
+  return `Modules start Userspace JS processes in the VM's module frame, so they need a Userspace VM, self-hosted or in the hosted runtime frame, on a cross-origin isolated page in Chromium or Firefox (WebKit and Safari refuse them). JS processes, worker threads, esbuild runs and native commands share one lane of at most 32 host commands.${needs.length === 0 ? "" : ` ${needs.join("; ")}. The doctor cannot see the browser or the image: a start that finds one missing exits with code 122 and names it.`}`;
 }
 
 /**
@@ -86,11 +87,31 @@ function commandsNote(ids: readonly string[], committed: Committed): string | un
   ].join(" ");
 }
 
+/**
+ * The "network" note, or nothing when no module reaches the network (engine ADR 0029): each module's reach, the hosts and
+ * purpose it discloses (never enforced), and what an internet module needs from the application.
+ */
+function networkNote(ids: readonly string[], committed: Committed): string | undefined {
+  const reaching = ids.flatMap(id => {
+    const manifest = committed.get(id)?.manifest;
+    if (manifest === undefined) return [];
+    const reach = moduleReach(manifest.requires.host);
+    return reach === "none" ? [] : [{ id, reach, network: manifest.network }];
+  });
+  if (reaching.length === 0) return undefined;
+  const lines = reaching.map(({ id, reach, network }) => {
+    const disclosed = [...network?.hosts === undefined ? [] : [`it contacts ${network.hosts.join(", ")} by default`], ...network?.purpose === undefined ? [] : [`purpose: ${network.purpose}`]];
+    return `${id} reaches ${reach === "vm" ? "programs in this VM only" : "the internet through the VM's connection"}${disclosed.length === 0 ? "" : ` (${disclosed.join("; ")})`}.`;
+  });
+  if (reaching.some(({ reach }) => reach === "internet")) lines.push("A module reaches the internet only after the application connects the VM with vm.network.connect and the user allows it; until then its connections fail as local-only.");
+  return lines.join(" ");
+}
+
 function formatLockedSource(source: LockedSource): string {
   return source.kind === "file" ? `file:${source.path}` : `github:${source.repository}@${source.tag}`;
 }
 
-export const DOCTOR_CHECKS = ["declaration", "lock", "vendored", "staged", "generated", "engine-api", "license", "commands", "hosting"] as const;
+export const DOCTOR_CHECKS = ["declaration", "lock", "vendored", "staged", "generated", "engine-api", "license", "commands", "network", "hosting"] as const;
 export type WasmDoctorCheck = (typeof DOCTOR_CHECKS)[number];
 
 export type WasmDoctorEntry =
@@ -181,6 +202,8 @@ export async function doctorModules(projectDir: string, options: DoctorOptions =
 
   const commands = commandsNote(ids, committed);
   if (commands === undefined) pass("commands"); else note("commands", commands);
+  const network = networkNote(ids, committed);
+  if (network === undefined) pass("network"); else note("network", network);
   note("hosting", hostingNote(ids, committed));
   return { result: checks.some(entry => entry.status === "failed") ? "failed" : "passed", modules: ids, checks };
 }

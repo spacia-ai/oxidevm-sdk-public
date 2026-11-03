@@ -6,6 +6,7 @@ import { decodeResolvedManifest, isServiceDecl } from "../../wasm/manifest.js";
 import { runProperties, type ConformancePorts, type StartedModule } from "../../wasm/conformance/properties.js";
 import { probeHandle, probeTargets, refusedEndpoints } from "../../wasm/conformance/probe.js";
 import { spawnModule, stopModule } from "../../wasm/spawn.js";
+import { moduleReach } from "../../wasm/reach.js";
 
 // The page of `oxidevm wasm test`: it runs the property catalog in a real Userspace VM and writes
 // `{ "properties": [...] }` or `{ "error": {...} }` into #oxidevm-qualification for the Node side to decode.
@@ -72,7 +73,7 @@ async function run(): Promise<unknown> {
         return exit.kind === "exited" && exit.code === 0 ? [] : refused.length > 0 ? refused : targets.map(entry => entry.name);
       },
     };
-    const properties = await runProperties({ kind: isServiceDecl(manifest) ? "service" : "command", endpoints: isServiceDecl(manifest) ? manifest.expose : {} }, ports, { commandMs: integer(config["commandMs"], "commandMs", 1) });
+    const properties = await runProperties({ kind: isServiceDecl(manifest) ? "service" : "command", endpoints: isServiceDecl(manifest) ? manifest.expose : {}, reach: moduleReach(manifest.requires.host) }, ports, { commandMs: integer(config["commandMs"], "commandMs", 1) });
     return { properties };
   } finally { await vm.dispose(); }
 }

@@ -17,6 +17,7 @@ import { wasmCommandHelp, wasmHelp } from "./wasm-help.js";
 import { addText, buildText, doctorText, initText, inspectText, printable, releaseText, stageText, testText } from "./wasm-text.js";
 import { wasmFailureDetail } from "./wasm-errors.js";
 import { failureMessage } from "./failure.js";
+import { defaultProjectConfig, lockChangeText, requireOneRelease } from "./project-lock.js";
 
 export interface CLIEnvironment {
   readonly directory: string;
@@ -27,7 +28,7 @@ export interface CLIEnvironment {
   /** Asks a yes-or-no question of a person at a terminal; absent when nobody can answer. */
   confirm?(question: string): Promise<boolean>;
 }
-const help = `oxidevm — Linux in your browser\n\nCommands:\n  init <directory> [--start] [--use-bun]\n    Creates the Python + pandas starter using the hosted runtime and signed image.\n    Advanced: [--mode system|userspace] [--image <bundle> --image-trust <file>]\n              [--skip-assets | --engine-dir <release>] [--sdk-archive <sdk.tgz> --cli-archive <cli.tgz>]\n  assets install [--config oxidevm.config.ts] [--image <bundle> --trust <file>] [--reference <file>] [--engine-dir <release>]\n  doctor [url] [--browser chromium|firefox|webkit] [--preview-origin <origin>]\n    Checks a running application in a real browser (default http://localhost:5173/); start it first.\n  image init <directory> --mode system|userspace\n  image keygen --out <author.pem>\n  image build <recipe.ts> --signing-key <author.pem> [--distribution]\n  image test <bundle> --trust <author.public.json> [--browser chromium|firefox|webkit] [--engine-dir <release>]\n  image inspect <bundle> [--trust <author.public.json>]\n  image pack <bundle> --trust <author.public.json>\n\nEvery command accepts --json; --start runs interactively and cannot use --json. Paths resolve from the current directory.\nNormal init installs no local engine files. Development and production use run.oxidevm.dev.\nSelf-hosting is an explicit commercial option: --engine-dir selects a local pinned release.\nExplicit assets/image test commands can use OXIDEVM_ENGINE_DIR or the verified engine cache.\nExample: oxidevm init app --start\n`;
+const help = `oxidevm — Linux in your browser\n\nCommands:\n  init <directory> [--start] [--use-bun]\n    Creates the Python + pandas starter using the hosted runtime and signed image.\n    Advanced: [--mode system|userspace] [--image <bundle> --image-trust <file>]\n              [--skip-assets | --engine-dir <release>] [--sdk-archive <sdk.tgz> --cli-archive <cli.tgz>]\n  assets install [--config oxidevm.config.ts] [--image <bundle> --trust <file>] [--reference <file>] [--engine-dir <release>] [--update-lock]\n    After an SDK upgrade, --update-lock stages this release's assets, then rewrites oxidevm.lock.json for it.\n  doctor [url] [--browser chromium|firefox|webkit] [--preview-origin <origin>] [--config oxidevm.config.ts]\n    Checks a running application in a real browser (default http://localhost:5173/); start it first.\n    Its lock check compares the project's oxidevm.lock.json with the installed SDK.\n  image init <directory> --mode system|userspace\n  image keygen --out <author.pem>\n  image build <recipe.ts> --signing-key <author.pem> [--distribution]\n  image test <bundle> --trust <author.public.json> [--browser chromium|firefox|webkit] [--engine-dir <release>]\n  image inspect <bundle> [--trust <author.public.json>]\n  image pack <bundle> --trust <author.public.json>\n\nEvery command accepts --json; --start runs interactively and cannot use --json. Paths resolve from the current directory.\nNormal init installs no local engine files. Development and production use run.oxidevm.dev.\nSelf-hosting is an explicit commercial option: --engine-dir selects a local pinned release.\nExplicit assets/image test commands can use OXIDEVM_ENGINE_DIR or the verified engine cache.\nExample: oxidevm init app --start\n`;
 
 async function execute(invocation: CLIInvocation, io: CLIEnvironment): Promise<CliReport> {
   const path = (value: string) => resolve(io.directory, value); const command = invocation.command;
@@ -46,29 +47,36 @@ async function execute(invocation: CLIInvocation, io: CLIEnvironment): Promise<C
       const archives = invocation.archives === undefined ? starter?.archives : { sdk: path(invocation.archives.sdk), cli: path(invocation.archives.cli) };
       const productionImage = release?.image;
       const engineComplianceDir = starter?.engineComplianceDir;
-      return { schemaVersion: 2, kind: "result", command, result: await initializeApplication(path(invocation.directory), invocation.mode, invocation.skipAssets, io.signal, { ...(archives === undefined ? {} : { archives }), ...(engineDir === undefined ? {} : { engineDir }), ...(image === undefined ? {} : { image }), ...(productionImage === undefined ? {} : { productionImage }), ...(release === undefined ? {} : { materialsUrl: release.materialsUrl }), ...(engineComplianceDir === undefined ? {} : { engineComplianceDir }) }) };
+      return { schemaVersion: 3, kind: "result", command, result: await initializeApplication(path(invocation.directory), invocation.mode, invocation.skipAssets, io.signal, { ...(archives === undefined ? {} : { archives }), ...(engineDir === undefined ? {} : { engineDir }), ...(image === undefined ? {} : { image }), ...(productionImage === undefined ? {} : { productionImage }), ...(release === undefined ? {} : { materialsUrl: release.materialsUrl }), ...(engineComplianceDir === undefined ? {} : { engineComplianceDir }) }) };
     }
     case "assets install": {
       const project = await loadProjectConfig(path(invocation.config));
-      return { schemaVersion: 2, kind: "result", command, result: await installProjectAssets(project.directory, project.config, { signal: io.signal, ...(invocation.image === undefined ? {} : { imageDir: path(invocation.image) }),...(invocation.snapshot===undefined?{}:{snapshotDir:path(invocation.snapshot)}),...(invocation.trust===undefined?{}:{trust:await readImageTrust(path(invocation.trust))}), ...(invocation.reference === undefined ? {} : { referencePath: path(invocation.reference) }), ...(invocation.engineDir === undefined ? {} : { engineDir: path(invocation.engineDir) }) }) };
+      if (invocation.updateLock) await requireOneRelease(project.directory);
+      const result = await installProjectAssets(project.directory, project.config, { signal: io.signal, ...(invocation.updateLock ? { updateLock: true } : {}), ...(invocation.image === undefined ? {} : { imageDir: path(invocation.image) }),...(invocation.snapshot===undefined?{}:{snapshotDir:path(invocation.snapshot)}),...(invocation.trust===undefined?{}:{trust:await readImageTrust(path(invocation.trust))}), ...(invocation.reference === undefined ? {} : { referencePath: path(invocation.reference) }), ...(invocation.engineDir === undefined ? {} : { engineDir: path(invocation.engineDir) }) });
+      const note = lockChangeText(result.lock, invocation.updateLock);
+      if (note !== "") io.stderr(note);
+      return { schemaVersion: 3, kind: "result", command, result };
     }
-    case "doctor": return { schemaVersion: 2, kind: "result", command, result: await doctorProject(invocation.url, { browser: invocation.browser, signal: io.signal, ...(invocation.previewOrigin === undefined ? {} : { previewOrigin: invocation.previewOrigin }) }) };
-    case "image init": return { schemaVersion: 2, kind: "result", command, result: await initializeImage(path(invocation.directory), invocation.mode) };
+    case "doctor": {
+      const project = invocation.config === undefined ? await defaultProjectConfig(io.directory) : path(invocation.config);
+      return { schemaVersion: 3, kind: "result", command, result: await doctorProject(invocation.url, { browser: invocation.browser, signal: io.signal, ...(invocation.previewOrigin === undefined ? {} : { previewOrigin: invocation.previewOrigin }), ...(project === undefined ? {} : { project }) }) };
+    }
+    case "image init": return { schemaVersion: 3, kind: "result", command, result: await initializeImage(path(invocation.directory), invocation.mode) };
     case "image keygen": {
       const key = await generateImageKey(path(invocation.out));
-      return { schemaVersion: 2, kind: "result", command, result: { privateKeyPath: key.privateKeyPath, publicKeyPath: key.publicKeyPath, keyId: key.trust.keyId } };
+      return { schemaVersion: 3, kind: "result", command, result: { privateKeyPath: key.privateKeyPath, publicKeyPath: key.publicKeyPath, keyId: key.trust.keyId } };
     }
     case "image build": {
       const loaded = await loadImageRecipe(path(invocation.recipe));
       const built = await buildImage(loaded, { recipeDir: dirname(path(invocation.recipe)), signingKeyFile: path(invocation.signingKey), signal: io.signal, purpose: invocation.distribution ? "distribution" : "development", secrets: invocation.secrets.map(secret => ({ id: secret.id, file: path(secret.file) })), ...(invocation.out === undefined ? {} : { outDir: path(invocation.out) }), ...(invocation.baseUrl === undefined ? {} : { publicBaseUrl: invocation.baseUrl }), onProgress: progress => { io.stderr(`${progress.phase}\n`); } });
-      return { schemaVersion: 2, kind: "result", command, result: { mode: built.mode, manifestSHA256: built.image.manifestSHA256, bundleDir: built.bundleDir, referencePath: built.referencePath, lockPath: built.lockPath, distribution: built.distribution } };
+      return { schemaVersion: 3, kind: "result", command, result: { mode: built.mode, manifestSHA256: built.image.manifestSHA256, bundleDir: built.bundleDir, referencePath: built.referencePath, lockPath: built.lockPath, distribution: built.distribution } };
     }
     case "image test": {
       const trust = await readImageTrust(path(invocation.trust)); const image = await loadImageReference(path(invocation.bundle), trust);
-      return { schemaVersion: 2, kind: "result", command, result: await testImage(path(invocation.bundle), { image, browser: invocation.browser, purpose: invocation.distribution ? "distribution" : "development", signal: io.signal, ...(invocation.engineDir === undefined ? {} : { engineDir: path(invocation.engineDir) }) }) };
+      return { schemaVersion: 3, kind: "result", command, result: await testImage(path(invocation.bundle), { image, browser: invocation.browser, purpose: invocation.distribution ? "distribution" : "development", signal: io.signal, ...(invocation.engineDir === undefined ? {} : { engineDir: path(invocation.engineDir) }) }) };
     }
-    case "image inspect": return { schemaVersion: 2, kind: "result", command, result: await inspectImage(path(invocation.bundle), { signal: io.signal, ...(invocation.trust === undefined ? {} : { trust: await readImageTrust(path(invocation.trust)) }) }) };
-    case "image pack": return { schemaVersion: 2, kind: "result", command, result: await packImage(path(invocation.bundle), { signal: io.signal, trust: await readImageTrust(path(invocation.trust)) }) };
+    case "image inspect": return { schemaVersion: 3, kind: "result", command, result: await inspectImage(path(invocation.bundle), { signal: io.signal, ...(invocation.trust === undefined ? {} : { trust: await readImageTrust(path(invocation.trust)) }) }) };
+    case "image pack": return { schemaVersion: 3, kind: "result", command, result: await packImage(path(invocation.bundle), { signal: io.signal, trust: await readImageTrust(path(invocation.trust)) }) };
   }
 }
 
@@ -97,7 +105,7 @@ export async function runCLI(arguments_: readonly string[], io: CLIEnvironment):
     const snapshot=command?.startsWith("snapshot ")===true,wasm=command?.startsWith("wasm ")===true;
     const message = interrupted ? "command interrupted; owned resources have been cleaned up" : snapshot?"Snapshot command failed; check its phase and reason":failureMessage(error);
     const detail=snapshot?snapshotFailureDetail(error):wasm?wasmFailureDetail(error):undefined;
-    const report = decodeCliReport({ schemaVersion: 2, kind: "error", command, error: { code, message,...(detail===undefined?{}:{detail}) } });
+    const report = decodeCliReport({ schemaVersion: 3, kind: "error", command, error: { code, message,...(detail===undefined?{}:{detail}) } });
     io.stdout(json ? `${JSON.stringify(report)}\n` : snapshot&&!interrupted ? snapshotFailureText(code,detail) : `${code}: ${wasm ? printable(message) : message}\n`);
     return interrupted ? cancellationExit(io.signal) : detail?.["reason"]==="snapshot-verify-failed"?3:code === "INVALID_ARGUMENT" || code === "FEATURE_NOT_AVAILABLE"||snapshot&&code==="CORE_LOAD_FAILED" ? 2 : 1;
   }

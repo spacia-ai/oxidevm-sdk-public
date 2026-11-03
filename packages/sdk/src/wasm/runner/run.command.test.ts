@@ -45,23 +45,18 @@ describe("command modules", () => {
     const running = launch({ release });
     await expect(running.done).resolves.toBe(0);
     expect(running.linux.stderrLines).toEqual(["compiled=true granted=fs frozen=true kit=function"]);
-    // The adapter first; then the artifact once to verify it before any module code runs; then once more for the compile.
-    const artifact = release.descriptor.artifacts["tool.wasm"]?.url;
-    expect(running.fetched).toEqual([release.descriptor.adapter.url, artifact, artifact]);
+    // The VM's store checked every file before the process existed (ADR 0028): the start fetches nothing.
+    expect(running.fetched).toEqual([]);
   });
 
-  it("fetches each pinned file once to verify it and once for all the uses the adapter makes of it", async () => {
-    const release = await commandRelease(`export default async host => { await host.artifacts.bytes("tool.wasm"); await host.artifacts.compile("tool.wasm"); await host.artifacts.bytes("tool.wasm"); return { main: () => 0 }; };`);
-    const running = launch({ release });
-    await running.done;
-    expect(running.fetched.filter(url => url.endsWith("tool.wasm"))).toHaveLength(2);
-  });
-
-  it("verifies a file the adapter never uses and does not keep it", async () => {
-    const release = await commandRelease("export default () => ({ main: () => 0 });");
+  it("uses the launch's copies for every use the adapter makes of a file, compiling none of them again", async () => {
+    const release = await commandRelease(`export default async host => { await host.artifacts.bytes("tool.wasm"); const first = await host.artifacts.compile("tool.wasm"); await host.artifacts.bytes("tool.wasm"); host.log(String(first === await host.artifacts.compile("tool.wasm"))); return { main: () => 0 }; };`);
+    const compile = vi.spyOn(WebAssembly, "compile");
     const running = launch({ release });
     await expect(running.done).resolves.toBe(0);
-    expect(running.fetched).toEqual([release.descriptor.adapter.url, release.descriptor.artifacts["tool.wasm"]?.url]);
+    expect([running.linux.stderrLines, running.fetched]).toEqual([["true"], []]);
+    // The harness compiled the copies, as the VM's broker does once per VM; the runner compiled nothing.
+    expect(compile).toHaveBeenCalledOnce();
   });
 
   it("calls close after main, even when main fails", async () => {
@@ -89,31 +84,14 @@ describe("runner failures", () => {
     await expect(launch({ release }).done).resolves.toBe(120);
   });
 
-  it("reports exit 121 before running any module code when the adapter bytes differ from their pin", async () => {
-    const forged = new TextEncoder().encode("export default () => ({ main: () => 99 });");
-    const release = await commandRelease("export default () => ({ main: () => 0 });", { tamper: { "adapter.mjs": Uint8Array.from(forged) } });
-    const running = launch({ release });
-    await expect(running.done).resolves.toBe(121);
-    expect(running.imports.count).toBe(0);
-    expect(records(running.linux.stderrLines)[0]).toMatchObject({ kind: "integrity" });
-  });
-
-  it("reports exit 121 when an artifact is altered, whether its size changes or not", async () => {
-    const same = Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 1), longer = Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 0);
-    for (const bytes of [same, longer, wasm.subarray(0, 4)]) {
+  it("refuses copies of another size than their pins before any module code runs (status 121 no longer occurs)", async () => {
+    // A file that differs from its pin never reaches a process: the VM's store refuses it first (module-copies.test.ts).
+    for (const bytes of [Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 0), wasm.subarray(0, 4)]) {
       const release = await commandRelease(`export default async host => { await host.artifacts.compile("tool.wasm"); return { main: () => 0 }; };`, { tamper: { "tool.wasm": Uint8Array.from(bytes) } });
-      await expect(launch({ release }).done, String(bytes.length)).resolves.toBe(121);
+      const running = launch({ release });
+      await expect(running.done, String(bytes.length)).resolves.toBe(120);
+      expect(running.imports.count).toBe(0);
     }
-  });
-
-  it("verifies every pinned file before the adapter's code runs, whether or not the adapter ever loads it", async () => {
-    const forged = Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 1);
-    // The adapter only asks for the file's address, as a loader that fetches its own files does.
-    const release = await commandRelease(`export default host => { void host.artifacts.url("tool.wasm"); return { main: () => 0 }; };`, { tamper: { "tool.wasm": Uint8Array.from(forged) } });
-    const running = launch({ release });
-    await expect(running.done).resolves.toBe(121);
-    expect(running.imports.count).toBe(0);
-    expect(records(running.linux.stderrLines)[0]).toMatchObject({ kind: "integrity" });
   });
 
   it("reports exit 122 and names what is missing", async () => {

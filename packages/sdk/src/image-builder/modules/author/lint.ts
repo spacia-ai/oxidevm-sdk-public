@@ -27,6 +27,31 @@ function declaredNames(ast: t.File): ReadonlySet<string> {
   return names;
 }
 
+/** Browser network APIs that do not exist in the module frame (engine ADR 0029, N-3). */
+const NETWORK_GLOBALS: ReadonlySet<string> = new Set(["XMLHttpRequest", "EventSource", "RTCPeerConnection", "WebTransport"]);
+const NETWORK_ADVICE = "is not available in the module frame: a module reaches the network only through the host's fetch, WebSocket and host.net (engine ADR 0029)";
+
+/** A literal URL that is neither a blob: nor a data: URL (both carry their bytes): what import() or importScripts would fetch over the browser's network. */
+function remoteLiteral(node: t.Node | undefined): string | undefined {
+  return t.isStringLiteral(node) && !/^(?:blob|data):/iu.test(node.value) ? node.value : undefined;
+}
+
+/** The adapter-network finding for `node`, if it uses the browser's own network; free names only, never local bindings. */
+function networkUse(node: t.Node, declared: ReadonlySet<string>): string | undefined {
+  if (t.isImportExpression(node)) {
+    const url = remoteLiteral(node.source);
+    return url === undefined ? undefined : `import() of ${url} ${NETWORK_ADVICE}`;
+  }
+  if (t.isCallExpression(node) && t.isIdentifier(node.callee, { name: "importScripts" }) && !declared.has("importScripts")) {
+    const url = remoteLiteral(node.arguments[0]);
+    return url === undefined ? undefined : `importScripts of ${url} ${NETWORK_ADVICE}`;
+  }
+  if (t.isMemberExpression(node) && t.isIdentifier(node.object, { name: "navigator" }) && !declared.has("navigator") && t.isIdentifier(node.property, { name: "sendBeacon" }) && !node.computed) {
+    return `navigator.sendBeacon ${NETWORK_ADVICE}`;
+  }
+  return undefined;
+}
+
 function isCallee(node: t.Identifier, parent: t.Node): boolean {
   return (t.isCallExpression(parent) || t.isNewExpression(parent)) && parent.callee === node;
 }
@@ -66,6 +91,8 @@ export function lintAdapter(code: string, locate: Locate = bundlePosition): read
   };
   t.traverse(ast, {
     enter(node, ancestors) {
+      const network = networkUse(node, declared);
+      if (network !== undefined) report("warning", "adapter-network", network, node);
       if (t.isImportDeclaration(node) || t.isExportAllDeclaration(node)) report("error", "adapter-import", `the adapter imports "${node.source.value}" at run time; an adapter must be one self-contained file`, node);
       else if (t.isExportNamedDeclaration(node) && node.source !== null && node.source !== undefined) report("error", "adapter-import", `the adapter re-exports from "${node.source.value}" at run time; an adapter must be one self-contained file`, node);
       else if (t.isImportExpression(node)) report(severityFor(node), "adapter-import", "dynamic import() would load code that is not part of the pinned adapter", node);
@@ -74,6 +101,7 @@ export function lintAdapter(code: string, locate: Locate = bundlePosition): read
         const parent = ancestors.at(-1)?.node;
         if (parent === undefined || !t.isReferenced(node, parent, ancestors.at(-2)?.node) || t.isUnaryExpression(parent, { operator: "typeof" })) return;
         if (PAGE_ONLY.has(node.name)) report("warning", "adapter-global", `${node.name} does not exist in a worker; the adapter fails when this runs`, node);
+        else if (NETWORK_GLOBALS.has(node.name)) report("warning", "adapter-network", `${node.name} ${NETWORK_ADVICE}`, node);
         else if (node.name === "importScripts" && isCallee(node, parent)) report(severityFor(node), "adapter-import", "importScripts() would load code that is not part of the pinned adapter", node);
         else if ((node.name === "eval" || node.name === "Function") && isCallee(node, parent)) report("warning", "adapter-eval", `${node.name === "eval" ? "eval" : "new Function"} is blocked by a content security policy without 'unsafe-eval'`, node);
       }

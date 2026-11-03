@@ -1,4 +1,4 @@
-import { readOwnedJSProcessTrace, watchOwnedAccelerationNotices } from "../../vm-adapter.js";
+import { ownedModuleCommands, ownedModules, readOwnedJSProcessTrace, watchOwnedAccelerationNotices } from "../../vm-adapter.js";
 import { accelerationNoticeWire } from "../../runtime/js-process/late-failure.js";
 import {encodeMovedAway} from "../protocol/handoff.js";
 import type { PreviewHandle, ResumedTerminal, VM, WorkspaceWatch } from "../../contracts.js";
@@ -66,6 +66,14 @@ async function dispatchCommon(request: CommonRequest, context: DispatchContext):
       pumpProcess(handle, request.io);
       return { pid: handle.pid, kind: handle.kind,...(handle.snapshotKey===undefined?{}:{snapshotKey:handle.snapshotKey}) };
     }
+    // Protocol 17 (ADR 0028): the frame VM's own module owner; its module frame is opened from this frame's document.
+    case "module.files": return { missing: await ownedModules(vm).missing(request.pins, signal) };
+    case "module.spawn": {
+      const handle = await ownedModules(vm).spawn({ ...(request.args === undefined ? {} : { args: request.args }), ...(request.cwd === undefined ? {} : { cwd: request.cwd }), ...(request.env === undefined ? {} : { env: request.env }), signal }, { descriptor: request.descriptor, files: request.files });
+      pumpProcess(handle, request.io);
+      return { pid: handle.pid, kind: handle.kind, ...(handle.snapshotKey === undefined ? {} : { snapshotKey: handle.snapshotKey }) };
+    }
+    case "module.commands": return ownedModuleCommands(vm).request(request.request, signal);
     case "terminal.attach": {
       const terminal = context.terminals.get(request.key);
       if (terminal === undefined || terminal.source !== "process") throw new VMError("INVALID_ARGUMENT", "no resumed process has that key");

@@ -34,7 +34,7 @@ export async function probeHandle(): Promise<ModuleHandle<ResolvedManifest>> {
   const sha256 = hex(await crypto.subtle.digest("SHA-256", bytes));
   const manifest = decodeResolvedManifest({
     schemaVersion: 1, id: "oxidevm-endpoint-probe", version: "1.0.0", abi: "raw", adapter: { api: 1, sha256, bytes: bytes.length }, artifacts: [],
-    process: { kind: "command" }, requires: { host: ["sockets.connect"] }, license: { spdx: "Apache-2.0" },
+    process: { kind: "command" }, requires: { host: ["sockets.connect", "net.vm"] }, license: { spdx: "Apache-2.0" },
   });
   const url = `data:text/javascript;base64,${btoa(String.fromCharCode(...bytes))}`;
   return moduleHandle(manifest, { release: sha256, adapter: { url, sha256, bytes: bytes.length }, artifacts: {} });

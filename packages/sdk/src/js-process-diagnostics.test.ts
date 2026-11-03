@@ -224,3 +224,46 @@ it("refuses module command placements Rust cannot record and module reasons befo
     trace17({ subject: 2, tag: 2, fields: browserModule() }).subarray(0, -1),
   ]) expect(() => decodeJSProcessTrace(bytes)).toThrow();
 });
+
+/** One OXJT 18 refusal row (engine `JsRefusalTraceEvent::encode`, 59 bytes). */
+function refusal({ ordinal = 2n, declared = 1, attempted = 2, family = 2, port = 443, address = [93, 184, 216, 34], reason = 1 } = {}) {
+  const writer = new Writer().u64(ordinal).u64(5n).u64(6n).u64(7n).u32(11).u8(reason).u8(declared).u8(attempted);
+  const tail = new Uint8Array(20), view = new DataView(tail.buffer);
+  view.setUint16(0, family, true); view.setUint16(2, port, true); tail.set(address, 4);
+  return writer.raw(tail).finish();
+}
+function trace18(rows: readonly Uint8Array[], services = 0) {
+  const writer = new Writer().raw(new TextEncoder().encode("OXJT")).u32(18).u64(0n).u32(services).u32(0).u32(0).u32(rows.length);
+  if (services === 1) writer.u64(1n).u64(5n).u64(6n).u64(7n).u32(11).u32(11).u32(42).u32(1).u32(13);
+  for (const row of rows) writer.raw(row);
+  return writer.finish();
+}
+
+it("reads trace 18's module network reach refusals after the late failures, in the trace's one ordinal sequence (engine ADR 0029)", () => {
+  expect(refusal().byteLength).toBe(59);
+  const trace = decodeJSProcessTrace(trace18([refusal()], 1));
+  expect(trace.events[0]).toMatchObject({ operation: { kind: "syscall", number: 42 }, errno: 13 });
+  expect(trace.refusals).toEqual([{ ordinal: 2n, generation: 5n, incarnationId: 6n, requestId: 7n, pid: 11, reason: "module-network-reach", declared: "vm", attempted: "internet",
+    destination: { family: "ipv4", address: "93.184.216.34", port: 443 } }]);
+  const v6 = new Array<number>(16).fill(0); v6[0] = 0x20; v6[1] = 0x01; v6[15] = 1;
+  expect(decodeJSProcessTrace(trace18([refusal({ declared: 0, attempted: 1, family: 10, port: 80, address: v6 })])).refusals[0])
+    .toMatchObject({ declared: "none", attempted: "vm", destination: { family: "ipv6", address: "2001:0:0:0:0:0:0:1", port: 80 } });
+  expect(decodeJSProcessTrace(trace18([refusal({ declared: 0, attempted: 1, family: 1, port: 0, address: [] })])).refusals[0])
+    .toMatchObject({ declared: "none", attempted: "vm", destination: { family: "unix" } });
+  // Earlier traces carry no refusal count and no refusals.
+  expect(decodeJSProcessTrace(new Writer().raw(new TextEncoder().encode("OXJT")).u32(17).u64(0n).u32(0).u32(0).u32(0).finish()).refusals).toEqual([]);
+});
+
+it("refuses trace 18 refusals Rust cannot record", () => {
+  for (const row of [
+    refusal({ reason: 0 }), refusal({ reason: 2 }), refusal({ declared: 3 }), refusal({ attempted: 0 }), refusal({ attempted: 3 }),
+    // A reach that admits the destination was not refused for it.
+    refusal({ declared: 2, attempted: 2 }), refusal({ declared: 1, attempted: 1 }),
+    refusal({ family: 3 }), refusal({ family: 1, port: 0, address: [1] }), refusal({ family: 1, port: 80, address: [] }), refusal({ ordinal: 0n }),
+  ]) expect(() => decodeJSProcessTrace(trace18([row])), Array.from(row).join(",")).toThrow();
+  // The refusal ordinal shares the trace's one sequence with the service rows.
+  expect(() => decodeJSProcessTrace(trace18([refusal({ ordinal: 1n })], 1))).toThrow();
+  expect(() => decodeJSProcessTrace(trace18([refusal(), refusal()]))).toThrow();
+  expect(() => decodeJSProcessTrace(trace18([refusal()]).subarray(0, -1))).toThrow();
+  expect(() => decodeJSProcessTrace(new Writer().raw(new TextEncoder().encode("OXJT")).u32(19).u64(0n).u32(0).u32(0).u32(0).u32(0).finish())).toThrow("version mismatch");
+});

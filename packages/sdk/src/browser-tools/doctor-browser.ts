@@ -35,14 +35,16 @@ export async function runDoctorBrowser(url: string, options: DoctorOptions, prof
     await page.evaluate(scriptURL => {
       const script = document.createElement("script"); script.type = "module"; script.src = scriptURL; document.body.append(script);
     }, new URL("doctor/client.js", base).href);
+    // The page runs neither the preview nor the lock check: preview-origin is probed below, and doctorProject
+    // replaces the lock check with the project's own, which runs in Node.
     let checks: DoctorReport["checks"][number][];
     try {
       const output = page.locator('#oxidevm-doctor[data-done="true"]'); await output.waitFor({ timeout: 90_000 });
       const raw: unknown = JSON.parse(await output.textContent() ?? "null") as unknown;
-      const parsed = decodeDoctorReport({ result: Array.isArray(raw) && raw.some((value: unknown) => typeof value === "object" && value !== null && "status" in value && value.status === "failed") ? "failed" : "passed", url, checks: [...(Array.isArray(raw) ? Array.from<unknown>(raw) : []), { check: "preview-origin", status: "not-configured" }] });
+      const parsed = decodeDoctorReport({ result: Array.isArray(raw) && raw.some((value: unknown) => typeof value === "object" && value !== null && "status" in value && value.status === "failed") ? "failed" : "passed", url, checks: [...(Array.isArray(raw) ? Array.from<unknown>(raw) : []), { check: "preview-origin", status: "not-configured" }, { check: "lock", status: "not-configured" }] });
       checks = [...parsed.checks];
     } catch {
-      checks = DOCTOR_CHECKS.map(check => check === "preview-origin" ? { check, status: "not-configured" } : { check, status: "failed", message: "deployed browser probe did not load or finish; inspect assets and CSP" });
+      checks = DOCTOR_CHECKS.map(check => check === "preview-origin" || check === "lock" ? { check, status: "not-configured" } : { check, status: "failed", message: "deployed browser probe did not load or finish; inspect assets and CSP" });
     }
     if (!integrity || !compatible) checks = checks.map(check => check.check === "asset-integrity" ? { check: check.check, status: "failed", message: "deployed assets differ from this exact installed SDK release" } : check);
     const headers = await response.allHeaders();

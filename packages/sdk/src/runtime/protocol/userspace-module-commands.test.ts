@@ -4,9 +4,9 @@ import { PROTOCOL_VERSION } from "./common.js";
 import { decodeModuleCommandsResult } from "./userspace-module-commands.js";
 
 const base = { id: 7, version: PROTOCOL_VERSION, type: "module-commands" } as const;
-const enable = { ...base, operation: "enable", descriptor: "{\"v\":1}", commands: ["python", "python3"], concurrency: 4 } as const;
+const enable = { ...base, operation: "enable", descriptor: "{\"v\":1}", commands: ["python", "python3"], concurrency: 4, files: { [`${"d".repeat(64)}:3`]: new Blob(["abc"]) } } as const;
 
-describe("the module-commands request (worker protocol 177)", () => {
+describe("the module-commands request (worker protocol 178)", () => {
   it("decodes enable, disable and status with exactly their fields", () => {
     expect(decodeUserspaceRequest(enable)).toEqual(enable);
     for (const operation of ["disable", "status"] as const) expect(decodeUserspaceRequest({ ...base, operation, registration: 3 })).toEqual({ ...base, operation, registration: 3 });
@@ -21,6 +21,8 @@ describe("the module-commands request (worker protocol 177)", () => {
       { ...enable, commands: [] }, { ...enable, commands: ["a", "a"] }, { ...enable, commands: ["Python"] }, { ...enable, commands: ["oxidevm-x"] },
       { ...enable, commands: Array.from({ length: 17 }, (_, index) => `c${String(index)}`) }, { ...enable, commands: "python" },
       { ...enable, concurrency: 0 }, { ...enable, concurrency: 33 }, { ...enable, concurrency: 1.5 },
+      // ADR 0028: an enable carries the copies the VM's store lacked, by key; worker protocol 177 had none.
+      { ...base, operation: "enable", descriptor: "{}", commands: ["a"], concurrency: 4 }, { ...enable, files: { "x:3": new Blob([]) } }, { ...enable, files: { [`${"d".repeat(64)}:3`]: "abc" } },
       { ...base, operation: "disable", registration: 0 }, { ...base, operation: "status", registration: 2 ** 32 }, { ...base, operation: "status" },
       { ...base, operation: "disable", registration: 1, descriptor: "{}" },
     ]) expect(() => decodeUserspaceRequest(invalid), JSON.stringify(invalid).slice(0, 120)).toThrow();

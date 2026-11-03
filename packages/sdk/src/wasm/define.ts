@@ -21,6 +21,13 @@ export interface HostArtifacts<N extends string = string> {
   /** Compiles a declared `.wasm` artifact, verified against its pin. */
   compile(name: N): Promise<WebAssembly.Module>;
   bytes(name: N): Promise<Uint8Array<ArrayBuffer>>;
+  /** The VM's verified copy of the file, as a Blob: nothing is fetched or checked again. */
+  blob(name: N): Blob;
+  /**
+   * The verified copy's bytes, read synchronously (the module worker's `FileReaderSync`), for an interpreter that installs
+   * a file while it runs and cannot await (no JSPI). It blocks the module's worker while it reads; prefer `bytes`.
+   */
+  bytesSync(name: N): Uint8Array<ArrayBuffer>;
   /** A same-origin URL for runtimes that fetch their own files. The runner checked the file against its pin when the module started; a fetch through this address is not checked again. */
   url(name: N): string;
 }
@@ -128,13 +135,17 @@ export interface Module<M extends ModuleDecl = ModuleDecl> {
   readonly adapter: AdapterFor<M>;
 }
 
+/** `network` is only for a module whose `requires.host` names `net.internet` (engine ADR 0029, N-2). */
+export type NetworkDisclosure<M extends ModuleDecl> =
+  M extends { readonly network: object } ? ("net.internet" extends M["requires"]["host"][number] ? unknown : { readonly network: { readonly "only with net.internet in requires.host": never } }) : unknown;
+
 /**
  * Types a module definition. The manifest literal is inferred first and fixes the adapter's shape:
  * its `host` holds only the declared capabilities and artifact names, and a service must return one
  * handler per `expose` key. At runtime this returns its argument.
  */
 export function defineModule<const M extends ModuleDecl>(module: {
-  readonly manifest: M;
+  readonly manifest: M & NetworkDisclosure<M>;
   readonly adapter: AdapterFor<NoInfer<M>>;
 }): Module<M> {
   return module;

@@ -525,15 +525,38 @@ it("admits an explicit JS launch through the versioned process boundary", () => 
     expect(decodeUserspaceRequest(request)).toEqual(request);
     expect(() => decodeUserspaceRequest({ ...request, version: PROTOCOL_VERSION - 1 })).toThrow();
     expect(() => decodeUserspaceRequest({ ...request, extra: true })).toThrow();
-    // spawnModule's launch description travels beside the arguments, for the runner's start message only (ADR 0027).
-    const launch = { kind: "host", descriptor: "{\"v\":1}" };
-    expect(decodeUserspaceRequest({ ...request, launch })).toEqual({ ...request, launch });
-    // A page asks only for spawnModule's own launch; a module command's launch comes from the worker's registration owner.
-    const command = { kind: "module-command", invocation: { name: "python", path: "/usr/local/bin/python" }, terminals: { stdin: false, stdout: false, stderr: false }, descriptor: "{}", adapter: new Blob([]), artifacts: {} };
-    for (const invalid of [command, { kind: "module-command", descriptor: "{}" }, { kind: "host" }, { kind: "host", descriptor: 1 }, { ...launch, extra: true }, { kind: "host", descriptor: "x".repeat(512 * 1024 + 1) }, null]) {
-      expect(() => decodeUserspaceRequest({ ...request, launch: invalid })).toThrow();
-    }
+    // Worker protocol 178 (ADR 0028): a page starts no runner with a launch of its own any more; spawnModule has spawn-module.
+    expect(() => decodeUserspaceRequest({ ...request, launch: { kind: "host", descriptor: "{\"v\":1}" } })).toThrow();
   } finally { channel.port1.close(); channel.port2.close(); }
+});
+
+it("spawn-module carries spawnModule's description and at most 66 supplied copies (ADR 0028; the TLS module, ADR 0029)", () => {
+  const channel = new MessageChannel(), key = (index: number) => `${index.toString(16).padStart(64, "0")}:4`;
+  try {
+    const files = Object.fromEntries(Array.from({ length: 66 }, (_, index) => [key(index), new Blob([Uint8Array.of(1, 2, 3, 4)])]));
+    const request = { id: 12, version: PROTOCOL_VERSION, type: "spawn-module", rootTreeSha256: "a".repeat(64), workspaceBaseSha256: "b".repeat(64), cpuProfile: "x86-64-v2", descriptor: "{\"v\":1}", files, arguments: ["input"], environment: ["A=B"], cwd: "/workspace", rootfs: new Uint8Array(4), port: channel.port1 };
+    expect(decodeUserspaceRequest(request)).toEqual(request);
+    expect(decodeUserspaceRequest({ ...request, files: {} })).toEqual({ ...request, files: {} });
+    for (const invalid of [
+      { version: PROTOCOL_VERSION - 1 }, { extra: true }, { worker: "https://example.test/runner.js" }, { terminal: { columns: 80, rows: 24 } },
+      { files: { ...files, [key(66)]: new Blob([]) } }, { files: { "not-a-key": new Blob([]) } }, { files: { [key(1)]: new Uint8Array(4) } }, { files: [] },
+      { descriptor: 1 }, { descriptor: "x".repeat(512 * 1024 + 1) },
+    ]) expect(() => decodeUserspaceRequest({ ...request, ...invalid }), JSON.stringify(Object.keys(invalid))).toThrow();
+    expect(userspaceResponseDecoders["spawn-module"]({ pid: 7, sessionId: 2, identityKey: 2 })).toEqual({ pid: 7, sessionId: 2, identityKey: 2 });
+  } finally { channel.port1.close(); channel.port2.close(); }
+});
+
+it("module-files asks which of at most 66 pins the VM's store lacks (ADR 0028)", () => {
+  const pin = { sha256: "c".repeat(64), bytes: 9 }, request = { id: 13, version: PROTOCOL_VERSION, type: "module-files", pins: [pin] };
+  expect(decodeUserspaceRequest(request)).toEqual(request);
+  for (const invalid of [{ version: PROTOCOL_VERSION - 1 }, { extra: 1 }, { pins: Array.from({ length: 67 }, () => pin) }, { pins: [{ ...pin, sha256: "C".repeat(64) }] }, { pins: [{ ...pin, bytes: -1 }] }, { pins: [{ ...pin, url: "x" }] }]) {
+    expect(() => decodeUserspaceRequest({ ...request, ...invalid })).toThrow();
+  }
+  const missing = `${"c".repeat(64)}:9`;
+  expect(userspaceResponseDecoders["module-files"]({ missing: [missing] })).toEqual({ missing: [missing] });
+  for (const invalid of [{ missing: [missing, missing] }, { missing: ["c"] }, { missing: [missing], extra: 1 }, { missing: Array.from({ length: 67 }, (_, index) => `${index.toString(16).padStart(64, "0")}:1`) }]) {
+    expect(() => userspaceResponseDecoders["module-files"](invalid)).toThrow();
+  }
 });
 
 it("subscribes to acceleration notices with an exact request and a transferred port", () => {

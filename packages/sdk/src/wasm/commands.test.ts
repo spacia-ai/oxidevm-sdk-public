@@ -21,11 +21,13 @@ vi.mock("../vm-adapter.js", async importOriginal => {
   return { ...actual, ownedModuleCommands: (vm: object) => vms.get(vm) ?? actual.ownedModuleCommands(vm) };
 });
 
-afterEach(() => { closeChannels(); });
+afterEach(() => { closeChannels(); vi.unstubAllGlobals(); });
 
 /** A Userspace VM whose module commands reach a real registration owner, in a cross-origin isolated page with a mounted image unless `overrides` say otherwise. */
 function connectedVM(fetch: Fetcher, table = fakeTable(), overrides: Partial<ModuleCommandsPorts> = {}) {
-  const { commands: registrations, ports } = owner(fetch, table, overrides), link = relay(registrations);
+  // The page reads the files the VM lacks with its own fetch (ADR 0028).
+  vi.stubGlobal("fetch", (url: string, init?: { readonly signal?: AbortSignal | null }) => fetch(url, { signal: init?.signal ?? new AbortController().signal }));
+  const { commands: registrations, ports } = owner(table, overrides), link = relay(registrations, ports.copies);
   const vm: ModuleVM = { spawnJS: () => Promise.reject(new Error("module commands start no JS process of their own")) };
   vms.set(vm, link.owned);
   return { vm, registrations, ports, table, link };
@@ -53,8 +55,9 @@ describe("turning commands on", () => {
     expect(commands.commands).toEqual(["python", "python3"]);
     expect(commands.paths).toEqual({ python: "/usr/local/bin/python", python3: "/usr/local/bin/python3" });
     expect(Object.isFrozen(commands) && Object.isFrozen(commands.paths) && Object.isFrozen(commands.commands)).toBe(true);
-    expect(link.requests.map(request => request.operation === "enable" ? [request.commands, request.concurrency] : [])).toEqual([[["python", "python3"], 4]]);
-    expect(table.tables).toEqual([[{ registration: 1, concurrency: 4, name: "python" }, { registration: 1, concurrency: 4, name: "python3" }]]);
+    // The first request supplies nothing; the VM's store lacks the files, so the page reads them and sends them (ADR 0028).
+    expect(link.requests.map(request => request.operation === "enable" ? [request.commands, request.concurrency, Object.keys(request.files).length] : [])).toEqual([[["python", "python3"], 4, 0], [["python", "python3"], 4, 3]]);
+    expect(table.tables).toEqual([[{ registration: 1, concurrency: 4, reach: "none", name: "python" }, { registration: 1, concurrency: 4, reach: "none", name: "python3" }]]);
     expect(table.stubs).toEqual(new Set(["python", "python3"]));
     // Turning them on fetched and checked each pinned file once.
     expect([...files.fetched].sort()).toEqual([...release.served.keys()].sort());
@@ -65,12 +68,12 @@ describe("turning commands on", () => {
     const release = await pythonRelease(), { vm, table } = connectedVM(server(release).fetch);
     const one = await enableModuleCommands(vm, handleOf(release), { commands: ["python3"], concurrency: 2 });
     expect([one.commands, one.paths]).toEqual([["python3"], { python3: "/usr/local/bin/python3" }]);
-    expect(table.tables.at(-1)).toEqual([{ registration: 1, concurrency: 2, name: "python3" }]);
+    expect(table.tables.at(-1)).toEqual([{ registration: 1, concurrency: 2, reach: "none", name: "python3" }]);
     expect(table.stubs).toEqual(new Set(["python3"]));
     await one.disable();
     const both = await enableModuleCommands(vm, handleOf(release), { commands: ["python3", "python"], concurrency: 32 });
     expect(both.commands).toEqual(["python", "python3"]);
-    expect(table.tables.at(-1)).toEqual([{ registration: 2, concurrency: 32, name: "python" }, { registration: 2, concurrency: 32, name: "python3" }]);
+    expect(table.tables.at(-1)).toEqual([{ registration: 2, concurrency: 32, reach: "none", name: "python" }, { registration: 2, concurrency: 32, reach: "none", name: "python3" }]);
   });
 
   it("refuses an empty, repeated or undeclared list of commands, a concurrency outside 1 to 32 and other fields before fetching anything", async () => {
@@ -182,13 +185,14 @@ describe("registrations of one VM", () => {
 });
 
 describe("VMs that cannot run module commands", () => {
-  it("refuses a hosted frame's VM, a VM this SDK did not create, a root initial user, a page without cross-origin isolation and a VM without an image", async () => {
+  it("relays the refusal of a hosted frame whose VM cannot run them, and refuses a VM this SDK did not create, a root initial user, a page without cross-origin isolation and a VM without an image", async () => {
     const release = await commandRelease(), files = server(release);
     const { vm: frame } = fakeVM();
     const hosted: UserspaceVM = { ...frame, mode: "userspace", image: { ...frame.image, mode: "userspace" }, spawnJS: (): Promise<never> => Promise.reject(new Error("unused")) };
     const { client } = await connect(hosted);
     if (client.mode !== "userspace") throw new Error("Expected a Userspace frame client");
-    await expect(enableModuleCommands(client, handleOf(release))).rejects.toMatchObject({ ...unavailable, message: expect.stringContaining("hosted runtime frame") as unknown });
+    // Frame protocol 17 (ADR 0028): a hosted VM turns commands on through its frame; this frame's VM has no module owner.
+    await expect(enableModuleCommands(client, handleOf(release))).rejects.toMatchObject(unavailable);
     const foreign: ModuleVM = { spawnJS: () => Promise.reject(new Error("unused")) };
     await expect(enableModuleCommands(foreign, handleOf(release))).rejects.toMatchObject({ ...unavailable, message: expect.stringContaining("not created by this copy of the SDK") as unknown });
     for (const overrides of [
@@ -226,7 +230,7 @@ describe("cancelling the call", () => {
     // The cancellation arrives while Rust applies the table: past the owner's last check, so it registers and answers.
     table.runtime.applyTable = request => { controller.abort(); return apply(request); };
     await expect(enableModuleCommands(vm, handleOf(release), { signal: controller.signal })).rejects.toMatchObject(cancelled);
-    expect(table.tables).toEqual([[{ registration: 1, concurrency: 4, name: "alpha" }, { registration: 1, concurrency: 4, name: "beta" }], []]);
+    expect(table.tables).toEqual([[{ registration: 1, concurrency: 4, reach: "none", name: "alpha" }, { registration: 1, concurrency: 4, reach: "none", name: "beta" }], []]);
     expect([table.stubs, registrations.launch(program(1, "alpha"))]).toEqual([new Set(), undefined]);
     // When turning them off fails too, the cancellation says so: the commands stay on until disabled.
     const second = new AbortController();
@@ -241,7 +245,7 @@ describe("answers from the VM", () => {
     const release = await commandRelease(), disposed = new AbortController().signal;
     const answering = (answer: Awaited<ReturnType<OwnedModuleCommands["request"]>>) => {
       const vm: ModuleVM = { spawnJS: () => Promise.reject(new Error("unused")) };
-      vms.set(vm, { request: request => Promise.resolve(request.operation === "enable" ? { operation: "enable", registration: 1, commands: ["alpha", "beta"], skipped: [] } : answer), disposed });
+      vms.set(vm, { request: request => Promise.resolve(request.operation === "enable" ? { operation: "enable", registration: 1, commands: ["alpha", "beta"], skipped: [] } : answer), disposed, missing: () => Promise.resolve([]) });
       return vm;
     };
     const protocol = { code: "PROTOCOL_ERROR" };

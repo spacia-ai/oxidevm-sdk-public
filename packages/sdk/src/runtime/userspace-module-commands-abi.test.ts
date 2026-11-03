@@ -6,12 +6,17 @@ import {
 
 const text = (value: string) => new TextEncoder().encode(value);
 
-/** The engine's OXMC v1 reader (`runtime/module_commands/table.rs::decode`), mirrored to check what the encoder writes. */
+const REACHES = ["none", "vm", "internet"] as const;
+/** The engine's OXMC v2 reader (`runtime/module_commands/table.rs::decode`), mirrored to check what the encoder writes. */
 function readTable(bytes: Uint8Array): ModuleCommandEntry[] {
   const r = new Reader(bytes);
   expect(new TextDecoder().decode(r.raw(4))).toBe("OXMC");
-  expect(r.u32()).toBe(1);
-  const entries = Array.from({ length: r.u32() }, () => ({ registration: r.u32(), concurrency: r.u32(), name: new TextDecoder("utf-8", { fatal: true }).decode(r.raw(r.u32())) }));
+  expect(r.u32()).toBe(2);
+  const entries = Array.from({ length: r.u32() }, () => {
+    const registration = r.u32(), concurrency = r.u32(), reach = REACHES[r.u8()];
+    if (reach === undefined) throw new Error("unknown reach code");
+    return { registration, concurrency, reach, name: new TextDecoder("utf-8", { fatal: true }).decode(r.raw(r.u32())) };
+  });
   r.end();
   return entries;
 }
@@ -24,44 +29,49 @@ function oxma({ magic = "OXMA", version = 1, outcome = 0, changed = 0, entry = 0
 }
 
 const TABLE: readonly ModuleCommandEntry[] = [
-  { registration: 1, concurrency: 4, name: "python" }, { registration: 1, concurrency: 4, name: "python3" }, { registration: 2, concurrency: 1, name: "typst" },
+  { registration: 1, concurrency: 4, reach: "internet", name: "python" }, { registration: 1, concurrency: 4, reach: "internet", name: "python3" },
+  { registration: 2, concurrency: 1, reach: "none", name: "typst" }, { registration: 3, concurrency: 2, reach: "vm", name: "psql" },
 ];
 
-describe("OXMC v1, the whole module-command table", () => {
-  it("writes the version, the count and each entry's registration, concurrency and name in the given order", () => {
+describe("OXMC v2, the whole module-command table with each registration's network reach (engine ADR 0029)", () => {
+  it("writes the version, the count and each entry's registration, concurrency, reach code and name in the given order", () => {
     expect(Array.from(encodeModuleCommandTable(TABLE))).toEqual([
-      ...text("OXMC"), 1, 0, 0, 0, 3, 0, 0, 0,
-      1, 0, 0, 0, 4, 0, 0, 0, 6, 0, 0, 0, ...text("python"),
-      1, 0, 0, 0, 4, 0, 0, 0, 7, 0, 0, 0, ...text("python3"),
-      2, 0, 0, 0, 1, 0, 0, 0, 5, 0, 0, 0, ...text("typst"),
+      ...text("OXMC"), 2, 0, 0, 0, 4, 0, 0, 0,
+      1, 0, 0, 0, 4, 0, 0, 0, 2, 6, 0, 0, 0, ...text("python"),
+      1, 0, 0, 0, 4, 0, 0, 0, 2, 7, 0, 0, 0, ...text("python3"),
+      2, 0, 0, 0, 1, 0, 0, 0, 0, 5, 0, 0, 0, ...text("typst"),
+      3, 0, 0, 0, 2, 0, 0, 0, 1, 4, 0, 0, 0, ...text("psql"),
     ]);
     // An empty table is the request that removes every stub this VM owns.
-    expect(Array.from(encodeModuleCommandTable([]))).toEqual([...text("OXMC"), 1, 0, 0, 0, 0, 0, 0, 0]);
+    expect(Array.from(encodeModuleCommandTable([]))).toEqual([...text("OXMC"), 2, 0, 0, 0, 0, 0, 0, 0]);
   });
 
   it("round-trips generated tables through the engine's reader", () => {
     for (let size = 0; size <= MODULE_COMMAND_MAX_NAMES; size += 7) {
       const table = Array.from({ length: size }, (_, index): ModuleCommandEntry => {
         const registration = 1 + (index % 5) * 977;
-        return { registration, concurrency: 1 + registration % MODULE_COMMAND_MAX_CONCURRENCY, name: `c${String(index)}${"x".repeat(index % 60)}` };
+        return { registration, concurrency: 1 + registration % MODULE_COMMAND_MAX_CONCURRENCY, reach: REACHES[registration % 3] ?? "none", name: `c${String(index)}${"x".repeat(index % 60)}` };
       });
       expect(readTable(encodeModuleCommandTable(table))).toEqual(table);
     }
-    const largest = [{ registration: 0xffff_ffff, concurrency: MODULE_COMMAND_MAX_CONCURRENCY, name: "z".repeat(64) }];
+    const largest = [{ registration: 0xffff_ffff, concurrency: MODULE_COMMAND_MAX_CONCURRENCY, reach: "internet" as const, name: "z".repeat(64) }];
     expect(readTable(encodeModuleCommandTable(largest))).toEqual(largest);
   });
 
   it("refuses a table Rust would refuse before writing anything", () => {
-    const entry = { registration: 1, concurrency: 4, name: "tool" };
-    for (const table of [
+    const entry: ModuleCommandEntry = { registration: 1, concurrency: 4, reach: "vm", name: "tool" };
+    const tables: readonly (readonly ModuleCommandEntry[])[] = [
       [{ ...entry, registration: 0 }], [{ ...entry, registration: -1 }], [{ ...entry, registration: 1.5 }], [{ ...entry, registration: 2 ** 32 }],
       [{ ...entry, concurrency: 0 }], [{ ...entry, concurrency: MODULE_COMMAND_MAX_CONCURRENCY + 1 }], [{ ...entry, concurrency: 2.5 }],
       [{ ...entry, name: "Tool" }], [{ ...entry, name: "oxidevm-tool" }], [{ ...entry, name: "" }],
       [entry, { ...entry, registration: 2 }],
       // Every name of one registration carries that registration's single limit.
       [entry, { ...entry, name: "other", concurrency: 5 }],
+      // ... and that registration's single reach.
+      [entry, { ...entry, name: "other", reach: "internet" as const }],
       Array.from({ length: MODULE_COMMAND_MAX_NAMES + 1 }, (_, index) => ({ ...entry, name: `c${String(index)}` })),
-    ]) expect(() => encodeModuleCommandTable(table), JSON.stringify(table).slice(0, 80)).toThrow();
+    ];
+    for (const table of tables) expect(() => encodeModuleCommandTable(table), JSON.stringify(table).slice(0, 80)).toThrow();
   });
 });
 

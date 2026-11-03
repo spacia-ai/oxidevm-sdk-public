@@ -80,3 +80,23 @@ describe("module commands", () => {
     expect(authorityChange(buildReleaseFiles().manifest, one)).toEqual({ added: ["command:tool"], removed: [] });
   });
 });
+
+describe("network reach (engine ADR 0029)", () => {
+  const local = { kind: "file", path: "dist" } as const;
+  const card = (host: readonly string[], extra: Readonly<Record<string, unknown>> = {}) => consentCard(resolutionOf(buildReleaseFiles({ host, extra }), local), local);
+
+  it("shows each reach, the disclosed hosts and purpose, and whether programs it starts follow the VM instead", () => {
+    expect(card(["files.sync"]).network).toEqual({ reach: "none", hosts: [], children: false });
+    expect(card(["net.vm", "process.spawn"]).network).toEqual({ reach: "vm", hosts: [], children: true });
+    // A module.json from an earlier CLI with sockets.connect alone is VM-only (D15).
+    expect(card(["sockets.connect"]).network.reach).toBe("vm");
+    const internet = card(["net.internet", "sockets.connect"], { network: { hosts: ["pypi.org", "*.pythonhosted.org"], purpose: "Python programs reach the internet through the VM" } });
+    expect(internet.network).toEqual({ reach: "internet", hosts: ["*.pythonhosted.org", "pypi.org"], purpose: "Python programs reach the internet through the VM", children: false });
+    expect(internet.minApi).toBe(146);
+  });
+
+  it("asks for consent again when a release widens its reach", () => {
+    const vm = buildReleaseFiles({ host: ["net.vm", "sockets.connect"] }).manifest, internet = buildReleaseFiles({ host: ["net.internet", "sockets.connect"] }).manifest;
+    expect(authorityChange(vm, internet)).toEqual({ added: ["host:net.internet"], removed: ["host:net.vm"] });
+  });
+});

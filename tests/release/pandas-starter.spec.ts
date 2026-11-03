@@ -1,11 +1,26 @@
 import { expect, test } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import type { BrowserContext } from "@playwright/test";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 function origin(): string {
   const value = process.env["OXIDEVM_STARTER_URL"];
   if (value === undefined) throw new Error("Set OXIDEVM_STARTER_URL to the staged pandas starter");
   return value;
 }
+// A failed test keeps the page, frame and worker console beside its trace and screenshot.
+const consoles = new WeakMap<BrowserContext, string[]>();
+test.beforeEach(({ context }) => {
+  const lines: string[] = []; consoles.set(context, lines);
+  const add = (line: string) => { if (lines.length < 10_000) lines.push(line.slice(0, 4000)); };
+  context.on("console", message => { add(`${message.type()}: ${message.text()}`); });
+  context.on("weberror", error => { add(`pageerror: ${error.error().message}`); });
+});
+test.afterEach(async ({ context }, info) => {
+  if (info.status === info.expectedStatus) return;
+  const file = info.outputPath("console.log"); await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, `${(consoles.get(context) ?? []).join("\n")}\n`);
+});
 test("real Linux pandas supports editing, CSV upload, export, persistence and interruption", async ({ page }, info) => {
   const errors: string[] = []; page.on("pageerror", error => { errors.push(error.message); });
   await page.goto(origin());

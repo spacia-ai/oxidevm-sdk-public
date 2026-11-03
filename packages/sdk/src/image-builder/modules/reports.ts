@@ -21,6 +21,8 @@ export interface WasmAddResult {
   readonly capabilities: readonly string[];
   /** The commands the module declares, run as `/usr/local/bin/<name>` once an application turns them on; absent when it declares none. */
   readonly commands?: readonly string[];
+  /** The module's network reach and what it discloses (engine ADR 0029); absent for a module with no reach. */
+  readonly network?: { readonly reach: "vm" | "internet"; readonly hosts: readonly string[]; readonly purpose?: string };
   /** Authority this release asks for that the installed one did not, and the reverse. */
   readonly added: readonly string[];
   readonly removed: readonly string[];
@@ -48,10 +50,19 @@ function choice<T extends string>(value: unknown, label: string, allowed: readon
   return found;
 }
 
+function decodeAddNetwork(value: unknown): NonNullable<WasmAddResult["network"]> {
+  const network = record(value, "network");
+  exactKeys(network, ["reach", "hosts"], ["purpose"]);
+  return {
+    reach: choice(network["reach"], "network.reach", ["vm", "internet"]), hosts: strings(network["hosts"], "network.hosts", 32),
+    ...(network["purpose"] === undefined ? {} : { purpose: string(network["purpose"], "network.purpose") }),
+  };
+}
+
 export function decodeWasmAddResult(value: unknown): WasmAddResult {
   return decoding("wasm add result", () => {
     const input = record(value, "wasm add result");
-    exactKeys(input, ["id", "version", "source", "release", "status", "consent", "license", "capabilities", "added", "removed", "generatedFile"], ["commands"]);
+    exactKeys(input, ["id", "version", "source", "release", "status", "consent", "license", "capabilities", "added", "removed", "generatedFile"], ["commands", "network"]);
     const license = record(input["license"], "license");
     exactKeys(license, ["spdx", "copyleft"]);
     return {
@@ -59,6 +70,7 @@ export function decodeWasmAddResult(value: unknown): WasmAddResult {
       status: choice(input["status"], "status", ["added", "updated", "unchanged"]), consent: choice(input["consent"], "consent", ["none-needed", "trusted-source", "approved"]),
       license: { spdx: string(license["spdx"], "license"), copyleft: boolean(license["copyleft"], "copyleft") },
       capabilities: strings(input["capabilities"], "capabilities", 64), ...(input["commands"] === undefined ? {} : { commands: decodeCommands(input["commands"]) }),
+      ...(input["network"] === undefined ? {} : { network: decodeAddNetwork(input["network"]) }),
       added: strings(input["added"], "added", 256), removed: strings(input["removed"], "removed", 256), generatedFile: string(input["generatedFile"], "generatedFile"),
     };
   });

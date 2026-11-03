@@ -19,14 +19,18 @@ A module has three parts, kept in one repository:
   declared and returns the hooks the runner drives;
 - **artifacts**: the WebAssembly files and notices, pinned by sha256.
 
-Modules need a **self-hosted runtime** on a cross-origin isolated page. A module
-runs as a JS process of the VM, started by `spawnModule` or by a program that runs
-one of its commands, and the hosted frame client runs neither: `spawnModule` and
-`enableModuleCommands` take a Userspace VM that `createVM` returned on this page.
-A running module uses one JS process, and at most 32 host commands run at once:
-JS processes, worker threads, esbuild runs and native commands share that lane.
-`oxidevm wasm doctor` lists what each installed module needs from the browser and
-the image, which it cannot check itself.
+A module runs as a JS process of the VM, started by `spawnModule` or by a
+program that runs one of its commands. `spawnModule` and `enableModuleCommands`
+take a Userspace VM that `createVM` returned on this page, self-hosted or in the
+hosted runtime frame, on a cross-origin isolated page. Module code never runs in
+your page's origin: it runs in the VM's **module frame**, a sandboxed frame with
+an opaque origin and no network of its own (engine ADR 0028; see
+[Where modules run](#where-modules-run)). Modules run in Chromium and Firefox;
+WebKit and Safari refuse them with a typed error. A running module uses one JS
+process, and at most 32 host commands run at once: JS processes, worker threads,
+esbuild runs and native commands share that lane. `oxidevm wasm doctor` lists
+what each installed module needs from the browser and the image, which it cannot
+check itself.
 
 ## Use a module
 
@@ -36,12 +40,13 @@ oxidevm wasm add github:owner/repo@v1.0.0
 
 The command resolves the release, shows what the module declares, and asks
 before it installs anything. The card says what the module _declares_ because a
-module is code that runs in a worker of your page with that authority; it is not
-sandboxed from your application. Review it the way you review a dependency. For a
-module with commands the card lists each command with its path,
-`/usr/local/bin/<name>`, says that a command takes the place of an image program
-with the same name, and warns that a module that runs code it is given, such as
-an interpreter, lets programs in the VM run code in your page's origin. For a
+module is code that acts on your VM with that authority: its files, processes and
+network reach. It runs isolated from your page's origin, but it is not a sandbox
+for the VM. Review it the way you review a dependency. The card's `network` row
+shows the module's reach, the hosts it discloses and its purpose (see
+[Networking](#networking)). For a module with commands the card lists each
+command with its path, `/usr/local/bin/<name>`, and says that a command takes the
+place of an image program with the same name. For a
 GitHub source the card also shows the commit the tag points to, whether the
 release is immutable, and whether GitHub holds an attestation for it; the tool
 only learns that an attestation exists and does not verify it, so none of these
@@ -90,36 +95,37 @@ refuses and writes nothing. A copyleft release that names no `license.source` is
 refused before anything is asked.
 
 Every file of a release is pinned by sha256 in the lock, and the release itself is
-named by the digest of its `SHA256SUMS`. All pinned files are checked again each
-time a module starts: a file that no longer matches stops the module before any
-module code runs (exit status 121). That is a check at start. A loader that the
-adapter hands a `host.artifacts.url(name)` fetches the bytes later, and those
-fetches are not checked again.
-
-Module commands are checked once, when they are turned on: `enableModuleCommands`
-fetches every pinned file, checks it, and keeps the checked copies, with the
-WebAssembly artifacts compiled, for as long as the commands stay on. Every run
-uses those copies, so a file that changes on the server afterwards has no effect,
-and a file that does not match fails the call before any of its code runs. Turn
-the commands off and on again to check again or to pick up a new release. The
-copies live in your page's memory: they guard against a server or cache that
-changes files later, not against code running in your page.
+named by the digest of its `SHA256SUMS`. Each VM checks each file **once**: the
+first `spawnModule` or `enableModuleCommands` that needs a file reads it from your
+page's origin, and the VM's Userspace worker checks it against its pin before any
+of the module's code runs. The VM keeps the checked copy, with each WebAssembly
+artifact compiled once, and every later start and every command run in that VM
+uses it without fetching anything. A file that does not match makes the call
+reject with `wasm-module-integrity` before any process exists, so exit status 121
+no longer occurs. A VM holds at most 512 MiB of checked copies
+(`wasm-module-copy-limit`). `host.artifacts.url(name)` is a `blob:` URL of the
+checked copy, so a loader that fetches it itself reads the checked bytes.
+`host.artifacts.blob(name)` is the checked copy itself, and
+`host.artifacts.bytesSync(name)` reads it without awaiting (the module worker's
+`FileReaderSync`), for an interpreter that installs a file while it runs and
+cannot await, such as one without JSPI importing a package: neither fetches nor
+checks anything again, and both take only the declared artifact names. The
+synchronous read blocks the module's worker while it copies the file; use
+`bytes(name)` where the adapter can await. The
+copies guard against a server or cache that changes files later; a new VM checks
+again, and so does a new release.
 
 The pins protect the files, not the code's behavior. `mounts` and `state.durable`
 are information for the consent card; nothing enforces them, and an adapter can
 touch any file its host operations allow. Once a command is on, every program in
 the VM can run it, with every host operation the module declares.
 
-**An interpreter command runs guest code in your page's origin.** A module that
-runs code it is given, such as a Python interpreter, lets programs in the VM run
-code in your page's origin once its commands are on: a program that runs
-`python3 -c "..."` can then send same-origin requests that carry your page's
-cookies, and reach its IndexedDB and OPFS data and its BroadcastChannels. Any
-program in the VM can do this, including a script that came with a project. A
-module that hides its interpreter's bridge to JavaScript from such programs
-narrows this path but does not close it. Turn such commands on only where that is
-acceptable for your page; the engine's ADR 0027 records this as an accepted
-exception until module workers move to a separate origin.
+**An interpreter command lets programs in the VM use its capabilities.** A
+module that runs code it is given, such as a Python interpreter, lets every
+program in the VM that runs it (`python3 -c "..."`, or a script that came with a
+project) use what the module declares: its host operations and its network
+reach. That code runs in the module frame, not in your page's origin, so it
+cannot reach your page's cookies, storage, locks or channels (engine ADR 0028).
 
 ### Run it
 
@@ -154,11 +160,23 @@ finish for five seconds, then cancels them and runs its adapter's `close` (ten
 seconds at most). A process that has not exited twenty seconds after stop is
 killed.
 
-A service started with `exclusive: "workspace"` holds a Web Lock named for the
-workspace and module, so a second tab fails fast with a busy error instead of
-corrupting a database. A service killed without stopping leaves its socket file;
-the next start replaces it when nothing is listening on it. If another process
-listens there, the start fails as busy and the socket is left alone.
+A service started with `exclusive: "workspace"` runs at most once per workspace
+and module across the page's VMs and tabs: the VM's Userspace worker takes a Web
+Lock of its own origin before the process starts and holds it until the process
+ends, so module code can neither hold nor steal it. A second start fails fast
+with a busy error (`wasm-module-busy`) instead of corrupting a database. A service killed without stopping leaves its socket file,
+and the next start decides what to do with it:
+
+- an exclusive service replaces it: its lease rules out another running
+  instance, so the file is a leftover, whatever the module's network reach;
+- a service with a network reach (`net.vm` or `net.internet`) connects to it
+  first, replaces it when nothing listens there, and otherwise fails as busy and
+  leaves it alone;
+- a service that is neither cannot check, because the engine refuses every
+  client connection of a module without a reach, Unix sockets included (engine
+  ADR 0029); it fails as busy and leaves the file alone. Declare
+  `exclusive: "workspace"` for a service that should recover from a kill on its
+  own.
 
 ### Run a module's commands from a shell
 
@@ -172,7 +190,7 @@ import { enableModuleCommands } from "@oxidevm/sdk/wasm";
 import { wordfreq } from "./oxidevm.modules.generated";
 
 export async function shell(vm: UserspaceVM): Promise<void> {
-  // Fetches and checks the module's files once, then places /usr/local/bin/wordfreq in this VM.
+  // Checks the module's files the VM does not hold yet, then places /usr/local/bin/wordfreq in this VM.
   const commands = await enableModuleCommands(vm, wordfreq, { concurrency: 2 });
   const path: "/usr/local/bin/wordfreq" = commands.paths.wordfreq;
   for (const { name, reason } of (await commands.status()).skipped) console.warn(`${name} is not on: ${reason}`);
@@ -181,7 +199,7 @@ export async function shell(vm: UserspaceVM): Promise<void> {
   const counted = await vm.exec({ command: "wordfreq", args: ["README.md", "counts.json"], cwd: "/workspace" });
   console.log(path, counted.exit);
 
-  // Off again: the stub is removed and the checked copies are dropped.
+  // Off again: the stub is removed and the commands release their checked copies.
   await commands.disable();
 }
 ```
@@ -201,9 +219,9 @@ status. Ctrl+C reaches the module: unless the module traps the signal with
 `process.signals`, the process ends at once and a shell reports 130. A runner
 failure (status 120 to 124) of such a run prints one readable line on standard
 error, `<name>: ...`, instead of the JSON record an application start gets.
-Commands need what `spawnModule` needs: a Userspace VM that `createVM` made with
-a self-hosted engine, a cross-origin isolated page and the default
-`initialUser: "user"`.
+Commands need what `spawnModule` needs: a Userspace VM that `createVM` made,
+self-hosted or in the hosted runtime frame, a cross-origin isolated page and the
+default `initialUser: "user"`.
 
 | Option | Meaning |
 | --- | --- |
@@ -221,8 +239,9 @@ the manifest's order), `paths` (each stub's path), `status()` and `disable()`.
 on, and each name left without a stub, with `reason: "occupied"` when another
 file holds its path (that file is left as it is) or `"unavailable"` when placing
 the stubs failed the last time the VM's runtime was replaced, for example at a
-restore; the next placement tries again. `disable()` removes the stubs and drops
-the checked copies, while runs that already started finish with theirs. Calling
+restore; the next placement tries again. `disable()` removes the stubs and releases
+the commands' hold on the checked copies, while runs that already started finish
+with theirs. Calling
 it again, or after the VM was disposed, does nothing.
 
 **`PATH` and programs with the same name.** Programs find a command at
@@ -253,6 +272,54 @@ with status 126, and the placement trace (`readJSProcessTrace` from
 `@oxidevm/sdk/diagnostics`) names the reason, `module-command-concurrency` or
 `command-capacity`.
 
+### Where modules run
+
+Each VM gets one hidden **module frame** the first time `spawnModule` or
+`enableModuleCommands` needs it, and loses it when the VM is disposed (engine
+ADR 0028):
+
+- The frame is an `<iframe sandbox="allow-scripts" allow="cross-origin-isolated">`
+  whose document comes from the runtime's own origin, so the sandbox gives it an
+  opaque origin. A broker worker runs there, with one runner worker per module
+  process. The broker relays every request of a module process to the VM's
+  Userspace worker; a synchronous request pays a relay of about 0.1 ms
+  (diagnostic measurement on a loaded host).
+- Module code has no access to your page's cookies, IndexedDB, OPFS,
+  CacheStorage, Web Locks or BroadcastChannels, and no network of its own
+  (`connect-src blob:`); its network is the VM's (see [Networking](#networking)).
+  In Chromium, workers of an opaque origin are not secure contexts, so
+  `crypto.subtle` is unavailable to module code; `crypto.getRandomValues`
+  remains.
+- A manifest whose `requires.browser` names `indexeddb` or `web-locks` is refused
+  with `wasm-module-prerequisite`, because the frame has neither.
+- The broker treats every message from a runner as hostile input: a malformed one
+  ends only the process that sent it, with status 125.
+- A frame that is removed from the document, or whose broker stops answering,
+  is lost: the VM ends its module processes with status 125, and the next call
+  opens a new frame.
+
+Where the frame document is served:
+
+| Runtime | Module frame |
+| --- | --- |
+| Hosted runtime frame | `/v/<sdk version>/module-frame/` of the runtime origin, served by the runtime frame deployment of an SDK version that has module isolation. Your page still reads the module's staged files from its own origin and hands the VM the files it does not hold yet. |
+| Self-hosted | `module-frame/` beside the engine assets, at `<runtime.baseUrl>module-frame/`; you serve it, see [Deployment](deployment.md#webassembly-modules). |
+
+A browser that cannot isolate module workers refuses modules with
+`FEATURE_NOT_AVAILABLE`, `reason: "wasm-module-isolation-unavailable"` and a
+`capability` that names what failed: `frame-load`,
+`frame-cross-origin-isolation`, `separate-origin`, `worker-shared-memory`,
+`worker-atomics-wait`, `blob-workers`, `wasm-compilation`,
+`separate-agent-cluster`, `module-frame-lost` or `frame-policy`. The frame probes these in every
+browser; there is no browser allowlist and nothing falls back to your page's
+origin. `frame-policy` means the frame was served without the
+`Content-Security-Policy` of its `frame.json`: the frame checks that a fetch of
+a `data:` URL from its document and `importScripts` of one from a runner are
+refused, because without that policy module code would have the browser's
+network. WebKit fails `blob-workers` today (under COEP no `blob:` worker starts in
+the frame), so Safari refuses modules. Safari itself has not been tested; the
+evidence comes from Playwright's WebKit on Linux.
+
 ### Bundlers and security policy
 
 The generated handles name staged files with `new URL(path, import.meta.url)`, so
@@ -262,9 +329,12 @@ URLs; both forms work, and the sha256 check applies either way. Set
 they serve as scripts, stylesheets or pages (Vite adds import analysis to a `.mjs`), which would
 change the bytes the lock pins, so the handles name the neutral `.bin` copies that staging keeps
 beside those files; `oxidevm wasm doctor` checks the copies too. Under a content
-security policy, allow `blob:` in `script-src`, because the runner imports the
-verified adapter from a blob URL, and allow `data:` in `connect-src` when a
-bundler inlines staged files.
+security policy, your page needs `connect-src 'self'` to read the staged files
+(and `data:` when a bundler inlines them) and, self-hosted, the frame's
+`broker.js` and `runner.js`, and `frame-src` for the origin that serves the module
+frame: `'self'` when self-hosted, the runtime origin when hosted. The runner
+imports the verified adapter from a `blob:` URL inside the module frame, under
+the frame's own policy.
 
 ### Snapshots
 
@@ -281,17 +351,20 @@ A failure of `spawnModule` to start a module, or of `enableModuleCommands`, is a
 | Reason | Code | Meaning |
 | --- | --- | --- |
 | `wasm-module-launch` | `GUEST_CRASH` | the launch descriptor was missing, oversized or invalid |
-| `wasm-module-integrity` | `GUEST_CRASH` | a file or the adapter did not match its pinned sha256; `detail.file` names it |
+| `wasm-module-integrity` | `GUEST_CRASH` | a file or the adapter did not match its pinned sha256; the call rejects before any process exists, and `detail.file` names the file |
 | `wasm-module-artifact` | `CORE_LOAD_FAILED` | a pinned file could not be fetched: the request failed or the server answered with an HTTP error; `detail.file` names it |
-| `wasm-module-prerequisite` | `FEATURE_NOT_AVAILABLE` | a declared browser feature or guest executable is missing; `detail.missing` lists them |
+| `wasm-module-prerequisite` | `FEATURE_NOT_AVAILABLE` | a declared browser feature or guest executable is missing, or `requires.browser` names `indexeddb` or `web-locks`, which the module frame does not have; `detail.missing` lists them |
+| `wasm-module-isolation-unavailable` | `FEATURE_NOT_AVAILABLE` | this browser cannot isolate module workers, or the VM's module frame was lost; `detail.capability` names the failed check (see [Where modules run](#where-modules-run)) |
+| `module-frame-asset` | `CORE_LOAD_FAILED` | the module frame's `broker.js` or `runner.js` could not be fetched from `<runtime.baseUrl>module-frame/` |
+| `wasm-module-copy-limit` | `QUOTA_EXCEEDED` | the VM would hold more than 512 MiB of checked module files |
 | `wasm-module-adapter` | `GUEST_CRASH` | the adapter threw, had the wrong shape, or returned an invalid status |
-| `wasm-module-busy` | `QUOTA_EXCEEDED` | another process holds the workspace lock or an endpoint |
+| `wasm-module-busy` | `QUOTA_EXCEEDED` | another process holds the workspace lease or an endpoint |
 | `wasm-module-ready` | `PROTOCOL_ERROR` | the service printed no valid ready line |
 | `wasm-module-options` | `INVALID_ARGUMENT` | an option passed to `spawnModule` or `enableModuleCommands` is unknown, has the wrong type or is out of range, or a required one is missing |
 | `wasm-module-commands` | `INVALID_ARGUMENT` | `enableModuleCommands` got a service or a module without commands, a `commands` list that is empty, repeats a name or names one the module does not declare, a `concurrency` that is not an integer from 1 to 32, or another field, such as `args`; nothing has been fetched |
 | `wasm-module-command-conflict` | `INVALID_ARGUMENT` | another `enableModuleCommands` call already turned on one of the names in this VM |
-| `wasm-module-command-unavailable` | `FEATURE_NOT_AVAILABLE` | the VM cannot run module commands: it runs in the hosted runtime frame, was not created by this copy of the SDK, is a System VM, has a root initial user or no image, or the page is not cross-origin isolated; nothing has been fetched |
-| `wasm-module-command-limit` | `QUOTA_EXCEEDED` | the VM already has 16 sets of commands on, or would have more than 64 command names or 512 MiB of checked files |
+| `wasm-module-command-unavailable` | `FEATURE_NOT_AVAILABLE` | the VM cannot run module commands: it was not created by this copy of the SDK, is a System VM, has a root initial user or no image, or the page is not cross-origin isolated; nothing has been fetched |
+| `wasm-module-command-limit` | `QUOTA_EXCEEDED` | the VM already has 16 sets of commands on, or would have more than 64 command names |
 | `wasm-manifest-invalid` | `INVALID_ARGUMENT` | a manifest, lock, handle or descriptor failed validation |
 
 `enableModuleCommands` also fails with `STORAGE_ERROR` when the VM's system files
@@ -307,12 +380,12 @@ A module that ends reports an exit status, which a shell sees as `$?`:
 | Status | Meaning |
 | --- | --- |
 | `0`-`119` | the adapter's own status |
-| `120` | the module could not be launched, including when a pinned file could not be fetched (`wasm-module-artifact`) |
-| `121` | a file or the adapter did not match its pin; never for a command, whose files were checked when it was turned on |
+| `120` | the module could not be launched |
+| `121` | reserved for a file that did not match its pin; since files are checked before the process exists, the call rejects with `wasm-module-integrity` instead and no process ends with it |
 | `122` | a declared browser feature or guest executable is missing |
 | `123` | the adapter threw, had the wrong shape, or returned an invalid status |
-| `124` | another process holds the service's workspace lock or an endpoint |
-| `125` | the engine reports a failed worker |
+| `124` | another process holds the service's workspace lease or an endpoint |
+| `125` | the engine reports a failed worker, the module frame was lost, or the broker ended a process that sent it a malformed message |
 | `126` | a command's stub ran as an ordinary program and printed why on standard error: the command is not on in this VM, the file is a copy of the stub at another path, the caller does not run as uid and gid 1000 outside a container, or `concurrency` runs or the VM's 32 host commands are already in use |
 | `128` + n | signal n ended the process, for example `130` for Ctrl+C; the process handle's `exit` is `{ kind: "signaled" }` |
 
@@ -325,10 +398,13 @@ or runs the image's program with that name.
 oxidevm wasm init my-tool                  # a command module wrapping a tiny Wasm function
 oxidevm wasm init my-db --kind service     # a service listening on a Unix socket
 oxidevm wasm init wrapped --from lib.wasm  # start from your own WebAssembly file
+oxidevm wasm init fetcher --network internet  # declare a network reach: none (default), vm or internet
 ```
 
-The project has strict TypeScript and ESLint settings, a unit test, CI and release
-workflows, and an `AGENTS.md` for coding agents. Everything lives in `module.ts`
+The project has strict TypeScript and ESLint settings, unit tests on `testHost`, CI
+and release workflows, a README "Network" section, and an `AGENTS.md` for coding
+agents with the networking rules. `--network vm` or `internet` declares the reach
+and adds `src/net.ts` (a bounded, cancellable request) and its tests. Everything lives in `module.ts`
 and `src/`:
 
 <!-- typecheck: wasm/define.ts -->
@@ -372,9 +448,9 @@ fixes the adapter's shape:
   type error.
 - A service's `protocols` must have exactly the keys of `expose`.
 - `host.artifacts.compile(name)`, `bytes(name)` and `url(name)` accept only
-  declared artifact names. `compile` and `bytes` return bytes the runner has
-  checked; `url` returns where the page serves the file, for a loader that fetches
-  it itself, and what such a loader reads is not checked again.
+  declared artifact names, and all three give the copy the VM checked: `compile`
+  returns the module compiled once for the VM, `bytes` its bytes, and `url` a
+  `blob:` URL of it for a loader that fetches its own files.
 - `host.options` holds the declared options with defaults applied.
 
 The adapter is a **factory**: it runs once at start with `host`, keeps its state in
@@ -391,16 +467,21 @@ close that one connection.
 | --- | --- | --- |
 | `files.sync` | `fs` | synchronous file operations on the VM's files |
 | `files.async` | `files` | the same operations as promises, with `AbortSignal` |
-| `sockets.connect` | `sockets` | client sockets (listening belongs to the runner) |
+| `sockets.connect` | `sockets` | raw client sockets (listening belongs to the runner); a new module pairs it with `net.vm` or `net.internet` |
+| `net.vm` | `net` | network reach: programs in this VM (Userspace API 146; see Networking) |
+| `net.internet` | `net` | network reach: also the internet through the VM's connection (Userspace API 146; see Networking) |
 | `process.info` | `process.info`, `process.cwd` | this process's id, credentials and directory |
 | `process.spawn` | `process.spawn`, `process.wait`, `process.signal` | native child processes |
-| `process.signals` | `process.signals` | trap SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1 and SIGUSR2 instead of their default action, and end this process killed by a signal (Userspace API 145) |
+| `process.signals` | `process.signals` | trap SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2 and the real-time signals instead of their default action, block and unblock signals, list pending ones, and raise a signal (Userspace API 145; masks and real-time signals need 146) |
 
 Every host also has `signal`, `options`, `artifacts`, `stdio`, `log(line)`,
 `fail(status, message)` and `kit`: tested helpers for Linux-to-Emscripten errno
 mapping, length-prefixed framing, a FIFO session gate, running a native command
-with bounded output, and atomic directory creation. Use the kit instead of
-rewriting these; a module never imports it.
+with bounded output, atomic directory creation, and the network adaptation of
+[Networking](#networking) (`kit.emscripten.network`,
+`kit.emscripten.networkImports`, `kit.tls`, `kit.net.describe` and
+`kit.net.errno`). Use the kit instead of rewriting these; a module never imports
+it.
 
 ### Commands and signals
 
@@ -449,16 +530,216 @@ async main(io) {
 ```
 
 `trap(signals)` takes any of SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1 and
-SIGUSR2 and resolves once they reach the module instead of their default action;
+SIGUSR2, and the real-time signals by name (`SIGRTMIN`, `SIGRTMIN+n`,
+`SIGRTMAX-n`, `SIGRTMAX`) or by number (35 to 64), naming each signal once, and
+resolves once they reach the module instead of their default action. A real-time
+signal arrives as `{ signal, value, code, pid, uid }`: every `sigqueue` value
+queues in order, and one that arrives past the process's queue limit has the
+zeros Linux reports for it;
 SIGKILL and SIGSTOP never can, and a signal the process inherited as ignored stays
 ignored. The trap is an async iterable of the trapped signals as they arrive, and
 a signal that arrives again before the module has seen it is delivered once.
 `interruptBuffer` is an `Int32Array` in the format that Pyodide's
-`setInterruptBuffer` reads. While a signal is trapped, its arrival makes a host
+`setInterruptBuffer` reads: the runtime writes the signal's number into element
+0 while it reads 0, and the reader resets it. A reader that acts on the signal
+takes it with one `Atomics.exchange(buffer, 0, 0)`; a plain read followed by a
+store of 0 loses a signal that arrives between the two, and nothing writes it
+again. Pyodide's own poll (`_Py_CheckEmscriptenSignals_Helper`) is such a read
+and store, so a Pyodide adapter replaces it with an atomic take; otherwise
+Ctrl+C on a busy loop is lost now and then. While a signal is trapped, its arrival makes a host
 operation that is waiting fail with `EINTR`. `untrap()` gives the signals their
-default action back, and `raise(signal)` of a signal that is not trapped ends the
-process killed by it, so a shell reports 128 + n; its promise never settles then.
-Finish quickly once a trapped signal arrives, then `untrap()` and `raise()` it.
+default action back. `raise(signal)` is `kill(getpid(), signal)`: a trapped signal
+reaches its trap, and one that is not trapped ends the process killed by it, so a
+shell reports 128 + n; its promise never settles then. Finish quickly once a
+trapped signal arrives, then `untrap()` and `raise()` it.
+
+`block(signals)` and `unblock(signals)` change the process's signal mask, as
+`sigprocmask` does, and resolve with the previous mask as a set of names; SIGKILL
+and SIGSTOP can never be blocked. A signal that arrives while blocked stays pending
+(`pending()` lists them) and is delivered once when it is unblocked. A process
+starts with the mask it inherited, so a module started from a shell that blocks
+SIGINT does not see Ctrl+C until it unblocks it.
+
+### Networking
+
+Every module states how far it reaches on the network, and the engine holds each
+of its processes to that statement (engine ADR 0029). Module code never uses the
+browser's own network: everything it sends travels on its process's own sockets
+inside the VM, under the rules every guest program follows.
+
+**For applications that install a module.** A module with internet reach reaches
+the internet only once your application connects the VM through a relay
+(`vm.network.connect`) and the user allows the session on the relay's control
+page; until then it gets `EPERM`, and a revoke resets its open connections. Its
+connections, like any guest program's, show in the personal relay's destination
+list (from personal relay 0.2.0, the Linux x64 beta offered with SDK 0.0.10). Through the relay, the internet means public hosts on TCP 80 and 443, plus
+DNS. Nothing on the internet can connect in. Programs a module starts with
+`process.spawn` are ordinary Linux programs under the VM's own network policy,
+not the module's reach, and the card says so. An interpreter command lets the
+programs that run it use its reach.
+
+**N-1 One declared reach.** `requires.host` names at most one reach token:
+
+| Reach | `requires.host` | The module may | It gets |
+| --- | --- | --- | --- |
+| none | no reach token | open no connections of its own; a service still serves programs in the VM through `expose` | nothing network-related; `fetch` and `WebSocket` fail with "network not declared" |
+| VM-only | `net.vm` | connect to programs in this VM: loopback, Unix sockets and the VM's own addresses; resolve names from the VM's `/etc/hosts` | `fetch`, `Request`, `Response`, `Headers`, `WebSocket` and `host.net` |
+| internet | `net.internet` (includes VM-only) | also reach public hosts on TCP 80 and 443 through the VM's relay connection, with DNS through the VM's resolver | the same |
+
+Naming both tokens is refused. `sockets.connect` (`host.sockets`, raw client
+sockets) needs a reach token: `oxidevm wasm build` refuses it alone. A
+`module.json` built by an earlier CLI that names `sockets.connect` alone has
+VM-only reach; rebuild it with `net.internet` to reach the internet. The tokens
+need Userspace API 146.
+
+**N-2 Disclosure, never an allowlist.** A module with `net.internet` may add
+`network: { hosts?, purpose? }`: up to 32 DNS names it contacts by default (a
+leading `*.` is allowed) and one sentence of up to 200 characters. The install
+review and `oxidevm wasm doctor` show them; nothing enforces them, because an
+interpreter reaches whatever host its program asks for. `network` without
+`net.internet` is invalid.
+
+**N-3 Only the host's network.** The module frame allows no network
+(`connect-src blob:`). For a module with a reach, the runner installs `fetch`,
+`Request`, `Response`, `Headers` and `WebSocket`, plus `host.net`, all on the
+module process's own VM sockets:
+
+- names resolve from the VM's `/etc/hosts` and, for internet reach, the
+  nameservers of its `/etc/resolv.conf`, asked over the process's own datagram
+  socket, so the module gets the answers a guest program gets; a VM-only module
+  resolves from `/etc/hosts` alone;
+- TLS runs inside the module's worker, end to end, with the engine's TLS module
+  (fetched once per VM, the first time a module with a reach starts, and never in
+  a VM whose modules have none);
+- `fetch` follows Node's semantics, not a page's: no CORS, any request header,
+  redirects, gzip and deflate, keep-alive, streamed bodies, `AbortSignal`, and
+  timeouts (10 s to connect, 300 s for the response head and between body
+  reads); `WebSocket` is the standard client over RFC 6455;
+- `host.net.resolve` and `connect({ host, port, tls, alpn })`, their blocking
+  `resolveSync` and `connectSync` for interpreters that cannot await, and
+  `host.net.tls()` for a sans-IO TLS session. A blocking connection's
+  `read(max, { timeoutMs })` waits at most `timeoutMs` (0 to 86,400,000) for
+  bytes, then fails with `NetError` code `ETIMEDOUT` and `errno` 11 (EAGAIN, as
+  Linux reports a receive timeout); without it the read waits for bytes or the
+  end of the stream.
+
+`XMLHttpRequest`, `EventSource`, `navigator.sendBeacon`, `RTCPeerConnection`,
+`WebTransport`, and `import()` or `importScripts` of anything but a blob do not
+work in a module worker. `oxidevm wasm build --check` warns about bundled uses of
+them (`adapter-network`), and `oxidevm wasm test` fails `network-direct` when a
+module attempts one. A `data:` URL is not a network use: the frame's script
+policy refuses `importScripts("data:...")` too, but neither check reports it.
+
+**N-4 Adapting a program's own network layer.**
+
+- Emscripten programs: `host.kit.emscripten.network(host, Module)` connects the
+  program's SOCKFS stream sockets (blocking, through `host.net.connectSync`) and
+  `getaddrinfo` to the VM network. Export `SOCKFS`, `DNS` and `FS` with
+  `EXPORTED_RUNTIME_METHODS`. Listening sockets are refused with `EOPNOTSUPP`.
+  Emscripten's own `getaddrinfo` has no way to fail a lookup, so also pass the
+  program's imports to `host.kit.emscripten.networkImports(imports)` before it
+  is instantiated (in `Module.instantiateWasm`, or where the adapter calls
+  `WebAssembly.instantiate`): a name with no IPv4 address then fails with
+  `EAI_NONAME` (-2) and a lookup that could not be made (offline, beyond the
+  reach, no nameserver answer) with `EAI_AGAIN` (-3), as a C library reports
+  them; without it such a name gets `0.0.0.0` and connecting to it fails.
+  `network` returns `receiveTimeout(fd, ms | null)`, the socket's SO_RCVTIMEO,
+  which Emscripten's `setsockopt` does not pass on: an interpreter calls it when
+  its program sets a socket timeout, and a `recv` that waits longer fails with
+  `EAGAIN`.
+- Programs without TLS: `host.net.connect({ tls: true, alpn })`, or the sans-IO
+  session of `host.kit.tls.session` and `host.kit.tls.handshakeSync`. A session
+  takes `trust`, extra anchors for that session only (each a PEM bundle or one
+  DER certificate, at most 512 certificates in all and 2 MiB, so a full public
+  root bundle such as certifi's fits), the way
+  `SSLContext.load_verify_locations` adds a CA file. They add to the VM's
+  `/etc/ssl/cert.pem` and never switch verification off; an entry that is not a
+  CA certificate fails with `ERR_TLS_INVALID_TRUST`. After the handshake,
+  `peerCertificates()` (DER, leaf first), `protocolVersion()` (`"TLSv1.2"` or
+  `"TLSv1.3"`), `cipherSuite()` (the IANA id) and `alpn()` give what
+  `getpeercert()`, `version()`, `cipher()` and `selected_alpn_protocol()`
+  report. These need engine TLS API 2.
+- WASI preview 1 programs have no sockets; their JavaScript glue uses `fetch` or
+  `host.net`.
+
+**N-5 Offline, revoked and refused.** Failures are typed. `fetch` rejects with
+`TypeError("fetch failed")` whose `cause` is a `NetError` (exported from
+`@oxidevm/sdk/wasm`), and `host.net` and sockets fail with the same codes:
+
+| Situation | `cause.code` | `cause.reason` |
+| --- | --- | --- |
+| the VM is not connected yet | `EPERM` | `vm-local-only` |
+| the user revoked the connection | `ECONNRESET` | |
+| beyond the declared reach | `EACCES` | `module-network-reach` |
+| a certificate the VM does not trust | `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, `ERR_TLS_CERT_ALTNAME_INVALID`, `CERT_HAS_EXPIRED`, ... | |
+
+A command prints one line from `host.kit.net.describe(error, argv0)` and
+returns 69, `MODULE_EXIT.unavailable` (sysexits `EX_UNAVAILABLE`; the adapter
+bundle imports no SDK values except `defineModule`, so write the number, and use
+the constant in tests); a service fails only the affected request and stays
+ready. Nothing retries in a loop.
+
+**N-6 Cancellation and bounds.** Pass `host.signal`, or a signal derived from
+it, and a timeout to every request, and stream or bound every body.
+
+**N-7 Trust and credentials.** TLS always verifies against the VM's own trust
+store, `/etc/ssl/cert.pem`, which is what `curl` in the image trusts. No host API
+switches verification off, and the SDK bundles no CA data. Credentials reach a
+module only through its options or guest files; its frame holds no page cookies
+or storage.
+
+**N-8 Limits.** Internet means TCP 80 and 443 plus DNS, the relay's policy.
+Nothing on the internet connects in: services serve VM clients through `expose`.
+Module code gets no raw datagram sockets; the runner uses one internally for
+DNS.
+
+**N-9 Testing.** `testHost({ net })` from `@oxidevm/sdk/wasm/testing` gives
+unit tests the same reach checks and errors on an in-memory network (see
+[Build, test, release](#build-test-release)). `oxidevm wasm test` checks three
+network properties: `network-direct`, `network-declared` and `network-offline`.
+
+**N-10 Documentation.** A module's README has a "Network" section: the reach,
+the disclosed hosts and purpose, and what happens offline.
+`oxidevm wasm init --network none|vm|internet` generates the declaration, that
+section, `AGENTS.md` rules and tests; the default is `none`.
+
+A module with internet reach, as a command:
+
+```ts
+// module.ts declares requires: { host: ["files.sync", "net.internet"] } and
+// network: { hosts: ["api.example.com"], purpose: "Downloads the current rates." }.
+async main(io) {
+  const [output = "rates.json"] = io.args;
+  try {
+    // Cancelled when the module stops, and bounded in time.
+    const signal = AbortSignal.any([host.signal, AbortSignal.timeout(30_000)]);
+    const response = await fetch("https://api.example.com/rates", { signal });
+    if (!response.ok) return host.fail(1, `rates: HTTP ${String(response.status)}`);
+    host.fs.writeFile(output, new Uint8Array(await response.arrayBuffer()));
+    return 0;
+  } catch (error) {
+    // One line, such as "rates: network unavailable: this VM is not connected to the internet".
+    host.log(host.kit.net.describe(error, "rates"));
+    return 69; // MODULE_EXIT.unavailable
+  }
+},
+```
+
+What is verified: all 16 scenarios of the module networking browser run pass in
+Chromium 149 and Firefox 151, with the runtime self-hosted and in the hosted
+runtime frame (`docs/plans/2026-11-02-module-follow-ups/evidence/networking-sl-n4.md`).
+With the VM local-only, they cover the reach checks, the offline and refused
+paths, VM-only `fetch`, and the module frame having no browser network. Through a
+relay, they cover internet HTTPS `fetch` and `wss` with TLS verified against the
+VM's trust store, DNS answers that match guest `curl`, the relay's destination
+list, and a relay-side revoke or `vm.network.disconnect()` during a download
+ending it with `ECONNRESET`. Limits: no live internet was used. A relay test peer
+stood in for the relay, its DNS and routing sent a test name to local servers,
+and the TLS certificate came from a throwaway test CA added to the VM's trust
+store. The destination list checked was the test peer's table, built on the
+native relay's rules; the personal relay's control page was not driven; its destination list
+ships in personal relay 0.2.0, offered with SDK 0.0.10.
+WebKit and Safari refuse modules.
 
 ### Manifest fields
 
@@ -471,13 +752,15 @@ Finish quickly once a trapped signal arrives, then `untrap()` and `raise()` it.
 | `commands` | command modules only: 1 to 16 unique names, stored sorted, each matching `^[a-z0-9][a-z0-9_.+-]{0,63}$` and none starting with `oxidevm`; once an application turns them on for a VM, programs there run each as `/usr/local/bin/<name>`. `requires.guest.executables` cannot list the module's own commands |
 | `expose` | a service's endpoints, keyed by name: a Unix socket under `/workspace/_oxidevm/` or `/tmp/`, or loopback TCP on 1024-65535, each with a `protocol` label |
 | `requires.host` | capabilities from the table above |
-| `requires.browser` | `cross-origin-isolated`, `indexeddb`, `jspi`, `web-locks`; checked before the adapter runs |
+| `network` | only with `net.internet`: `{ hosts?, purpose? }`, up to 32 DNS names it contacts by default (a leading `*.` allowed, stored sorted) and one sentence of up to 200 characters; shown at install, never enforced |
+| `requires.browser` | `cross-origin-isolated`, `indexeddb`, `jspi`, `web-locks`; checked before the adapter runs. The module frame has no IndexedDB and no Web Locks, so a manifest that names `indexeddb` or `web-locks` cannot start (`wasm-module-prerequisite`) |
 | `requires.guest.executables` | absolute paths of Linux programs that must exist in the image |
 | `mounts`, `state.durable` | guest paths the module reads and writes: shown on the consent card, not enforced |
 | `guestFiles` | artifacts written into the guest before the adapter starts, `{ artifact, to, mode? }`; each is replaced atomically (mode `0644` unless given) and a start that cannot write one exits `120` |
 | `limits` | `clients` (connections a service serves at once, default 4; a client that connects and stays silent keeps its slot until it closes, because the runner sets no idle timeout, so an adapter that needs one closes idle connections itself) and `startupMs` |
 | `options` | typed options for the consumer: `boolean`, `integer`, `string`, `enum`, `enum-set`, each with an optional default |
 | `license` | an SPDX expression, `notices` (artifact names), and `source` (required when the license is copyleft) |
+| `upstream` | the third-party components the release carries, `{ name, version, source }` with an `https` source: up to 64, as many as a release has artifacts |
 
 ### Build, test, release
 
@@ -495,6 +778,41 @@ something is wrong, and writes nothing. Warnings (a dependency that mentions
 `window`, `import.meta` or `eval`; a bundled package your `license.spdx` does not
 name) do not stop the build, but read them. `--check` verifies without writing.
 
+Unit tests run the module through the SDK's real runner, without a browser, with
+`testHost` from `@oxidevm/sdk/wasm/testing`:
+
+```ts
+import { testHost } from "@oxidevm/sdk/wasm/testing";
+import definition from "../module.ts";
+
+const result = await testHost(definition, { args: ["2", "3"], artifacts: { "add.wasm": bytes } }).run();
+// { status: 0, stdout: "5\n", stderr: "", files: {...} }
+```
+
+It takes `args`, `env`, `cwd`, `invocation`, `terminals`, `stdin`, `files`,
+`options`, `artifacts` and `net`. The network is local-only unless
+`net.connected` is set, and then serves `net.http` handlers by origin (and
+`net.vm` handlers by port inside the VM), with the same reach checks and errors
+as the browser; a run ends with `status`, `stdout`, `stderr`, `files` and the
+`signal` it ended by, if any.
+
+Blocking clients (`host.net.connectSync`, an interpreter's own sockets) block in
+`testHost` as they do in the browser: a read waits until bytes arrive, the
+stream ends or its `timeoutMs` passes. A request handler answers
+asynchronously, which a blocking read cannot wait for in the same thread, so
+serve blocking clients from `net.tcp`: raw TCP services by `host:port`
+(`TestTcpService`), whose `data(connection, bytes)` answers at once with
+`connection.write`, ends with `connection.end()`, or answers later with
+`connection.after(ms, action)` on the network's own clock, which moves only
+while a client waits. A read that nothing will ever answer fails with
+`FEATURE_NOT_AVAILABLE` (`testhost-blocked-read`) instead of hanging the test.
+
+```ts
+const result = await testHost(definition, { net: { connected: true, tcp: {
+  "db.example.com:443": { data: (connection, bytes) => { connection.after(50, () => { connection.write(bytes); }); } },
+} } }).run();
+```
+
 Then test the build in a real browser:
 
 ```sh
@@ -509,7 +827,7 @@ tests). Every property is `passed`, `failed` or `not-applicable`, with a reason:
 
 | Property | Holds when |
 | --- | --- |
-| `integrity` | a served copy with one altered adapter byte is refused with status `121` |
+| `integrity` | a served copy with one altered adapter byte is refused (`wasm-module-integrity`) before any module code runs |
 | `exit-range` | a command exits with a status from 0 to 119 (`--arg` passes its arguments) |
 | `ready` | a service writes its ready line and its endpoints match `expose` |
 | `endpoints` | every endpoint accepts a connection |
@@ -519,6 +837,9 @@ tests). Every property is `passed`, `failed` or `not-applicable`, with a reason:
 | `restart` | the service starts and serves again after a stop |
 | `kill-recover` | the service starts and serves again after a kill, replacing its stale socket |
 | `declared-host` | the adapter reached for no host member its `requires.host` did not declare |
+| `network-direct` | the module used no browser network API (they are refused in the module frame) |
+| `network-declared` | the module connected to nothing beyond its declared reach |
+| `network-offline` | with the VM local-only (as it is during the test), a command with your `--arg`s ends with a status from 0 to 119 and, when it fails, a line on standard error; a service stays ready. Not applicable without a reach |
 
 The runner reports an undeclared member once, as a `{"oxidevm":"warning",...}`
 line on standard error, and still hands the adapter `undefined` for it. Without
@@ -560,7 +881,7 @@ they came from; do not edit them.
 | `oxidevm wasm stage` | rebuild staged files and handles from the lock |
 | `oxidevm wasm doctor` | check the project and the engine, list what each module needs from the browser and the image, and note the commands modules declare |
 | `oxidevm wasm inspect <file.wasm>` | imports, exports, memory and the ABI a binary appears to use |
-| `oxidevm wasm init <directory>` | create a module project |
+| `oxidevm wasm init <directory>` | create a module project; `--network none\|vm\|internet` declares its reach (default `none`) |
 | `oxidevm wasm build` | build `dist/` from `module.ts`; `--check` writes nothing |
 | `oxidevm wasm test` | run the runner-contract properties against `dist/` in a real browser |
 | `oxidevm wasm release` | build, then print the steps that publish it |

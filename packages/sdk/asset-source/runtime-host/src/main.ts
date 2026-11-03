@@ -44,7 +44,7 @@ window.addEventListener("message", (event: MessageEvent) => {
       const started = performance.now();
       const report = { embedderOrigin: event.origin, sdkVersion, engineReleaseId, mode: decoded.mode };
       try {
-        const vm = await createLocalVM({ ...decoded, signal, onProgress }, engineBaseUrl, { previewKeeperHost, embedderOrigin: event.origin });
+        const vm = await createLocalVM({ ...decoded, signal, onProgress }, engineBaseUrl, { previewKeeperHost, embedderOrigin: event.origin, moduleFrameBase: new URL("./", location.href).href });
         sendBootPing(OXIDEVM_TELEMETRY_ENDPOINT, bootPing({ ...report, milliseconds: performance.now() - started, result: { vm } }));
         return vm;
       } catch (error) {

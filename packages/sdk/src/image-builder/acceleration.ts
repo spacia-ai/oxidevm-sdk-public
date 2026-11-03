@@ -3,6 +3,7 @@ import { VMError } from "../runtime/errors.js";
 import { decodeSHA256 } from "../values.js";
 import type { FileArtifactInput } from "./contracts.js";
 import { verifyArtifact } from "./files.js";
+import { NATIVE_BRIDGE_VERSION } from "../runtime/native-bridge-version.js";
 
 type QualifiedAddon = { readonly name: "next"; readonly version: "16.2.12" } | { readonly name: "swc"; readonly version: "1.15.47" | "1.16.13" }
   | { readonly name: "rollup"; readonly version: "4.64.2" }
@@ -108,7 +109,9 @@ export async function createAccelerationProfile(options: AccelerationProfileOpti
   const version = requiredRuntime !== undefined ? 7 : required === undefined ? libraries.some(library => library.vendored) ? 4 : input["libraries"] === undefined ? 2 : 3 : required.length === 1 && required[0] === "promise-is-promise-v1" ? 5 : 6;
   const header = fixture ? [`OXAP\t${String(version)}`, "profile\tnative-parity-fixture-v1", "platform\tlinux-x86_64\tmusl\tx86-64-v3", "capability\tnode-api-experimental-v1", ...(requiredRuntime === undefined ? [] : [`requires-runtime\t${requiredRuntime}`]), ...(required === undefined ? [] : [`requires\t${required.join("\t")}`])] : ["OXAP\t1", "profile\tnode24-bun1-v1"];
   if (codeRoots.length > 0) header[0] = "OXAP\t8";
-  const lines = [...header, `host\t${host.sha256}\t/usr/local/libexec/oxidevm-node-api-host`, `dependencies\t${dependencies}`, ...codeRoots.map(path => `code-root\t${path}`), ...addons.map(addon => addon.declaration), ...libraries.map(library => library.declaration)];
+  const lines = [...header, `host\t${host.sha256}\t/usr/local/libexec/oxidevm-node-api-host`,
+    // The helper's native bridge version (engine SL-S6): the SDK writes frames at it, and a profile without the row means 15.
+    `bridge\t${String(NATIVE_BRIDGE_VERSION)}`, `dependencies\t${dependencies}`, ...codeRoots.map(path => `code-root\t${path}`), ...addons.map(addon => addon.declaration), ...libraries.map(library => library.declaration)];
   const bytes = new TextEncoder().encode(lines.join("\n") + "\n");
   if (bytes.length > 65536) throw new VMError("QUOTA_EXCEEDED", "Acceleration profile exceeds its byte bound");
   return { path: "/usr/local/share/oxidevm/acceleration.profile", bytes };

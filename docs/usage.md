@@ -139,7 +139,7 @@ stages the pinned runtime and your explicit image assets:
 pnpm exec oxidevm assets install --image /absolute/path/starter --trust /absolute/path/starter.public.json --reference src/generated/minimal.image.ts
 ```
 
-The first run writes `oxidevm.lock.json`, which binds the exact SDK, CLI, engine and image; commit it. Later runs validate it and never replace it.
+The first run writes `oxidevm.lock.json`, which binds the exact SDK, CLI, engine and image; commit it. Later runs validate it. After an SDK upgrade, `--update-lock` stages the new release's assets and only then rewrites the lock; see [Upgrade the SDK](migration.md#upgrade-the-sdk).
 
 The SDK package contains no engine. The command stages the engine release the SDK
 pins from the CDN and verifies it first. You can also supply a verified local

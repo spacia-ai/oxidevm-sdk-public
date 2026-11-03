@@ -1,19 +1,52 @@
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodeDoctorReport } from "../contracts/doctor.js";
 import type { DoctorReport } from "../contracts/doctor.js";
 import { VMError } from "../runtime/errors.js";
-import { localBundlePath } from "./bundle-files.js";
+import { decodeBundleJSON, localBundlePath } from "./bundle-files.js";
 import { hashFile } from "./files.js";
-import { getSDKRelease } from "./project.js";
+import { getSDKRelease, loadProjectConfig, lockedImage, validateProjectLock } from "./project.js";
+import { readProjectLockFile } from "./project-lock-file.js";
 import { abortIfRequested } from "./tools.js";
 import { isTrustworthyURL } from "../trustworthy-url.js";
 
-export interface DoctorOptions { readonly browser: "chromium" | "firefox" | "webkit"; readonly previewOrigin?: string; readonly signal?: AbortSignal }
+export interface DoctorOptions {
+  readonly browser: "chromium" | "firefox" | "webkit";
+  readonly previewOrigin?: string;
+  /** The project configuration whose `oxidevm.lock.json` the `lock` check compares with this SDK; without it that check is `not-configured`. */
+  readonly project?: string;
+  readonly signal?: AbortSignal;
+}
 interface DoctorRunner { runDoctorBrowser(url: string, options: DoctorOptions, profile: string, assets: readonly { readonly relative: string; readonly sha256: string }[], engineRelease: string): Promise<unknown> }
 function isRunner(value: unknown): value is DoctorRunner { return typeof value === "object" && value !== null && "runDoctorBrowser" in value && typeof value.runDoctorBrowser === "function"; }
+
+type DoctorCheckResult = DoctorReport["checks"][number];
+
+/** The closed `lock` check: the project's lock against this SDK release, explained as `assets install` explains it. */
+export async function doctorLockCheck(project: string | undefined, signal?: AbortSignal): Promise<DoctorCheckResult> {
+  if (project === undefined) return { check: "lock", status: "not-configured" };
+  try {
+    const loaded = await loadProjectConfig(project);
+    const bytes = await readProjectLockFile(loaded.directory, signal);
+    if (bytes === undefined) return { check: "lock", status: "failed", message: "project lock oxidevm.lock.json is missing; run `npx oxidevm assets install` to write it" };
+    const value = decodeBundleJSON(bytes);
+    // `assets install --image` records an image the configuration does not name only in the lock.
+    validateProjectLock(value, loaded.config.image === undefined ? { ...loaded.config, image: lockedImage(value) } : loaded.config);
+    return { check: "lock", status: "passed" };
+  } catch (error: unknown) {
+    abortIfRequested(signal);
+    // Errors from loading the author's module can carry local paths or secrets: only SDK messages pass.
+    return { check: "lock", status: "failed", message: error instanceof VMError ? error.message : `project configuration ${basename(project)} or its lock could not be read` };
+  }
+}
+
+/** The browser runner reports the lock check as not configured; the Node-side result replaces it. */
+function withLockCheck(report: DoctorReport, lock: DoctorCheckResult): DoctorReport {
+  const checks = report.checks.map(check => check.check === "lock" ? lock : check);
+  return decodeDoctorReport({ result: checks.some(check => check.status === "failed") ? "failed" : "passed", url: report.url, checks });
+}
 
 /** Probe a real deployed origin in a real browser without running build instructions. */
 export async function doctorProject(value: string, options: DoctorOptions): Promise<DoctorReport> {
@@ -25,6 +58,7 @@ export async function doctorProject(value: string, options: DoctorOptions): Prom
     if (preview.origin !== options.previewOrigin || !isTrustworthyURL(preview)) throw new VMError("INVALID_ARGUMENT", "preview must be a secure origin or localhost origin");
   }
   abortIfRequested(options.signal);
+  const lock = await doctorLockCheck(options.project, options.signal);
   const module: unknown = await import(new URL("../browser-tools/doctor-browser.js", import.meta.url).href);
   if (!isRunner(module)) throw new VMError("FEATURE_NOT_AVAILABLE", "browser doctor adapter is unavailable");
   const root = fileURLToPath(new URL("../../assets/doctor/", import.meta.url));
@@ -39,6 +73,6 @@ export async function doctorProject(value: string, options: DoctorOptions): Prom
   }
   await enumerate("");
   const profile = await mkdtemp(join(tmpdir(), "oxidevm-doctor-"));
-  try { return decodeDoctorReport(await module.runDoctorBrowser(url.href, options, profile, artifacts, getSDKRelease().engineRelease)); }
+  try { return withLockCheck(decodeDoctorReport(await module.runDoctorBrowser(url.href, options, profile, artifacts, getSDKRelease().engineRelease)), lock); }
   finally { await rm(profile, { recursive: true, force: true }); }
 }

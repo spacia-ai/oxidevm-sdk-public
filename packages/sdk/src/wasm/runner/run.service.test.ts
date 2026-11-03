@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SERVICE_DECLARATION, buildRelease, type Release } from "./fixtures.test-support.js";
-import { fakeLocks, launch, records, type Running } from "./harness.test-support.js";
+import { launch, records, type Running } from "./harness.test-support.js";
 
 afterEach(() => { vi.useRealTimers(); });
 
@@ -162,26 +162,6 @@ async function untilReadyFake(running: Running): Promise<void> {
 }
 
 describe("service start failures", () => {
-  it("reports busy (124) without binding anything when another process holds the workspace lock", async () => {
-    const release = await serviceRelease(ECHO);
-    const { locks } = fakeLocks(new Set(["oxidevm-module:ws-1:db"]));
-    const running = launch({ release, locks });
-    await expect(running.done).resolves.toBe(124);
-    expect(running.linux.listening()).toEqual([]);
-    expect(records(running.linux.stderrLines)[0]).toMatchObject({ kind: "busy" });
-    expect(running.imports.count).toBe(0);
-  });
-
-  it("allows the same module in another workspace and releases the lock when it stops", async () => {
-    const held = new Set<string>(), { locks } = fakeLocks(held);
-    const first = launch({ release: await serviceRelease(ECHO), locks });
-    await untilReady(first);
-    expect([...held]).toEqual(["oxidevm-module:ws-1:db"]);
-    first.linux.endStdin();
-    await first.done;
-    expect(held.size).toBe(0);
-  });
-
   it("reports busy (124) when an endpoint is already bound", async () => {
     const release = await serviceRelease(ECHO, { ...SERVICE_DECLARATION, process: { kind: "service" } }, null);
     const running = launch({ release, occupied: ["tcp:5432"] });
@@ -189,16 +169,6 @@ describe("service start failures", () => {
     expect(records(running.linux.stderrLines)[0]).toMatchObject({ kind: "busy", message: "Endpoint pg is already in use" });
     // The endpoint that was bound first is released again.
     expect(running.linux.listening()).toEqual([]);
-  });
-
-  it("reports prerequisite (122) for an exclusive service when Web Locks are unavailable", async () => {
-    const running = launch({ release: await serviceRelease(ECHO), locks: null });
-    await expect(running.done).resolves.toBe(122);
-  });
-
-  it("reports launch (120) when an exclusive service has no workspace id", async () => {
-    const running = launch({ release: await serviceRelease(ECHO, SERVICE_DECLARATION, null) });
-    await expect(running.done).resolves.toBe(120);
   });
 
   it("reports adapter (123) for handlers that do not match the declared endpoints", async () => {
@@ -230,11 +200,46 @@ describe("socket files", () => {
     expect(JSON.stringify(records(running.linux.stderrLines))).toContain("not a socket");
   });
 
-  it("reports busy and leaves the file alone when a live process still listens on it", async () => {
-    const running = launch({ release: await serviceRelease(ECHO), staleSockets: [SOCKET], occupied: [`unix:${SOCKET}`] });
+  /** A service that is not exclusive per workspace: no lease rules out a live instance, so a leftover file is probed. */
+  const shared = (host: readonly ("files.sync" | "net.vm")[]): Parameters<typeof buildRelease>[0]["declaration"] =>
+    ({ ...SERVICE_DECLARATION, process: { kind: "service" }, requires: { host } });
+
+  it("replaces an exclusive service's leftover socket without probing it, even with no network reach (engine ADR 0029)", async () => {
+    // Rust refuses every client connect of a module without a reach, a Unix socket included; the workspace lease the
+    // Userspace worker holds already rules out a live instance, so the runner does not ask (engine ADR 0028).
+    const running = launch({ release: await serviceRelease(ECHO), staleSockets: [SOCKET] });
+    await untilReady(running);
+    expect(running.linux.connects).toEqual([]);
+    expect(running.linux.unlinked).toEqual([SOCKET]);
+    expect(running.linux.listening()).toContain(`unix:${SOCKET}`);
+    running.linux.endStdin();
+    await expect(running.done).resolves.toBe(0);
+  });
+
+  it("probes a shared service's leftover socket through its VM reach, and replaces it when nothing listens", async () => {
+    const running = launch({ release: await serviceRelease(ECHO, shared(["files.sync", "net.vm"]), null), staleSockets: [SOCKET] });
+    await untilReady(running);
+    expect(running.linux.connects).toEqual([`unix:${SOCKET}`]);
+    expect(running.linux.unlinked).toEqual([SOCKET]);
+    running.linux.endStdin();
+    await expect(running.done).resolves.toBe(0);
+  });
+
+  it("reports busy and leaves the file alone when a live process still listens on a shared service's socket", async () => {
+    const running = launch({ release: await serviceRelease(ECHO, shared(["files.sync", "net.vm"]), null), staleSockets: [SOCKET], occupied: [`unix:${SOCKET}`] });
     await expect(running.done).resolves.toBe(124);
     expect(running.linux.unlinked).toEqual([]);
     expect(records(running.linux.stderrLines)[0]).toMatchObject({ kind: "busy" });
+  });
+
+  it("reports busy without a refused connect when a shared service with no reach finds a socket file it cannot check", async () => {
+    const running = launch({ release: await serviceRelease(ECHO, shared(["files.sync"]), null), staleSockets: [SOCKET] });
+    await expect(running.done).resolves.toBe(124);
+    expect(running.linux.connects).toEqual([]);
+    expect(running.linux.unlinked).toEqual([]);
+    const [record] = records(running.linux.stderrLines);
+    expect(record).toMatchObject({ kind: "busy" });
+    expect(String(record?.["message"])).toContain("exclusive");
   });
 
   it("removes its own socket on stop, but not a socket another process put in its place meanwhile", async () => {

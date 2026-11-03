@@ -32,7 +32,8 @@ import type { ExecutionTimingMode } from "./protocol/common.js";
 import type { SystemJitInstallMode } from "./protocol/system-trace-background-compile.js";
 import type { UserspaceJitTier } from "./jit-tier-option.js";
 import type { AccelerationNotice } from "./js-process/late-failure.js";
-import type { RunnerHostLaunch } from "./js-process/launch.js";
+import type { CopyKey, ModulePin } from "./protocol/userspace-module-files.js";
+import type { ModuleStart } from "./vm-types.js";
 import type { ModuleCommandsRequest, ModuleCommandsResult } from "./protocol/userspace-module-commands.js";
 
 const USERSPACE_PROFILE_OPTIONS = Symbol.for("oxidevm.internal.userspace-profile-options");
@@ -243,13 +244,41 @@ class BrowserUserspaceVM implements RuntimeVM {
     return this.#backend.moduleCommands(request, options.signal);
   }
 
-  async spawnJS(spec: Omit<SpawnSpec, "command"> & { readonly worker: string; readonly launch?: RunnerHostLaunch }): Promise<ProcessHandle> {
+  async spawnJS(spec: Omit<SpawnSpec, "command"> & { readonly worker: string }): Promise<ProcessHandle> {
     this.#ensureActive();
     const rootfs = this.#managed.rootfs;
     if (rootfs === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "Install a Userspace image before spawning a JS process");
-    const { worker, launch, ...native } = spec;
+    const { worker, ...native } = spec;
     const { args, env, cwd, terminal, signal } = validateSpawnSpec({ ...native, command: "/js-process" }, true);
-    return this.#backend.spawnJS(rootfs, { worker, args, env, cwd, ...(terminal === undefined ? {} : { terminal }), ...(signal === undefined ? {} : { signal }), ...(launch === undefined ? {} : { launch }) });
+    return this.#backend.spawnJS(rootfs, { worker, args, env, cwd, ...(terminal === undefined ? {} : { terminal }), ...(signal === undefined ? {} : { signal }) });
+  }
+
+  /** ADR 0028: the VM's module frame broker, for its Userspace worker; every module process runs behind it. */
+  async attachModuleFrame(port: MessagePort): Promise<void> {
+    this.#ensureActive();
+    await this.#backend.attachModuleFrame(port);
+  }
+
+  /** ADR 0028: the module frame is gone; the Userspace worker ends its module processes with status 125. */
+  async detachModuleFrame(): Promise<void> {
+    this.#ensureActive();
+    await this.#backend.detachModuleFrame();
+  }
+
+  /** ADR 0028: the keys of `pins` the VM's verified-copy store lacks. */
+  async moduleFiles(pins: readonly ModulePin[], options: { readonly signal?: AbortSignal } = {}): Promise<readonly CopyKey[]> {
+    this.#ensureActive();
+    return this.#backend.moduleFiles(pins, options.signal);
+  }
+
+  /** ADR 0028: `spawnModule`'s runner, started by the Userspace worker from the VM's verified copies. */
+  async spawnModule(spec: Omit<SpawnSpec, "command" | "terminal"> & ModuleStart): Promise<ProcessHandle> {
+    this.#ensureActive();
+    const rootfs = this.#managed.rootfs;
+    if (rootfs === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "Install a Userspace image before spawning a JS process");
+    const { descriptor, files, ...native } = spec;
+    const { args, env, cwd, signal } = validateSpawnSpec({ ...native, command: "/js-process" }, true);
+    return this.#backend.spawnModule(rootfs, { descriptor, files, args, env, cwd, ...(signal === undefined ? {} : { signal }) });
   }
 
   async #spawn(spec: SpawnSpec, guestPaths: boolean): Promise<ProcessHandle> {

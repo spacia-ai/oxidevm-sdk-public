@@ -81,7 +81,7 @@ it("authors an unrelated byte-pinned qualification addon without a package-name 
       addons: [{ path: "/workspace/node_modules/unrelated/addon.node", artifact }],
     } as const;
     const result = await createAccelerationProfile(options);
-    expect(new TextDecoder().decode(result.bytes)).toBe(`OXAP\t2\nprofile\tnative-parity-fixture-v1\nplatform\tlinux-x86_64\tmusl\tx86-64-v3\ncapability\tnode-api-experimental-v1\nhost\t${artifact.sha256}\t/usr/local/libexec/oxidevm-node-api-host\ndependencies\t/workspace/node_modules\nartifact\tnode-api\t${artifact.sha256}\t/workspace/node_modules/unrelated/addon.node\n`);
+    expect(new TextDecoder().decode(result.bytes)).toBe(`OXAP\t2\nprofile\tnative-parity-fixture-v1\nplatform\tlinux-x86_64\tmusl\tx86-64-v3\ncapability\tnode-api-experimental-v1\nhost\t${artifact.sha256}\t/usr/local/libexec/oxidevm-node-api-host\nbridge\t16\ndependencies\t/workspace/node_modules\nartifact\tnode-api\t${artifact.sha256}\t/workspace/node_modules/unrelated/addon.node\n`);
     for (const patch of [{ capability: "complete-node-api-10" }, { platform: { ...options.platform, cpu: "x86-64-v4" } }, { addons: [...options.addons, ...options.addons] }]) {
       await expect(Reflect.apply(createAccelerationProfile, undefined, [{ ...options, ...patch }])).rejects.toThrow();
     }
@@ -110,7 +110,7 @@ it("builds profile metadata from pinned artifacts without inventorying editable 
     const options: AccelerationProfileOptions = { profile: "node24-bun1-v1", dependencies: "/workspace/node_modules", host: { path: host, sha256: hash("host") }, addons: [{ name: "next", version: "16.2.12", path: "/workspace/node_modules/@next/swc-linux-x64-musl/next-swc.linux-x64-musl.node", artifact: { path: addon, sha256: hash("addon") } }] };
     const file = await createAccelerationProfile(options);
     expect(file.path).toBe("/usr/local/share/oxidevm/acceleration.profile");
-    expect(new TextDecoder().decode(file.bytes)).toBe(`OXAP\t1\nprofile\tnode24-bun1-v1\nhost\t${hash("host")}\t/usr/local/libexec/oxidevm-node-api-host\ndependencies\t/workspace/node_modules\naddon\tnext\t16.2.12\t${options.addons[0]?.path}\n`);
+    expect(new TextDecoder().decode(file.bytes)).toBe(`OXAP\t1\nprofile\tnode24-bun1-v1\nhost\t${hash("host")}\t/usr/local/libexec/oxidevm-node-api-host\nbridge\t16\ndependencies\t/workspace/node_modules\naddon\tnext\t16.2.12\t${options.addons[0]?.path}\n`);
     await writeFile(addon, "changed"); await expect(createAccelerationProfile(options)).rejects.toThrow(/digest/u);
     await expect(createAccelerationProfile({ ...options, dependencies: "/workspace/../node_modules" })).rejects.toThrow(/path/u);
     await expect(createAccelerationProfile({ ...options, addons: [...options.addons, ...options.addons] })).rejects.toThrow(/duplicate/u);

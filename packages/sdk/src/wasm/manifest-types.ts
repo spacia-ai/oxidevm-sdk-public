@@ -63,6 +63,17 @@ export type OptionDecl =
   | { readonly type: "enum"; readonly values: readonly string[]; readonly default?: string }
   | { readonly type: "enum-set"; readonly values: readonly string[]; readonly default?: readonly string[] };
 
+/**
+ * What a module with `net.internet` discloses about its network use (engine ADR 0029, N-2): the hosts it contacts by
+ * default and why. It is shown at install and never enforced: it is not an allowlist.
+ */
+export interface NetworkDecl {
+  /** Up to 32 DNS names, a leading `*.` allowed; stored sorted. */
+  readonly hosts?: readonly string[];
+  /** One sentence, up to 200 characters. */
+  readonly purpose?: string;
+}
+
 export interface CommonDecl {
   readonly id: string;
   readonly version: string;
@@ -73,6 +84,8 @@ export interface CommonDecl {
     readonly browser?: readonly BrowserFeature[];
     readonly guest?: { readonly executables?: readonly string[] };
   };
+  /** Only with `net.internet` in `requires.host`. */
+  readonly network?: NetworkDecl;
   readonly mounts?: readonly MountDecl[];
   readonly limits?: LimitsDecl;
   readonly state?: { readonly durable: readonly string[] };

@@ -3,6 +3,7 @@ import { TYPESCRIPT } from "./command-interceptor-identity.ts";
 import { ESBUILD } from "./esbuild-identity.ts";
 import { Reader, Writer, protocol, decodeJSIdentity, type JSProcessIdentity } from "./js-process/codec.ts";
 import { isTrappableSignal, type TrappableSignalNumber } from "./js-process/signals.ts";
+import type { NativeBridgeVersion } from "./native-bridge-version.ts";
 import { isModuleCommandName, moduleCommandPath } from "./module-command-names.ts";
 
 export const NATIVE_EVAL_MAX_UNITS = 256 * 1024;
@@ -55,7 +56,10 @@ export interface NativeProcessProfile {
   readonly artifacts: readonly ({ readonly path: string; readonly sha256: string; readonly inode: bigint } & ({ readonly kind: "node-api" } | { readonly kind: "shared-library"; readonly soname: string }))[];
   readonly moduleSearchPaths: readonly string[];
   readonly requiredCapabilities: 0 | 1 | 2 | 3;
+  /** The native bridge version of the image's host helper, from its acceleration profile (OXCR 19): 15 without a `bridge` row. */
+  readonly bridgeVersion: NativeBridgeVersion;
 }
+
 export interface NativeThreadIdentity { readonly tid: number; readonly parent: bigint; readonly stdio: readonly [number, number, number] }
 export type NativeProcessContext = { readonly kind: "main" } | ({ readonly kind: "thread" } & NativeThreadIdentity) | { readonly kind: "fork"; readonly parent: bigint };
 
@@ -110,7 +114,7 @@ export interface UserspaceCommandHostRequest extends JSProcessIdentity {
   readonly program: { readonly kind: "typescript"; readonly entry: string; readonly executable: "/usr/bin/node" | "/usr/local/bin/bun" } | { readonly kind: "worker"; readonly token: bigint } | { readonly kind: "esbuild"; readonly executable: string; readonly version: "0.25.12" } | { readonly kind: "native-node"; readonly entry: string; readonly source: NativeProcessSource; readonly input: number; readonly output: number; readonly profile: NativeProcessProfile; readonly context: NativeProcessContext } | ModuleCommandProgram;
 }
 
-/** OXCR 18 tag 4: u32 registration, blob name, blob path, u8 terminals (bit n: descriptor n is a terminal). */
+/** OXCR 19 tag 4: u32 registration, blob name, blob path, u8 terminals (bit n: descriptor n is a terminal). */
 function readModuleCommand(r: Reader): ModuleCommandProgram {
   const registration = r.u32(), name = r.text(64), path = r.text(4095), bits = r.u8();
   if (registration === 0 || !isModuleCommandName(name) || path !== moduleCommandPath(name) || bits > 0b111) protocol("Unregistered module command launch");
@@ -120,7 +124,7 @@ function readModuleCommand(r: Reader): ModuleCommandProgram {
 export function decodeUserspaceCommandRequest(bytes: Uint8Array): UserspaceCommandHostRequest {
   if (bytes.byteLength > 2 * 1024 * 1024 + NATIVE_EVAL_MAX_UNITS * 2 + 16384) protocol("JS launch record exceeds its limit");
   const r = new Reader(bytes);
-  if (new TextDecoder().decode(r.raw(4)) !== "OXCR" || r.u32() !== 18) protocol("JS launch record version mismatch");
+  if (new TextDecoder().decode(r.raw(4)) !== "OXCR" || r.u32() !== 19) protocol("JS launch record version mismatch");
   const { generation, id } = decodeJSIdentity(r.u64(), r.u64());
   const pid = r.u32(), tty = r.u8(), cwd = r.text(4095), tag = r.u8();
   let program: UserspaceCommandHostRequest["program"];
@@ -146,12 +150,12 @@ export function decodeUserspaceCommandRequest(bytes: Uint8Array): UserspaceComma
       return { ...kind, path: r.text(4095), sha256: r.text(64), inode: r.u64() };
     });
     const moduleSearchPaths = r.strings();
-    const requiredCapabilities = r.u32();
+    const requiredCapabilities = r.u32(), bridgeVersion = r.u8();
     if (runtime > 1) protocol("Unqualified native runtime");
     const tag = r.u8();
     if (tag > 2) protocol("Invalid native environment tag");
     const context = tag === 0 ? { kind: "main" } : tag === 2 ? { kind: "fork", parent: r.u64() } : { kind: "thread", tid: r.u32(), parent: r.u64(), stdio: [r.u32(), r.u32(), r.u32()] };
-    program = decodeNativeProcessProgram({ kind: "native-node", entry, source, input, output, profile: { runtime: runtime === 0 ? "node" : "bun", executable, runtimeSHA256, identity, roots, basis, dependencyGeneration, artifacts, moduleSearchPaths, requiredCapabilities }, context });
+    program = decodeNativeProcessProgram({ kind: "native-node", entry, source, input, output, profile: { runtime: runtime === 0 ? "node" : "bun", executable, runtimeSHA256, identity, roots, basis, dependencyGeneration, artifacts, moduleSearchPaths, requiredCapabilities, bridgeVersion }, context });
   } else if (tag === 3) {
     const executable = r.text(4095), version = r.text(64);
     if (!executable.startsWith("/") || executable.includes("\0") || executable.split("/").slice(1).some(part => part === "" || part === "." || part === "..")
@@ -175,17 +179,28 @@ export function encodeCommandIo(request: { readonly generation: bigint; readonly
 /** Command operation 6 (ADR 0027): the next host-caught signal notice of a running JS process, or no notice. */
 export function encodeCommandNoticeRequest(): Uint8Array<ArrayBuffer> { return encodeCommandIo({ generation: 0n, id: 0n }, 6); }
 
-/** A signal Rust caught for a JS process's worker instead of its default action, with the flags it was caught with. */
-export interface CommandSignalNotice extends JSProcessIdentity { readonly pid: number; readonly signal: TrappableSignalNumber; readonly restart: boolean; readonly interrupt: boolean }
+/**
+ * A signal Rust caught for a JS process's worker instead of its default action, with the flags it was caught with and
+ * the siginfo it arrived with: `code` is si_code, `sender` and `uid` are si_pid and si_uid (zero unless the signal came
+ * from kill, sigqueue or a child), and `value` is si_value (zero unless it was queued or a timer's).
+ */
+export interface CommandSignalNotice extends JSProcessIdentity {
+  readonly pid: number; readonly signal: TrappableSignalNumber; readonly restart: boolean; readonly interrupt: boolean;
+  readonly code: number; readonly sender: number; readonly uid: number; readonly value: bigint;
+}
 
-/** OXCS 1, operation 6's answer: "OXCS", u32 1, u64 generation, u64 id, u32 pid, u8 signal, u8 flags (bit 0 restart, bit 1 interrupt), or an empty record. */
+/**
+ * OXCS 2, operation 6's answer: "OXCS", u32 2, u64 generation, u64 id, u32 pid, u8 signal, u8 flags (bit 0 restart,
+ * bit 1 interrupt), i32 si_code, u32 si_pid, u32 si_uid, u64 si_value, 50 bytes, or an empty record. OXCS 1 is refused.
+ */
 export function decodeCommandNotice(bytes: Uint8Array): CommandSignalNotice | null {
   if (bytes.byteLength === 0) return null;
   const r = new Reader(bytes);
-  if (new TextDecoder().decode(r.raw(4)) !== "OXCS" || r.u32() !== 1) protocol("Signal notice version mismatch");
-  const { generation, id } = decodeJSIdentity(r.u64(), r.u64()), pid = integer(r.u32(), "signal notice pid", 1, 0x7fff_ffff), signal = r.u8(), flags = r.u8(); r.end();
-  if (!isTrappableSignal(signal) || flags > 0b11) protocol("Invalid signal notice");
-  return { generation, id, pid, signal, restart: (flags & 1) !== 0, interrupt: (flags & 2) !== 0 };
+  if (new TextDecoder().decode(r.raw(4)) !== "OXCS" || r.u32() !== 2) protocol("Signal notice version mismatch");
+  const { generation, id } = decodeJSIdentity(r.u64(), r.u64()), pid = integer(r.u32(), "signal notice pid", 1, 0x7fff_ffff), signal = r.u8(), flags = r.u8();
+  const code = r.u32() | 0, sender = r.u32(), uid = r.u32(), value = r.u64(); r.end();
+  if (!isTrappableSignal(signal) || flags > 0b11 || sender > 0x7fff_ffff) protocol("Invalid signal notice");
+  return { generation, id, pid, signal, restart: (flags & 1) !== 0, interrupt: (flags & 2) !== 0, code, sender, uid, value };
 }
 
 /** Command operation 7 (ADR 0027): the worker's process ends killed by a trappable signal; Rust answers an empty record. */
@@ -202,8 +217,9 @@ export function decodeNativeProcessProgram(input: unknown): Extract<UserspaceCom
   const program = record(input, "native process program"); exactKeys(program, ["kind", "entry", "source", "input", "output", "profile", "context"]);
   const entry = string(program["entry"], "native process entry"), fdInput = integer(program["input"], "native input", 3, 0x7fff_ffff), output = integer(program["output"], "native output", 3, 0x7fff_ffff);
   const source = decodeNativeSource(program["source"]);
-  const p = record(program["profile"], "native compatibility profile"); exactKeys(p, ["runtime", "executable", "runtimeSHA256", "identity", "roots", "basis", "dependencyGeneration", "artifacts", "moduleSearchPaths", "requiredCapabilities"]);
-  const requiredCapabilities = p["requiredCapabilities"];
+  const p = record(program["profile"], "native compatibility profile"); exactKeys(p, ["runtime", "executable", "runtimeSHA256", "identity", "roots", "basis", "dependencyGeneration", "artifacts", "moduleSearchPaths", "requiredCapabilities", "bridgeVersion"]);
+  const requiredCapabilities = p["requiredCapabilities"], bridgeVersion = p["bridgeVersion"];
+  if (bridgeVersion !== 15 && bridgeVersion !== 16) protocol("Unknown native bridge version of the host helper");
   if (requiredCapabilities !== 0 && requiredCapabilities !== 1 && requiredCapabilities !== 2 && requiredCapabilities !== 3 || requiredCapabilities !== 0 && p["identity"] !== "native-parity-fixture-v1") protocol("Invalid native capability requirements");
   const runtimeSHA256 = string(p["runtimeSHA256"], "native runtime digest");
   if (!/^[a-f0-9]{64}$/u.test(runtimeSHA256)) protocol("Invalid native runtime digest");
@@ -250,5 +266,5 @@ export function decodeNativeProcessProgram(input: unknown): Extract<UserspaceCom
     context = { kind: "thread", tid, parent, stdio: [one, two, three] };
   } else protocol("Unknown native environment context");
   if (source.kind === "eval" && context.kind !== "thread") protocol("Eval source requires a native worker context");
-  return { kind: "native-node", entry, source, input: fdInput, output, profile: { runtime, executable, runtimeSHA256, identity, roots, basis, dependencyGeneration, artifacts, moduleSearchPaths, requiredCapabilities }, context };
+  return { kind: "native-node", entry, source, input: fdInput, output, profile: { runtime, executable, runtimeSHA256, identity, roots, basis, dependencyGeneration, artifacts, moduleSearchPaths, requiredCapabilities, bridgeVersion }, context };
 }

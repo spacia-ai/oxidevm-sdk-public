@@ -66,20 +66,27 @@ Snapshots and suspend fail with `FEATURE_NOT_AVAILABLE` and
 `detail.reason: "js-process-active"` while any JS process remains alive.
 VM disposal closes workers and pending operations.
 
-JS process protocol 4 puts the process's signal words in every worker's start
-message, and `serveProcess` accepts only that start message, so build workers
-with the same SDK version as the runtime. A worker that `spawnJS` started catches
+JS process protocol 5 puts the process's signal buffer in every worker's start
+message (64 pending bits, Pyodide's interrupt word and a ring of 64 queued
+real-time arrivals), and `serveProcess` accepts only that start message, so build
+workers with the same SDK version as the runtime. A worker that `spawnJS` started catches
 no signal: SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1 and SIGUSR2 keep their
 default action, so they end the process at once and retire the worker without its
 own cleanup, and the parent sees the process killed by that signal (a shell
-reports 128 + n). A pinned WebAssembly module can catch these six through its
-`process.signals` capability (engine ADR 0027): Rust then hands each caught signal
-to the module's worker instead of its default action, a signal that arrives again
-before the worker has taken it is delivered once, and while a signal is caught its
-arrival makes the process's waiting requests fail with `EINTR`. A module that
-gives a signal back its default action can end its process killed by it, so its
-parent sees the same as for a native program. Signal masks and real-time signals
-are not delivered to JS processes.
+reports 128 + n). A pinned WebAssembly module can catch these six, and the
+real-time signals SIGRTMIN to SIGRTMAX (35 to 64), through its `process.signals`
+capability (engine ADR 0027 and its 2026-11-02 amendment): Rust then hands each
+caught signal to the module's worker instead of its default action, a standard
+signal that arrives again before the worker has taken it is delivered once, every
+real-time signal queues with its `sigqueue` value up to the process's
+RLIMIT_SIGPENDING, and while a signal is caught its arrival makes the process's
+waiting requests fail with `EINTR`. A JS process honours the signal mask it
+inherits: its engine proxy waits with `pause`, so a blocked signal stays pending,
+and a module changes the mask with `block` and `unblock` (Rust's
+`rt_sigprocmask`) and lists pending signals with `pending` (`rt_sigpending`).
+Unblocking a pending signal delivers it. A module that gives a signal back its
+default action can end its process killed by it, so its parent sees the same as
+for a native program. Signals 32 to 34 stay reserved to musl.
 
 ## Worker context
 
@@ -146,7 +153,13 @@ sockets only: any other descriptor reports `ENOTSOCK`.
 TCP accepts numeric IPv4 and IPv6 addresses. Unix stream sockets use guest
 paths. `address(fd, true)` queries the peer. `shutdown` supports `"read"`,
 `"write"` and `"both"`. Sockets share the ordinary file descriptor table.
-Network revocation uses the native network owner.
+Network revocation uses the native network owner. A `spawnJS` worker has no
+network reach limit of its own: its sockets follow the VM's policy like a native
+program's. A module process instead carries the reach its manifest declares
+(`none`, `vm` or `internet`, engine ADR 0029), and Rust refuses its `connect` and
+`sendto` beyond that reach with `EACCES` and the trace reason
+`module-network-reach`. The module runner also uses Userspace API 146 datagram
+sockets internally for DNS; they are not part of `LinuxProcessContext`.
 
 `process.spawn` runs a real guest executable through the existing ELF runtime.
 Specify an executable path. The adapter does not perform PATH lookup. The
@@ -179,8 +192,8 @@ Guest syscalls and JS calls share the same file, socket and process owners.
 The JS adapter encodes requests and manages worker transport promises. It
 does not implement Linux policy or a second process manager.
 
-The internal launch record is OXCR version 18. JS requests use OXJR version 4
-and completions OXJP version 1, over JS process protocol 4. Fields, lengths,
+The internal launch record is OXCR version 19. JS requests use OXJR version 4
+and completions OXJP version 1, over JS process protocol 5. Fields, lengths,
 identities and operation payloads are validated before effects. Stale
 completions cannot affect a successor. Compiler-only filesystem requests are no
 longer accepted.
@@ -196,12 +209,19 @@ boundaries in your application.
 
 ## WebAssembly modules
 
-Typed, pinned packages of WebAssembly programs run on this mechanism: the module
-runner is a worker built from the SDK, started like a `spawnJS` worker, and it
-holds the same host command lane as any other JS process. Its launch description
-travels in its start message, not in its arguments, so `/proc/<pid>/cmdline`
-shows only the arguments the application passed. A module's commands, once an
-application turns them on with `enableModuleCommands`, run the same way: the stub
-a program executes becomes the runner's process, with the same process id and the
-caller's arguments, and each run counts toward the 32 host commands. See
+Typed, pinned packages of WebAssembly programs run on this mechanism, with one
+difference in where their workers run. A `spawnJS` worker runs in the
+application's origin; a module's runner runs in the VM's module frame, a
+sandboxed frame with an opaque origin and no browser network (engine ADR 0028).
+A broker worker in that frame relays the runner's JS process protocol to the
+VM's Userspace worker, delivers signals as ordered notices before the completions
+they interrupt, and ends only the sending process, with status 125, when a runner
+sends it a malformed message. The runner holds the same host command lane as any
+other JS process. Its launch description and the VM's verified copies of its
+files travel in its start message, not in its arguments, so
+`/proc/<pid>/cmdline` shows only the arguments the application passed. A
+module's commands, once an application turns them on with
+`enableModuleCommands`, run the same way: the stub a program executes becomes
+the runner's process, with the same process id and the caller's arguments, and
+each run counts toward the 32 host commands. See
 [WebAssembly modules](./wasm-modules.md).

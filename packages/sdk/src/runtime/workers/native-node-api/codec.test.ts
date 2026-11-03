@@ -5,13 +5,18 @@ import { JS_MAILBOX_BYTES } from "../../js-process/codec.js";
 it("carries a large native payload without increasing Linux mailbox transfer bounds", () => {
   const frame: NativeFrame = { kind: 3, sequence: 1, scope: 1n, environment: 0n, operation: "napi_create_string_utf8", status: 0, args: [], bytes: new Uint8Array(JS_MAILBOX_BYTES + 1).fill(120) };
   const encoded = encodeNativeFrame(frame);
-  expect(new DataView(encoded.buffer).getUint32(8, true)).toBe(15);
+  expect(new DataView(encoded.buffer).getUint32(8, true)).toBe(16);
+  // A process whose host helper speaks bridge 15 (no `bridge` row in its profile) writes and reads version 15 frames.
+  const fifteen = encodeNativeFrame(frame, 15);
+  expect(new DataView(fifteen.buffer).getUint32(8, true)).toBe(15);
+  expect(decodeNativeFrame(fifteen.subarray(4), 15).operation).toBe(frame.operation);
+  expect(() => decodeNativeFrame(fifteen.subarray(4))).toThrow(/version/u);
   const decoded = decodeNativeFrame(encoded.subarray(4));
   const { bytes: payload, ...fields } = decoded, { bytes: expectedPayload, ...expected } = frame;
   expect(fields).toEqual(expected);
   expect(payload.byteLength).toBe(expectedPayload.byteLength);
   expect(payload.every((byte, index) => byte === expectedPayload[index])).toBe(true);
-  for (const version of [12, 13, 14, 16]) {
+  for (const version of [12, 13, 14, 15, 17]) {
     const wrongVersion = encoded.slice(4); new DataView(wrongVersion.buffer).setUint32(4, version, true);
     expect(() => decodeNativeFrame(wrongVersion)).toThrow(/version/u);
   }

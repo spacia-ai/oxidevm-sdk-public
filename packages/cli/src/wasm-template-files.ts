@@ -1,4 +1,5 @@
 /** The text of the files of a generated module project. */
+import { NETWORK_RULES, networkSection, reachToken, type TemplateReach } from "./wasm-template-network.js";
 
 /** Command names that start with this are reserved; the SDK's manifest decoder refuses them in `commands`. */
 export const RESERVED_COMMAND_PREFIX = "oxidevm";
@@ -113,69 +114,54 @@ ${name}
 }
 
 /**
- * `test/command.test.ts` of the add example: runs `main` the way the runner does, for each way the module can start, with
- * public types only and nothing of the SDK at run time. A stand-in for the narrow host stays valid as the SDK grows.
+ * `test/command.test.ts` of the add example: runs the whole module, its WebAssembly included, through the SDK's real runner
+ * with \`testHost\`, for each way the module can start.
  */
 export function addCommandTest(id: string, command: string | undefined): string {
-  const invocation = command !== undefined;
   const cases = command === undefined
     ? `describe(${JSON.stringify(`the ${id} command`)}, () => {
   it("prints the sum of its two arguments", async () => {
-    expect(await run(["2", "3"])).toEqual({ status: 0, stdout: "5\\n", failures: [] });
+    expect(await run(["2", "3"])).toEqual({ status: 0, stdout: "5\\n", stderr: "" });
   });
 
   it("answers bad input with status 2 and a usage line", async () => {
-    expect(await run(["2"])).toEqual({ status: 2, stdout: "", failures: [${JSON.stringify(usage(id))}] });
+    expect(await run(["2"])).toEqual({ status: 2, stdout: "", stderr: ${JSON.stringify(`${usage(id)}\n`)} });
   });
 });
 `
     : `/** How the runner describes a run that a program in the VM started by typing \`argv0\`. */
-const fromVM = (argv0: string): IO["invocation"] => ({ kind: "command", name: ${JSON.stringify(command)}, path: ${JSON.stringify(`/usr/local/bin/${command}`)}, argv0 });
+const fromVM = (argv0: string): Invocation => ({ kind: "command", name: ${JSON.stringify(command)}, argv0 });
 
 describe(${JSON.stringify(`the ${command} command`)}, () => {
   it("prints the sum when the application starts the module", async () => {
-    expect(await run(["2", "3"], { kind: "host" })).toEqual({ status: 0, stdout: "5\\n", failures: [] });
+    expect(await run(["2", "3"])).toEqual({ status: 0, stdout: "5\\n", stderr: "" });
   });
 
   it("prints the sum when a program in the VM runs it", async () => {
-    expect(await run(["2", "3"], fromVM(${JSON.stringify(command)}))).toEqual({ status: 0, stdout: "5\\n", failures: [] });
+    expect(await run(["2", "3"], fromVM(${JSON.stringify(command)}))).toEqual({ status: 0, stdout: "5\\n", stderr: "" });
   });
 
   it("answers bad input with status 2 and a usage line that names the command as it was typed", async () => {
-    expect(await run(["2"], fromVM(${JSON.stringify(command)}))).toEqual({ status: 2, stdout: "", failures: [${JSON.stringify(usage(command))}] });
-    expect(await run(["two", "3"], fromVM(${JSON.stringify(`/usr/local/bin/${command}`)}))).toEqual({ status: 2, stdout: "", failures: [${JSON.stringify(usage(`/usr/local/bin/${command}`))}] });
-    expect(await run([], { kind: "host" })).toEqual({ status: 2, stdout: "", failures: [${JSON.stringify(usage(id))}] });
+    expect(await run(["2"], fromVM(${JSON.stringify(command)}))).toEqual({ status: 2, stdout: "", stderr: ${JSON.stringify(`${usage(command)}\n`)} });
+    expect(await run(["two", "3"], fromVM(${JSON.stringify(`/usr/local/bin/${command}`)}))).toEqual({ status: 2, stdout: "", stderr: ${JSON.stringify(`${usage(`/usr/local/bin/${command}`)}\n`)} });
+    expect(await run([])).toEqual({ status: 2, stdout: "", stderr: ${JSON.stringify(`${usage(id)}\n`)} });
   });
 });
 `;
-  return `import { describe, expect, it } from "vitest";
-import type { CommandIO } from "@oxidevm/sdk/wasm";
-import { addCommand } from "../src/command.ts";
-import type { AddHost } from "../src/command.ts";
+  return `import { readFile } from "node:fs/promises";
+import { describe, expect, it } from "vitest";
+import { testHost, type TestHostInputs } from "@oxidevm/sdk/wasm/testing";
+import definition from "../module.ts";
 
-type IO = ${command === undefined ? "CommandIO" : `CommandIO<${JSON.stringify(command)}>`};
+type Invocation = NonNullable<TestHostInputs["invocation"]>;
 
-/** Descriptors are branded numbers; this check makes one from a test's number without a cast. */
-function isDescriptor(value: number): value is IO["stdout"] {
-  return Number.isSafeInteger(value) && value >= 0;
-}
-function descriptor(value: number): IO["stdout"] {
-  if (!isDescriptor(value)) throw new RangeError(\`\${String(value)} is not a descriptor\`);
-  return value;
-}
+/** The artifact the release pins, read from this repository. */
+const artifacts = { "add.wasm": new Uint8Array(await readFile(new URL("../upstream/add.wasm", import.meta.url))) };
 
-/** Runs main once with a stand-in for the host members the command uses, and returns what it wrote and failed with. */
-async function run(args: readonly string[]${invocation ? ", invocation: IO[\"invocation\"]" : ""}): Promise<{ status: number; stdout: string; failures: string[] }> {
-  const stdout = descriptor(1);
-  let written = "";
-  const failures: string[] = [];
-  const host: AddHost = {
-    fs: { writeAll: (fd, bytes) => { expect(fd).toBe(stdout); written += new TextDecoder().decode(bytes); } },
-    fail: (status, message) => { failures.push(message); return status; },
-  };
-  const io: IO = { args, env: {}, cwd: "/workspace", stdin: descriptor(0), stdout, stderr: descriptor(2)${invocation ? ", invocation, terminals: { stdin: false, stdout: false, stderr: false }" : ""} };
-  const status = await addCommand(host, (left, right) => left + right).main(io);
-  return { status, stdout: written, failures };
+/** Runs the module once through the SDK's runner, as the browser would, and returns what it wrote. */
+async function run(args: readonly string[], invocation?: Invocation): Promise<{ status: number; stdout: string; stderr: string }> {
+  const { status, stdout, stderr } = await testHost(definition, { args, artifacts, ...(invocation === undefined ? {} : { invocation }) }).run();
+  return { status, stdout, stderr };
 }
 
 ${cases}`;
@@ -218,7 +204,7 @@ export const TEST_TSCONFIG = `{
 }
 `;
 
-export function moduleTest(id: string, shape: TemplateShape): string {
+export function moduleTest(id: string, shape: TemplateShape, reach: TemplateReach): string {
   const commands = shape.kind === "service" ? ""
     : shape.command === undefined
       ? `    // Command names that start with "${RESERVED_COMMAND_PREFIX}" are reserved, so this module declares none.\n    expect("commands" in definition.manifest).toBe(false);\n`
@@ -230,7 +216,10 @@ describe("module definition", () => {
   it("declares what the build and the consumer read", () => {
     expect(definition.manifest.id).toBe(${JSON.stringify(id)});
     expect(definition.manifest.process.kind).toBe(${JSON.stringify(shape.kind)});
-${commands}    expect(typeof definition.adapter).toBe("function");
+${commands}    // The module's network reach (engine ADR 0029): Rust holds every process of the module to it.
+    const host: readonly string[] = definition.manifest.requires.host;
+    expect(host.filter(token => token.startsWith("net."))).toEqual(${JSON.stringify(reachToken(reach) === undefined ? [] : [reachToken(reach)])});
+    expect(typeof definition.adapter).toBe("function");
   });
 });
 `;
@@ -401,7 +390,7 @@ This repository is an OxideVM WebAssembly module. \`module.ts\` holds the whole 
 - Artifacts are files in this repository named by \`from\`. Pin upstream binaries by hash where they come from, and keep their licenses and notices in this repository.
 - Verify with \`pnpm run check\` (types, lint, and \`oxidevm wasm build --check\`), then \`pnpm test\`, then \`pnpm run test:conformance\` (\`oxidevm wasm test\` in a real browser).
 - Release by tag: \`pnpm run release\` prints the steps.
-${shape.kind === "command" ? COMMAND_RULES : ""}`;
+${shape.kind === "command" ? COMMAND_RULES : ""}${NETWORK_RULES}`;
 }
 
 /** The README section of a command module: how an application turns its command on, and what a shell then sees. */
@@ -444,7 +433,7 @@ Turning the command on places a stub at \`/usr/local/bin/${command}\`. A shell f
 `;
 }
 
-export function readmeFile(id: string, shape: TemplateShape): string {
+export function readmeFile(id: string, shape: TemplateShape, reach: TemplateReach): string {
   const run = shape.kind === "command"
     ? "A command module runs once per start, like a program: `spawnModule(vm, handle, { args: [\"2\", \"3\"] })`."
     : "A service module listens on the sockets its manifest declares and serves clients until it is stopped.";
@@ -461,7 +450,7 @@ oxidevm wasm add github:OWNER/REPO@v0.1.0
 \`\`\`
 
 The command shows what the module declares and asks before installing it.
-${shape.kind === "command" ? shellSection(id, shape.command, shape.skeleton) : ""}
+${shape.kind === "command" ? shellSection(id, shape.command, shape.skeleton) : ""}${networkSection(reach)}
 ## Develop it
 
 \`\`\`sh

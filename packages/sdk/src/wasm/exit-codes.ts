@@ -3,6 +3,11 @@
  * belongs to the engine (it means the worker failed), so a module can never mimic an engine failure.
  */
 export const MODULE_EXIT = {
+  /**
+   * The network is unavailable (sysexits EX_UNAVAILABLE): the VM is local-only, its connection was revoked, or the
+   * destination is beyond the module's reach. A command prints one line from `kit.net.describe` and returns it (ADR 0029).
+   */
+  unavailable: 69,
   /** Highest status a command adapter may return from `main`. */
   adapterMax: 119,
   /** The launch descriptor was missing, oversized or invalid. */

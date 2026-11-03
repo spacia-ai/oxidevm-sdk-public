@@ -1,6 +1,6 @@
 {
   "name": "@oxidevm/sdk",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "type": "module",
   "license": "Apache-2.0",
   "exports": {
@@ -27,6 +27,10 @@
     "./wasm": {
       "types": "./dist/wasm.d.ts",
       "default": "./dist/wasm.js"
+    },
+    "./wasm/testing": {
+      "types": "./dist/wasm/testing/index.d.ts",
+      "default": "./dist/wasm/testing/index.js"
     }
   },
   "files": [
@@ -41,6 +45,7 @@
     "NOTICE",
     "assets/interceptors",
     "assets/module-runner",
+    "assets/module-frame",
     "assets/compilers",
     "assets/snapshot",
     "THIRD_PARTY_NOTICES.txt",
@@ -49,7 +54,7 @@
   ],
   "scripts": {
     "check": "tsc -p tsconfig.browser.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.test.json && tsc -p tsconfig.worker-test.json && tsc -p tsconfig.node.json && tsc -p tsconfig.browser-tools.json && tsc -p tsconfig.preview-browser.json && tsc -p tsconfig.preview-worker.json && tsc -p tsconfig.preview-node.json && tsc -p tsconfig.preview-test.json && tsc -p tsconfig.runtime-host.json && tsc -p tsconfig.runtime-host-worker.json && tsc -p tsconfig.native-process.json && tsc -p tsconfig.module-runner.json",
-    "build": "node --input-type=module -e 'import { rmSync } from \"node:fs\"; rmSync(\"dist\", { recursive: true, force: true });' && tsc -p tsconfig.browser.build.json && tsc -p tsconfig.worker.build.json && tsc -p tsconfig.node.build.json && tsc -p tsconfig.browser-tools.build.json && node ../../scripts/stage-compatibility-declarations.ts && node ../../scripts/minify-distribution.ts packages/sdk/dist && node ../../scripts/build-command-interceptor-worker.ts --package && node ../../scripts/build-module-runner.ts && node ../../scripts/build-esbuild-wasm.ts && vite build --config vite.qualification.config.ts && vite build --config vite.snapshot.config.ts && vite build --config vite.doctor.config.ts && vite build --config asset-source/preview/vite.config.ts && vite build --config asset-source/runtime-host/vite.config.ts && vite build --config asset-source/native-process/vite.config.ts && node ../../scripts/package-notices.ts sdk",
+    "build": "node --input-type=module -e 'import { rmSync } from \"node:fs\"; rmSync(\"dist\", { recursive: true, force: true });' && tsc -p tsconfig.browser.build.json && tsc -p tsconfig.worker.build.json && tsc -p tsconfig.node.build.json && tsc -p tsconfig.browser-tools.build.json && node ../../scripts/stage-compatibility-declarations.ts && node ../../scripts/minify-distribution.ts packages/sdk/dist && node ../../scripts/build-command-interceptor-worker.ts --package && node ../../scripts/build-module-runner.ts && node ../../scripts/build-module-frame.ts && node ../../scripts/build-esbuild-wasm.ts && vite build --config vite.qualification.config.ts && vite build --config vite.snapshot.config.ts && vite build --config vite.doctor.config.ts && vite build --config asset-source/preview/vite.config.ts && vite build --config asset-source/runtime-host/vite.config.ts && vite build --config asset-source/native-process/vite.config.ts && node ../../scripts/package-notices.ts sdk",
     "test": "vitest run --maxWorkers=2 --exclude '**/*.core-test.ts'",
     "test:core": "vitest run --config vitest.core.config.ts --maxWorkers=2"
   },

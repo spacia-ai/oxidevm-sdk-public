@@ -84,11 +84,12 @@ async function run(input: unknown): Promise<void> {
       diagnosticConsole.info(JSON.stringify({ type: "native-js-exit", ...diagnosticIdentity, code, stack: new Error("JavaScript process exit").stack?.slice(0, 4096) }));
     }
     post(value);
-  }, failed, externalPending: () => bridge.pending !== 0, exiting: code => bridge.dispose(code), signalExit: signal => bridge.raiseSignal(signal), fork: { control: threadControl, executable: program.profile.executable } }, thread?.stdio);
+  }, failed, externalPending: () => bridge.pending !== 0, exiting: code => bridge.dispose(code), signalExit: signal => bridge.raiseSignal(signal), watchSignal: (signal, watching) => { bridge.watchSignal(signal, watching); }, fork: { control: threadControl, executable: program.profile.executable } }, thread?.stdio);
   applicationException = (error, origin, promise) => io.applicationException(error, origin, promise);
   const bridge = new NativeBridge(client, files, program.input, program.output, {
     environment: thread?.tid ?? info.pid,
     runtime: program.profile.runtime,
+    bridgeVersion: program.profile.bridgeVersion,
     signal: signal => io.receiveSignal(signal), changed: () => io.changed(), failed: error => io.fail(error), uncaught: (error, deliver) => io.applicationException(error, "uncaughtException", undefined, deliver),
     trace: frame => { if (traceEnabled) diagnosticConsole.info(JSON.stringify({ type: "native-node-api", generation: `${identity.generation}`, process: `${identity.id}`, pid: info.pid, sequence: frame.sequence, scope: `${frame.scope}`, environment: `${frame.environment}`, kind: frame.kind, operation: frame.operation })); },
     ...(traceEnabled ? { transport: (event: NativeTransportEvent) => {

@@ -1,4 +1,5 @@
 import { VMError } from "../../errors.js";
+import { listenableSignal, type ListenableSignal } from "../../process-signals.js";
 import { JS_PROCESS_PROTOCOL_VERSION, LinuxError, noValue, operation, protocol, Writer } from "../../js-process/codec.js";
 import { files } from "../../js-process/file-operations.js";
 import type { LinuxClient } from "../../js-process/transport.js";
@@ -25,10 +26,10 @@ export class NativeProcessIO implements ProcessRuntimeIO {
   #schedule: (callback: () => void) => void = queueMicrotask;
   #input: Parameters<ProcessRuntimeIO["setInput"]>[0] | undefined;
   #signals: Parameters<ProcessRuntimeIO["setSignals"]>[0] | undefined;
-  readonly #pendingSignals = new Set<"INT" | "TERM" | "HUP">();
+  readonly #pendingSignals = new Set<ListenableSignal>();
   #failed = false;
   #exception: ((error: unknown, origin: ExceptionOrigin, promise?: Promise<unknown>) => boolean) | undefined;
-  constructor(readonly client: LinuxClient, readonly events: { post(event: unknown): void; failed(error: unknown): void; externalPending(): boolean; exiting?(code: number): void; signalExit?(signal: 1 | 2 | 9 | 15): void; readonly fork?: { readonly control: MessagePort; readonly executable: string } }, readonly stdio: readonly [number, number, number] = [0, 1, 2]) {
+  constructor(readonly client: LinuxClient, readonly events: { post(event: unknown): void; failed(error: unknown): void; externalPending(): boolean; exiting?(code: number): void; signalExit?(signal: number): void; watchSignal?(signal: number, watching: boolean): void; readonly fork?: { readonly control: MessagePort; readonly executable: string } }, readonly stdio: readonly [number, number, number] = [0, 1, 2]) {
     this.#files = createNativeFileService(client);
     this.#children = new NativeChildrenIO(client, error => this.fail(error), callback => this.#schedule(callback), events.fork);
   }
@@ -57,8 +58,9 @@ export class NativeProcessIO implements ProcessRuntimeIO {
     for (const pending of this.#pendingSignals) this.#schedule(() => signals(pending));
     this.#pendingSignals.clear();
   }
-  receiveSignal(signal: 1 | 2 | 15): void {
-    const name = signal === 1 ? "HUP" : signal === 2 ? "INT" : "TERM", signals = this.#signals;
+  receiveSignal(signal: number): void {
+    const name = listenableSignal(signal), signals = this.#signals;
+    if (name === null) protocol("A native process received a signal it cannot listen for");
     if (signals === undefined) this.#pendingSignals.add(name); else this.#schedule(() => signals(name));
   }
   setForkEvents(events: Parameters<ProcessRuntimeIO["setForkEvents"]>[0]): void { this.#children.setForkEvents(events); }
@@ -132,6 +134,8 @@ export class NativeProcessIO implements ProcessRuntimeIO {
     this.events.failed(error);
   }
   terminate(code: number): never { this.events.exiting?.(code); this.events.post({ version: JS_PROCESS_PROTOCOL_VERSION, type: "exit", code }); return this.halt(); }
+  /** A JavaScript listener for `signal` came (`watching`) or the last one went: the helper's handler follows (bridge 16). */
+  watchSignal(signal: number, watching: boolean): void { if (this.events.watchSignal === undefined) protocol("Native signal listener owner is absent"); this.events.watchSignal(signal, watching); }
   signalExit(signal: Parameters<ProcessRuntimeIO["signalExit"]>[0]): void { if (this.events.signalExit === undefined) protocol("Native signal exit owner is absent"); this.events.signalExit(signal); }
   halt(): never {
     // Bound this private wait so Chromium can finish an external Worker.terminate().

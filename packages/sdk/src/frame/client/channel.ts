@@ -18,9 +18,11 @@ export interface FrameCall<T> {
   readonly transfer?: readonly Transferable[];
   /**
    * What aborting does: "reject" (the default) fails with ABORTED; "resolve" ends a subscription
-   * normally with `undefined`, as `watch` methods do when their signal aborts.
+   * normally with `undefined`, as `watch` methods do when their signal aborts; "settle" sends the
+   * cancellation and then waits for the frame's real answer, for a request whose outcome the page
+   * must know even when it gave up on it (a module-commands enable that may have registered).
    */
-  readonly onAbort?: "reject" | "resolve";
+  readonly onAbort?: "reject" | "resolve" | "settle";
   /** Receives the request's id once it is sent, for later requests that name it. */
   readonly onSent?: (id: number) => void;
 }
@@ -55,10 +57,15 @@ export class FrameChannel {
 
   request<T>(operation: FrameOperation, call: FrameCall<T>): Promise<T> {
     if (this.#failure !== undefined) return Promise.reject(this.#failure);
-    if (call.signal?.aborted === true) return call.onAbort === "resolve" ? Promise.resolve(call.decode(undefined)) : Promise.reject(aborted());
+    if (call.signal?.aborted === true && call.onAbort !== "settle") return call.onAbort === "resolve" ? Promise.resolve(call.decode(undefined)) : Promise.reject(aborted());
     const id = this.#nextId++;
     return new Promise<T>((resolve, reject) => {
       const abort = () => {
+        if (call.onAbort === "settle") {
+          // The frame answers a cancelled request too; the pending entry stays until it does.
+          if (this.#pending.has(id)) this.#post({ v: FRAME_PROTOCOL_VERSION, type: "cancel", id }, []);
+          return;
+        }
         if (!this.#pending.delete(id)) return;
         call.signal?.removeEventListener("abort", abort);
         this.#post({ v: FRAME_PROTOCOL_VERSION, type: "cancel", id }, []);
@@ -77,6 +84,8 @@ export class FrameChannel {
       call.signal?.addEventListener("abort", abort, { once: true });
       this.#post(frameRequest(id, operation), call.transfer ?? []);
       if (this.#pending.has(id)) call.onSent?.(id);
+      // A settled request whose signal had already aborted is sent, then cancelled at once.
+      if (call.onAbort === "settle" && call.signal?.aborted === true) abort();
     });
   }
 

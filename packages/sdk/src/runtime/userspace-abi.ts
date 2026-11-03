@@ -16,7 +16,7 @@ export { decodeIoUringCallSource, type IoUringCallSource } from "./userspace-io-
 
 export { decodeUserspaceSpawnResult, type UserspaceSpawnResult } from "./userspace-spawn.ts";
 
-export const USERSPACE_API_VERSION = 145;
+export const USERSPACE_API_VERSION = 146;
 /** Current encoder version; historical trace versions remain readable below. */
 export const USERSPACE_SYSCALL_TRACE_VERSION = 52;
 

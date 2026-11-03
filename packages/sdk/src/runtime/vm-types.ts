@@ -13,7 +13,10 @@ import type { Workspace } from "./workspace.js";
 import type { WorkspaceMovedAway } from "./workspace-handoff.js";
 import type { ImagePreparation } from "../values.js";
 import type { AccelerationNotice } from "./js-process/late-failure.js";
-import type { RunnerHostLaunch } from "./js-process/launch.js";
+import type { CopyKey, ModulePin } from "./protocol/userspace-module-files.js";
+
+/** A module's start (ADR 0028): its launch description and the copies the VM's store lacked, by key. */
+export interface ModuleStart { readonly descriptor: string; readonly files: Readonly<Record<CopyKey, Blob>> }
 import type { ModuleCommandsRequest, ModuleCommandsResult } from "./protocol/userspace-module-commands.js";
 
 export type RuntimeMode = "system" | "userspace";
@@ -247,8 +250,15 @@ export interface RuntimeVM {
   readJSProcessTrace?(capacity?: number): Promise<Uint8Array>;
   /** ADR 0026: each late fast-path failure until `options.signal` aborts or the VM ends. */
   watchAccelerationNotices?(listener: (notice: AccelerationNotice) => void, options: { readonly signal: AbortSignal }): Promise<void>;
-  /** `launch` is the module runner's private start input (ADR 0027): `spawnModule` sends its launch description there, not in argv. */
-  spawnJS?(spec: Omit<SpawnSpec, "command"> & { readonly worker: string; readonly launch?: RunnerHostLaunch }): Promise<ProcessHandle>;
+  spawnJS?(spec: Omit<SpawnSpec, "command"> & { readonly worker: string }): Promise<ProcessHandle>;
+  /** ADR 0028: hands the VM's module frame broker to its Userspace worker, or reports it lost (processes end with 125). */
+  attachModuleFrame?(port: MessagePort): Promise<void>;
+  detachModuleFrame?(): Promise<void>;
+  /** ADR 0028: which of `pins` the VM's verified-copy store lacks. */
+  moduleFiles?(pins: readonly ModulePin[], options?: { readonly signal?: AbortSignal }): Promise<readonly CopyKey[]>;
+  /** ADR 0028: `spawnModule`'s start: the SDK's module runner with `descriptor` (never in argv) and the copies the VM
+   * holds, after the store checked `files`, the ones it lacked. */
+  spawnModule?(spec: Omit<SpawnSpec, "command" | "terminal"> & ModuleStart): Promise<ProcessHandle>;
   /**
    * ADR 0027: turns a command module's commands on for this VM, turns them off, or reads how they stand, through the
    * Userspace worker's registration owner. A cancelled request is still answered by that owner, so an enable that

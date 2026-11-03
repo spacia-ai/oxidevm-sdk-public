@@ -94,6 +94,22 @@ describe("buildModule", () => {
     expect(result.findings[0]?.message).toMatch(/^commands: .*\/usr\/local\/bin\/demo/u);
   });
 
+  it("refuses sockets.connect without a reach token, and both reach tokens, so every new module.json states one reach (engine ADR 0029)", async () => {
+    for (const [host, message] of [[`["files.sync", "sockets.connect"]`, /^requires\.host: sockets\.connect needs a reach: add net\.vm .* or net\.internet/u], [`["net.vm", "net.internet"]`, /^requires\.host: a manifest names at most one reach token/u]] as const) {
+      const source = manifest().replace(`requires: { host: ["files.sync"] }`, `requires: { host: ${host} }`);
+      const result = await buildModule(await project(files({}, moduleSource({ manifest: source }))), { check: true });
+      expect(result.result).toBe("failed");
+      expect(result.findings[0]).toMatchObject({ code: "manifest-invalid", file: "module.ts" });
+      expect(result.findings[0]?.message).toMatch(message);
+    }
+    const internet = manifest().replace(`requires: { host: ["files.sync"] }`, `requires: { host: ["net.internet", "sockets.connect"] }, network: { hosts: ["pypi.org"], purpose: "Downloads packages" }`);
+    const dir = await project(files({}, moduleSource({ manifest: internet })));
+    expect((await buildModule(dir)).result).toBe("built");
+    const written = decodeModuleManifest(await readFile(join(dir, "dist", "module.json")));
+    expect(Object.keys(written)).toEqual(["schemaVersion", "id", "version", "abi", "adapter", "artifacts", "process", "requires", "network", "license"]);
+    expect(written.network).toEqual({ hosts: ["pypi.org"], purpose: "Downloads packages" });
+  });
+
   it("reads a module kept in a subdirectory", async () => {
     const dir = await project({ "src/module.ts": moduleSource({ manifest: manifest({ artifacts: `[]`, license: `{ spdx: "MIT" }` }) }) });
     expect((await buildModule(dir, { module: "src/module.ts", check: true })).result).toBe("checked");

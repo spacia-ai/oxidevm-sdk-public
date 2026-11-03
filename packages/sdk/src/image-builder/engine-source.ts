@@ -23,6 +23,7 @@ const MODULES = [
   { name: "oxidevm_core_shared.wasm", mode: "system" },
   { name: "oxidevm_netstack.wasm", mode: "system" },
   { name: "oxidevm_userspace.wasm", mode: "userspace" },
+  { name: "oxidevm_tls.wasm", mode: "userspace" },
 ] as const;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const GIT_COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
@@ -34,11 +35,11 @@ const MAX_LICENSE_BYTES = 1024 ** 2;
 export type EngineModuleName = (typeof MODULES)[number]["name"];
 export type EngineFileName = "release.json" | "LICENSE" | EngineModuleName;
 
-/** release.json, schema 3: what the engine repository's release builder writes. */
+/** release.json, schema 4 (schema 3 plus the TLS module and its `tlsApi`): what the engine repository's release builder writes. */
 export interface EngineReleaseManifest {
-  readonly schemaVersion: 3;
+  readonly schemaVersion: 4;
   readonly engineSource: { readonly commit: string; readonly dirty: boolean; readonly nativeInputsSHA256: string };
-  readonly identities: { readonly coreApi: number; readonly jitAbi: number; readonly userspaceApi: number; readonly netstackApi: number };
+  readonly identities: { readonly coreApi: number; readonly jitAbi: number; readonly userspaceApi: number; readonly netstackApi: number; readonly tlsApi: number };
   readonly artifacts: readonly { readonly name: EngineModuleName; readonly mode: (typeof MODULES)[number]["mode"]; readonly bytes: number; readonly sha256: string }[];
 }
 /**
@@ -85,23 +86,23 @@ function canonicalBytes(manifest: EngineReleaseManifest): Uint8Array {
 function decodeManifest(value: unknown): EngineReleaseManifest {
   const manifest = record(value, "release.json");
   exactKeys(manifest, ["schemaVersion", "engineSource", "identities", "artifacts"]);
-  if (manifest["schemaVersion"] !== 3) throw new TypeError(`schema version ${String(manifest["schemaVersion"])} is not 3`);
+  if (manifest["schemaVersion"] !== 4) throw new TypeError(`schema version ${String(manifest["schemaVersion"])} is not 4`);
   const source = record(manifest["engineSource"], "engineSource");
   exactKeys(source, ["commit", "dirty", "nativeInputsSHA256"]);
   const identities = record(manifest["identities"], "identities");
-  exactKeys(identities, ["coreApi", "jitAbi", "userspaceApi", "netstackApi"]);
+  exactKeys(identities, ["coreApi", "jitAbi", "userspaceApi", "netstackApi", "tlsApi"]);
   const artifacts: unknown = manifest["artifacts"];
   if (!Array.isArray(artifacts) || artifacts.length !== MODULES.length) throw new TypeError(`artifacts must list the ${String(MODULES.length)} engine modules`);
   const listed: readonly unknown[] = artifacts;
   const identity = (key: string) => integer(identities[key], `identities.${key}`, 0, 0xffff_ffff);
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     engineSource: {
       commit: matching(source["commit"], "engineSource.commit", GIT_COMMIT),
       dirty: boolean(source["dirty"], "engineSource.dirty"),
       nativeInputsSHA256: matching(source["nativeInputsSHA256"], "engineSource.nativeInputsSHA256", SHA256),
     },
-    identities: { coreApi: identity("coreApi"), jitAbi: identity("jitAbi"), userspaceApi: identity("userspaceApi"), netstackApi: identity("netstackApi") },
+    identities: { coreApi: identity("coreApi"), jitAbi: identity("jitAbi"), userspaceApi: identity("userspaceApi"), netstackApi: identity("netstackApi"), tlsApi: identity("tlsApi") },
     artifacts: MODULES.map(({ name, mode }, index) => {
       const artifact = record(listed[index], `artifacts[${String(index)}]`);
       exactKeys(artifact, ["name", "mode", "bytes", "sha256"]);
@@ -116,7 +117,7 @@ export function decodeEngineRelease(bytes: Uint8Array): EngineReleaseManifest {
   if (bytes.byteLength > MAX_RELEASE_JSON_BYTES) throw failure(`release.json exceeds ${String(MAX_RELEASE_JSON_BYTES)} bytes`);
   let manifest: EngineReleaseManifest;
   try { manifest = decodeManifest(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))); }
-  catch (error: unknown) { throw failure(`release.json is not a schema-3 engine release: ${reason(error)}`); }
+  catch (error: unknown) { throw failure(`release.json is not a schema-4 engine release: ${reason(error)}`); }
   if (!Buffer.from(canonicalBytes(manifest)).equals(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength))) {
     throw failure("release.json is not in the engine's canonical form (two-space JSON in schema order, then one newline)");
   }
@@ -143,10 +144,11 @@ function decodeAssetUrls(value: unknown): Readonly<Record<EngineFileName, string
     "oxidevm_core_shared.wasm": assetUrl(assets["oxidevm_core_shared.wasm"], "oxidevm_core_shared.wasm"),
     "oxidevm_netstack.wasm": assetUrl(assets["oxidevm_netstack.wasm"], "oxidevm_netstack.wasm"),
     "oxidevm_userspace.wasm": assetUrl(assets["oxidevm_userspace.wasm"], "oxidevm_userspace.wasm"),
+    "oxidevm_tls.wasm": assetUrl(assets["oxidevm_tls.wasm"], "oxidevm_tls.wasm"),
   };
 }
 
-/** Decodes the publisher's assets.json: exactly the release's six files, each at a release-asset URL. */
+/** Decodes the publisher's assets.json: exactly the release's seven files, each at a release-asset URL. */
 export function decodeEngineAssetUrls(value: unknown): Readonly<Record<EngineFileName, string>> {
   try { return decodeAssetUrls(value); }
   catch (error: unknown) { throw failure(`engine release assets are invalid: ${reason(error)}`); }

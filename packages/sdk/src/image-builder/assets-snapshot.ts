@@ -4,15 +4,15 @@ import {basename,dirname,join,resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {VMError} from "../runtime/errors.js";
 import type {ProjectLock,ResolvedProjectConfig} from "./project.js";
-import type {InstallAssetsOptions,InstallAssetsResult} from "./assets.js";
-import {checkedOutput,installStaticAssets} from "./assets.js";
+import type {InstallAssetsOptions,StagedAssets} from "./assets.js";
+import {checkedOutput,installSelfHostedRuntime,installStaticAssets} from "./assets.js";
 import {readSnapshotBundle} from "./snapshot-bundle.js";
 import {SNAPSHOT_REFERENCE_MARKER,snapshotReferenceSource} from "./snapshot-reference.js";
-import {copyEngineRelease,pinnedEngineRelease,resolveEngineDirectory} from "./engine-source.js";
+import {pinnedEngineRelease,resolveEngineDirectory} from "./engine-source.js";
 import {copyVerified,hashFile} from "./files.js";
 import {localBundlePath,readBundleFile} from "./bundle-files.js";
 import {abortIfRequested} from "./tools.js";
-export async function installSnapshotAssets(directory:string,config:ResolvedProjectConfig,lock:ProjectLock,options:InstallAssetsOptions):Promise<InstallAssetsResult> {
+export async function installSnapshotAssets(directory:string,config:ResolvedProjectConfig,lock:ProjectLock,options:InstallAssetsOptions):Promise<StagedAssets> {
   if(options.trust===undefined||options.snapshotDir===undefined)throw new VMError("INVALID_ARGUMENT","Prepared snapshot installation requires external author trust");
   const bundle=await readSnapshotBundle(resolve(directory,options.snapshotDir),options.trust,options.signal),index=bundle.index;
   if(index.mode!==config.mode||index.sdkVersion!==lock.sdkVersion||`sha256:${index.engineReleaseId}`!==lock.engineRelease)throw new VMError("PROTOCOL_ERROR","Snapshot bundle differs from the project's SDK, engine or mode lock");
@@ -30,7 +30,7 @@ export async function installSnapshotAssets(directory:string,config:ResolvedProj
     else await copyVerified(await localBundlePath(bundle.directory,file.url),path,file,options.signal);
     await chmod(path,0o644);
   }
-  const engineFiles=await copyEngineRelease(engineDir,await checkedOutput(assets,"runtime"),engine,options.signal,options.engineComplianceDir===undefined?undefined:resolve(directory,options.engineComplianceDir));
+  const engineFiles=await installSelfHostedRuntime(engineDir,assets,engine,options.signal,options.engineComplianceDir===undefined?undefined:resolve(directory,options.engineComplianceDir));
   const doctorFiles=await installStaticAssets(fileURLToPath(new URL("../../assets/doctor/",import.meta.url)),await checkedOutput(assets,"doctor"),options.signal);
   const hostingBase=`${config.assetBaseUrl}${relative}/`,temporary=`${referencePath}.installing-${randomUUID()}`;
   await mkdir(dirname(referencePath),{recursive:true});

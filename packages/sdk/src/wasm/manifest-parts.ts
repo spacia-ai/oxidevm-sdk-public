@@ -2,15 +2,23 @@ import { exactKeys, record, string } from "../runtime/decode.js";
 import { MODULE_COMMAND_NAME, moduleCommandPath, RESERVED_COMMAND_PREFIX } from "../runtime/module-command-names.js";
 import { decodeSHA256 } from "../values.js";
 import { isBrowserFeature, isCapability } from "./capabilities.js";
+import { REACH_TOKENS } from "./reach.js";
 import type { BrowserFeature, Capability } from "./capabilities.js";
 import { absolutePath, choice, httpsURL, integerIn, invalid, list, relativePath, text, unique } from "./decode-support.js";
 import { classifyLicense } from "./license.js";
 import { clashingFileName } from "./served-names.js";
 import type {
-  ArtifactDecl, EndpointDecl, GuestFileDecl, LicenseDecl, LimitsDecl, MountDecl, OptionDecl, ResolvedArtifact, UpstreamDecl,
+  ArtifactDecl, EndpointDecl, GuestFileDecl, LicenseDecl, LimitsDecl, MountDecl, NetworkDecl, OptionDecl, ResolvedArtifact, UpstreamDecl,
 } from "./manifest-types.js";
 
 export const MAX_ARTIFACT_BYTES = 512 * 1024 ** 2;
+/** Most files one release carries. */
+const MAX_ARTIFACTS = 64;
+/**
+ * Most upstream components one manifest credits. A component ships in at least one artifact (an interpreter's packages
+ * are one wheel each: Pyodide's set is 21), so a release cannot carry more than it has artifacts.
+ */
+const MAX_UPSTREAM = MAX_ARTIFACTS;
 /** A flat file name: it starts with a letter or digit, so neither `.` nor `..` nor a hidden file can be an artifact. */
 export const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 /** Files every release has besides its artifacts; an artifact with one of these names would overwrite it. */
@@ -40,7 +48,7 @@ function sorted<T extends string>(items: readonly T[]): T[] {
 }
 
 export function decodeDeclaredArtifacts(value: unknown): readonly ArtifactDecl[] {
-  const items = list(value, "artifacts", 64).map((entry, index): ArtifactDecl => {
+  const items = list(value, "artifacts", MAX_ARTIFACTS).map((entry, index): ArtifactDecl => {
     const item = record(entry, `artifacts[${String(index)}]`);
     exactKeys(item, ["name", "from"]);
     return { name: artifactName(item["name"]), from: relativePath(item["from"], "artifact from") };
@@ -51,7 +59,7 @@ export function decodeDeclaredArtifacts(value: unknown): readonly ArtifactDecl[]
 }
 
 export function decodeResolvedArtifacts(value: unknown): readonly ResolvedArtifact[] {
-  const items = list(value, "artifacts", 64).map((entry, index): ResolvedArtifact => {
+  const items = list(value, "artifacts", MAX_ARTIFACTS).map((entry, index): ResolvedArtifact => {
     const item = record(entry, `artifacts[${String(index)}]`);
     exactKeys(item, ["name", "sha256", "bytes"]);
     return {
@@ -145,6 +153,7 @@ export function decodeRequires(value: unknown): {
     return entry;
   });
   unique(host, "requires.host");
+  if (REACH_TOKENS.every(token => host.includes(token))) invalid("requires.host", "a manifest names at most one reach token: net.internet already includes VM reach, so drop net.vm");
   const result: { host: readonly Capability[]; browser?: readonly BrowserFeature[]; guest?: { readonly executables?: readonly string[] } } = { host: sorted(host) };
   if (item["browser"] !== undefined) {
     const browser = list(item["browser"], "requires.browser", 8).map((entry): BrowserFeature => {
@@ -288,7 +297,7 @@ export function decodeLicense(value: unknown, artifacts: ReadonlySet<string>): L
 }
 
 export function decodeUpstream(value: unknown): readonly UpstreamDecl[] {
-  return list(value, "upstream", 16).map((entry, index): UpstreamDecl => {
+  return list(value, "upstream", MAX_UPSTREAM).map((entry, index): UpstreamDecl => {
     const item = record(entry, `upstream[${String(index)}]`);
     exactKeys(item, ["name", "version", "source"]);
     return {
@@ -297,4 +306,32 @@ export function decodeUpstream(value: unknown): readonly UpstreamDecl[] {
       source: httpsURL(item["source"], "upstream source"),
     };
   });
+}
+
+const MAX_NETWORK_HOSTS = 32;
+const MAX_PURPOSE = 200;
+/** A DNS name of letters, digits and hyphens per label, with an optional leading `*.` wildcard label. */
+const NETWORK_HOST = /^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+
+/** `network` (engine ADR 0029, N-2): disclosure for a module with `net.internet`, never an allowlist. */
+export function decodeNetwork(value: unknown, host: readonly Capability[]): NetworkDecl {
+  if (!host.includes("net.internet")) invalid("network", "only a module that declares net.internet in requires.host discloses its network use");
+  const item = record(value, "network");
+  exactKeys(item, [], ["hosts", "purpose"]);
+  if (item["hosts"] === undefined && item["purpose"] === undefined) invalid("network", "discloses hosts, a purpose or both");
+  const result: { hosts?: readonly string[]; purpose?: string } = {};
+  if (item["hosts"] !== undefined) {
+    const hosts = list(item["hosts"], "network.hosts", MAX_NETWORK_HOSTS).map(entry => text(entry, "network.hosts", NETWORK_HOST, 253));
+    unique(hosts, "network.hosts");
+    result.hosts = sorted(hosts);
+  }
+  if (item["purpose"] !== undefined) result.purpose = text(item["purpose"], "network.purpose", /^[^\n\r]+$/u, MAX_PURPOSE);
+  return result;
+}
+
+/** A module being built states its reach: `sockets.connect` alone was VM-only by default only for earlier manifests (D15). */
+export function requireDeclaredReach(host: readonly Capability[]): void {
+  if (host.includes("sockets.connect") && !REACH_TOKENS.some(token => host.includes(token))) {
+    invalid("requires.host", "sockets.connect needs a reach: add net.vm (programs in this VM) or net.internet (also the internet, through the VM's connection)");
+  }
 }

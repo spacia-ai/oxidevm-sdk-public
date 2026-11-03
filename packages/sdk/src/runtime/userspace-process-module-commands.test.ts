@@ -36,12 +36,12 @@ it("waits for the owner's answer to a module-commands request the page cancelled
   const worker = AnsweringWorker.instance;
   if (worker === undefined) throw new Error("Missing worker");
   const controller = new AbortController();
-  const enabling = backend.moduleCommands({ operation: "enable", descriptor: "{}", commands: ["alpha"], concurrency: 4 }, controller.signal);
+  const enabling = backend.moduleCommands({ operation: "enable", descriptor: "{}", commands: ["alpha"], concurrency: 4, files: {} }, controller.signal);
   await vi.waitFor(() => { expect(worker.received.some(message => message["type"] === "module-commands")).toBe(true); });
   controller.abort();
   await expect(enabling).resolves.toEqual({ operation: "enable", registration: 7, commands: ["alpha"], skipped: [] });
   const sent = worker.received.find(message => message["type"] === "module-commands");
-  expect(sent).toEqual({ id: sent?.["id"], version: PROTOCOL_VERSION, type: "module-commands", operation: "enable", descriptor: "{}", commands: ["alpha"], concurrency: 4 });
+  expect(sent).toEqual({ id: sent?.["id"], version: PROTOCOL_VERSION, type: "module-commands", operation: "enable", descriptor: "{}", commands: ["alpha"], concurrency: 4, files: {} });
   expect(worker.received.at(-1)).toEqual({ version: PROTOCOL_VERSION, type: "cancel", requestId: sent?.["id"] });
   await backend.dispose().catch(() => undefined);
   await expect(backend.moduleCommands({ operation: "status", registration: 7 })).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
