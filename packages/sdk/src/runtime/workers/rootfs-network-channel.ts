@@ -269,7 +269,7 @@ function decodeResponse(value: unknown):
   const id = integer(response["id"], "id", 1);
   if (response["type"] === "progress") {
     exactKeys(response, ["version", "id", "type", "downloadedBytes", "requestCount"]);
-    return { id, type: "progress", downloadedBytes: integer(response["downloadedBytes"], "rootfs downloaded bytes", 0), requestCount: integer(response["requestCount"], "rootfs requests", 1, 3) };
+    return { id, type: "progress", downloadedBytes: integer(response["downloadedBytes"], "rootfs downloaded bytes", 0), requestCount: integer(response["requestCount"], "rootfs requests", 1, IMMUTABLE_ATTEMPTS) };
   }
   if (response["ok"] === true) {
     exactKeys(response, ["version", "id", "ok", "bytes"]);

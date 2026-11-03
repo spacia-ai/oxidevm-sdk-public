@@ -1,8 +1,12 @@
 import { VMError } from "../errors.js";
 import type { UserspaceRootfsManifest } from "../userspace-rootfs.js";
+import { refusedWrite } from "./browser-quota.js";
+
+/** The origin's disk reserve, which gives its space back once when an image write is refused. */
+export interface RootfsSpaceReserve { release(): boolean }
 export type Scope = "root" | "blobs" | "manifests" | "pins" | "packs" | "pack-layouts" | "transports" | "installations";
 export type Backend =
-  | { readonly kind: "opfs"; readonly root: FileSystemDirectoryHandle }
+  | { readonly kind: "opfs"; readonly root: FileSystemDirectoryHandle; readonly reserve?: RootfsSpaceReserve }
   | { readonly kind: "indexeddb"; readonly database: Promise<IDBDatabase> };
 /** Keeps the manifest exactly as it was fetched: an offline start checks it against the same pin. */
 export async function activate(backend: Backend, url: URL, manifest: UserspaceRootfsManifest, encoded: Uint8Array<ArrayBuffer>): Promise<void> {
@@ -114,6 +118,16 @@ export async function write(backend: Backend, scope: Scope, name: string, bytes:
     return;
   }
   const directory = await opfsDirectory(backend.root, scope, true);
+  try { await writeFile(directory, name, bytes); }
+  catch (error) {
+    // The origin's disk reserve must not starve the active image: its files are needed to run at all. A file write
+    // can only be refused here (nothing cancels it), so either refusal gives the reserve back once.
+    if (!refusedWrite(error) || backend.reserve?.release() !== true) throw error;
+    await writeFile(directory, name, bytes);
+  }
+}
+
+async function writeFile(directory: FileSystemDirectoryHandle, name: string, bytes: Uint8Array<ArrayBuffer>): Promise<void> {
   const writable = await (await directory.getFileHandle(name, { create: true })).createWritable({ keepExistingData: false });
   try {
     await writable.write(bytes);

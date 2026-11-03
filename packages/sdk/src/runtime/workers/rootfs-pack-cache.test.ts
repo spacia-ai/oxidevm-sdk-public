@@ -300,3 +300,19 @@ it("rechecks evicted IndexedDB chunks before accepting complete image verificati
   expect(await cache.verify(f.packed,"1".repeat(64))).toBe(false);
   expect(read).toHaveBeenCalled();retire();
 });
+
+it("names the chunk, stage and space refusal of a failed on-demand acquisition and the miss before it",async()=>{
+  const f=await fixture(),digest="7".repeat(64),blob=f.packed.blobs[0];if(blob===undefined)throw new Error("missing blob");
+  const misses:unknown[]=[];
+  expect(await f.cache.readBlob(f.packed,digest,blob,undefined,miss=>misses.push(miss))).toBeUndefined();
+  expect(misses).toEqual([{reason:"pack-missing",chunk:expect.stringMatching(/^[0-9a-f]{64}$/u) as unknown}]);
+  const refused=new RootfsPackCache(f.backend,f.network,()=>Promise.reject(new DOMException("quota","QuotaExceededError")));
+  const failure=refused.acquireBlob(f.packed,digest,blob);
+  await expect(failure).rejects.toMatchObject({code:"QUOTA_EXCEEDED",detail:{reason:"image-pack-space-refused",stage:"write",chunk:expect.stringMatching(/^[0-9a-f]{64}$/u) as unknown,cause:{detail:{name:"QuotaExceededError"}}}});
+  const broken=new RootfsPackCache(f.backend,f.network,()=>Promise.reject(new DOMException("Failed to write data to data pipe","AbortError")));
+  await expect(broken.acquireBlob(f.packed,digest,blob)).rejects.toMatchObject({code:"STORAGE_ERROR",detail:{reason:"image-pack-write-refused",stage:"write",cause:{detail:{name:"AbortError"}}}});
+  const failing=new RootfsPackCache(f.backend,f.network,()=>Promise.reject(new DOMException("closed","InvalidStateError")));
+  await expect(failing.acquireBlob(f.packed,digest,blob)).rejects.toMatchObject({code:"STORAGE_ERROR",detail:{reason:"image-pack-write-failed",stage:"write"}});
+  expect(await f.cache.acquireBlob(f.packed,digest,blob)).toBe(true);
+  expect(await f.cache.readBlob(f.packed,digest,blob)).toBeDefined();
+});

@@ -120,6 +120,7 @@ export function captureExecutionProfile(active: ProcessState): { readonly runtim
       outputServicePolls: active.runtime.outputServicePolls,
       exitServicePolls: active.runtime.exitServicePolls,
       timerServicePolls: active.runtime.timerServicePolls,
+      storageFailures: active.runtime.storageFailures.profile(),
       slices: { ...active.runtime.slices, ends: { ...active.runtime.slices.ends }, hostAttention: { ...active.runtime.slices.hostAttention } },
       coreProfile: core,
       backgroundCompile: { ...worker.backgroundCompile },

@@ -118,7 +118,9 @@
  * (engine ADR 0029 and the signal amendments of ADR 0027): OXCS 2 notices with siginfo, OXMC 2 tables and
  * `oxidevm_userspace_spawn_module_process` with each module's network reach, OXJT 18 refusal rows, and OXCR 19,
  * whose native program carries the host helper's bridge version. */
-export const PROTOCOL_VERSION = 178;
+/** 179 adds the execution profile's `storageFailures`: image reads answered with a guest error and their storage
+ * owner's typed causes (code, reason, guest path and pack chunk). */
+export const PROTOCOL_VERSION = 179;
 /** Combined architecture, background compilation and code-profile trace layout. */
 export const SYSTEM_TRACE_SCHEMA_VERSION = 54;
 

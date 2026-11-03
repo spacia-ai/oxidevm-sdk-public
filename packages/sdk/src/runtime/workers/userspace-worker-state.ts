@@ -10,6 +10,7 @@ import type { UserspaceHostService } from "./userspace-host-service.js";
 import type { UserspaceCheckpoints } from "./userspace-checkpoint.js";
 import { AttentionFairness } from "../host-attention.js";
 import { emptyUserspaceSliceProfile, type UserspaceSliceProfile } from "../protocol/userspace-slices.js";
+import { UserspaceStorageFailures } from "./userspace-storage-failures.js";
 
 export interface RuntimeState {
   startup: "scaffold" | "ready";
@@ -39,6 +40,8 @@ export interface RuntimeState {
   timerServicePolls: number;
   /** How run slices ended (`userspace-run-loop.ts`). */
   readonly slices: UserspaceSliceProfile;
+  /** Image reads answered with a guest error, with the storage owner's typed causes. */
+  readonly storageFailures: UserspaceStorageFailures;
   /** The guest's share between host-attention yields. */
   readonly fairness: AttentionFairness;
   lastException: Extract<CoreRunExit, { readonly kind: "exception" }>["exception"] | undefined;
@@ -57,7 +60,7 @@ export function newRuntimeState(
     ...binding, startup, rootTreeSha256, workspaceBaseSha256, pendingResult: undefined, outputYieldGeneration: -1n,
     workerRunTurns: 0, workerYields: 0, workerMessages: 0, hostRequests: 0, hostRequestBytes: 0n,
     pendingWorkPolls: 0, hostRequestServicePolls: 0, outputServicePolls: 0, exitServicePolls: 0, timerServicePolls: 0,
-    slices: emptyUserspaceSliceProfile(), fairness: new AttentionFairness(), lastException: undefined,
+    slices: emptyUserspaceSliceProfile(), storageFailures: new UserspaceStorageFailures(), fairness: new AttentionFairness(), lastException: undefined,
   };
 }
 

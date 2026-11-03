@@ -37,6 +37,7 @@ import {
   type SystemJitHealthProfile,
 } from "./protocol/system-trace-jit-health.js";
 import { decodeUserspaceSyscallTrace, type UserspaceSyscallTraceSnapshot } from "./userspace-abi.js";
+import { decodeUserspaceStorageFailureProfile, emptyUserspaceStorageFailureProfile, type UserspaceStorageFailureProfile } from "./protocol/userspace-storage-failures.js";
 import { decodeUserspaceSliceProfile, emptyUserspaceSliceProfile, type UserspaceSliceProfile } from "./protocol/userspace-slices.js";
 import { decodeUserspaceListenerRead } from "./userspace-listeners.js";
 import type { ListeningPortsRead } from "./listening-ports.js";
@@ -159,6 +160,8 @@ export interface UserspaceExecutionProfile {
   readonly timerServicePolls: number;
   /** How run slices ended and the host work served inside them; empty in captures before protocol 166. */
   readonly slices: UserspaceSliceProfile;
+  /** Image reads answered with a guest error and their typed causes; empty in captures before protocol 179. */
+  readonly storageFailures: UserspaceStorageFailureProfile;
   readonly coreProfile: CoreRuntimeProfile;
   /** Tier-1 modules compiled off the guest's thread; empty in captures before protocol 49. */
   readonly backgroundCompile: SystemBackgroundCompileProfile;
@@ -603,7 +606,7 @@ export function decodeUserspaceExecutionProfile(value: unknown, format: "current
     profile,
     ["pid", ...bigintFields, "lastException", "timing", ...integerFields, "prepareMilliseconds", "coreProfile",
       ...(format === "current" ? ["guestClockKernelTicks", "kernelAccountingModel"] : [])],
-    ["backgroundCompile", "jitHealth", "jitCode", "jitTier", "jit", "slices",
+    ["backgroundCompile", "jitHealth", "jitCode", "jitTier", "jit", "slices", "storageFailures",
       ...(format === "archive" ? ["guestClockKernelTicks", "kernelAccountingModel"] : [])],
   );
   const legacy = format === "archive" && (
@@ -716,6 +719,9 @@ export function decodeUserspaceExecutionProfile(value: unknown, format: "current
     exitServicePolls: integer(profile["exitServicePolls"], "Userspace execution profile exitServicePolls", 0),
     timerServicePolls: integer(profile["timerServicePolls"], "Userspace execution profile timerServicePolls", 0),
     hostRequestBytes: metric("hostRequestBytes"),
+    storageFailures: profile["storageFailures"] === undefined
+      ? emptyUserspaceStorageFailureProfile()
+      : decodeUserspaceStorageFailureProfile(profile["storageFailures"]),
     slices: profile["slices"] === undefined
       ? emptyUserspaceSliceProfile()
       : decodeUserspaceSliceProfile(profile["slices"], {
