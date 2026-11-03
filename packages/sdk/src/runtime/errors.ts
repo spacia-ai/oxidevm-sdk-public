@@ -160,7 +160,8 @@ export function normalizeStorageError(error: unknown): VMError {
   );
 }
 
-function decodeErrorCode(value: string): VMErrorCode {
+/** An error code from an untrusted record; anything else is a protocol error. */
+export function decodeErrorCode(value: string): VMErrorCode {
   switch (value) {
     case "ABORTED":
     case "CORE_LOAD_FAILED":

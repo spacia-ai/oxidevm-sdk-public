@@ -323,6 +323,8 @@ describe("Userspace worker protocol", () => {
         ends: { "action-budget": 0, deadline: 1, "compiled-module": 0, "interactive-output": 0, "host-attention": 2, boundary: 1, failure: 0 },
         hostAttention: { control: 1, "js-process": 1 }, attentionDeferrals: 3, inlinePendingWorkPolls: 4,
       },
+      // Protocol 179: one image read refused for space, which the guest saw as EIO.
+      storageFailures: { total: 1, recent: [{ code: "QUOTA_EXCEEDED", reason: "image-pack-space-refused", path: "/usr/lib/python3.12/traceback.py", chunk: "a".repeat(64) }] },
       coreProfile: EMPTY_CORE_RUNTIME_PROFILE,
       backgroundCompile: {
         ...emptyBackgroundCompileProfile(),
@@ -368,7 +370,10 @@ describe("Userspace worker protocol", () => {
       },
     } as const;
     expect(userspaceResponseDecoders["read-execution-profile"](profile)).toEqual(profile);
-    const { slices } = profile;
+    const { slices, storageFailures } = profile;
+    for (const recent of [[...storageFailures.recent, ...storageFailures.recent], [{ ...storageFailures.recent[0], reason: "free-form" }], [{ ...storageFailures.recent[0], chunk: "short" }]]) {
+      expect(() => userspaceResponseDecoders["read-execution-profile"]({ ...profile, storageFailures: { ...storageFailures, recent } })).toThrow();
+    }
     expect(() => userspaceResponseDecoders["read-execution-profile"]({ ...profile, slices: { ...slices, inlinePendingWorkPolls: 11 } })).toThrow(/do not reconcile/u);
     expect(() => userspaceResponseDecoders["read-execution-profile"]({ ...profile, slices: { ...slices, ends: { ...slices.ends, deadline: 2 } } })).toThrow(/do not reconcile/u);
     const { guestClockKernelTicks: _kernel, kernelAccountingModel: _model, ...oldClock } = profile;
@@ -398,14 +403,16 @@ describe("Userspace worker protocol", () => {
     // Captures from before protocol 49 carry no background compile profile, captures from
     // before protocol 57 no JIT health, and captures from before protocol 58 no JIT code profile.
     // Captures from before protocol 166 carry no slice profile.
-    const { backgroundCompile: _current, jitHealth: _health, jitCode: _code, jitTier: _tier, slices: _slices, ...legacyProfile } = profile;
+    const { backgroundCompile: _current, jitHealth: _health, jitCode: _code, jitTier: _tier, slices: _slices, storageFailures: _failures, ...legacyProfile } = profile;
     void _slices;
+    void _failures;
     void _current;
     void _health;
     void _code;
     void _tier;
     expect(userspaceResponseDecoders["read-execution-profile"](legacyProfile)).toMatchObject({
       slices: emptyUserspaceSliceProfile(),
+      storageFailures: { total: 0, recent: [] },
       backgroundCompile: emptyBackgroundCompileProfile(),
       jitHealth: emptyJitHealthProfile(),
       jitCode: emptyJitCodeProfile(),

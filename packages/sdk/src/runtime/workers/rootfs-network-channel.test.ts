@@ -95,6 +95,22 @@ describe("rootfs network channel", () => {
     } finally { client.close(); }
   });
 
+  it("reports progress for every attempt up to the fifth without closing the channel", async () => {
+    // The client once admitted at most three requests in a progress record, so a fourth attempt closed every acquisition.
+    const bytes = Uint8Array.of(4, 5, 6);
+    const fetcher = vi.fn<typeof fetch>();
+    for (let attempt = 0; attempt < 4; attempt++) fetcher.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    vi.stubGlobal("fetch", fetcher.mockResolvedValue(new Response(bytes)));
+    const progress: { requestCount: number }[] = [], client = connected();
+    try {
+      expect(await client.fetchBlob(new URL("https://profiles.example/blob"), 3, await digest(bytes), undefined, "high", value => progress.push(value))).toEqual(bytes);
+      expect(fetcher).toHaveBeenCalledTimes(5);
+      expect(progress.at(-1)).toMatchObject({ requestCount: 5 });
+      vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(bytes)));
+      expect(await client.fetchBlob(new URL("https://profiles.example/blob"), 3, await digest(bytes))).toEqual(bytes);
+    } finally { client.close(); }
+  });
+
   it("retries a cleanly truncated immutable body as a transport failure", async () => {
     // A compressed CDN stream has no Content-Length, so an early clean end looks like a complete response.
     const bytes = new TextEncoder().encode("complete immutable rootfs pack");

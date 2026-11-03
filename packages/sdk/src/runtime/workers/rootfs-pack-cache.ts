@@ -13,6 +13,7 @@ import type { RootfsNetworkClient, RootfsNetworkProgress } from "./rootfs-networ
 import { readStorageObjects } from "./storage-read-batch.js";
 import { retainWorkspaceRead, type WorkspaceReadLease } from "./workspace-read.js";
 import { readRootfsCache } from "./rootfs-cached-image.js";
+import { packAcquisitionFailure, packMiss, type RootfsPackMiss, type RootfsPackStage } from "./rootfs-pack-failures.js";
 
 interface Reads { readonly files: Map<string,File>; readonly checked:Set<string>; readonly verifiedBlobs:Set<string>; readonly buffers:Map<string,Uint8Array<ArrayBuffer>>; readonly lock?:RootfsReadLock }
 function reads(): Reads {return {files:new Map(),checked:new Set(),verifiedBlobs:new Set(),buffers:new Map()};}
@@ -145,13 +146,17 @@ export class RootfsPackCache {
       const acquire = async () => {
         const scoped = proofs??reads();
         try { await this.#chunk(chunk, scoped, workSignal); return; } catch { active(workSignal); }
-        if (this.#network === undefined || this.#write === undefined) throw damaged();
-        const encoded = await this.#network.fetchBlob(artifact.url, artifact.encodedBytes, artifact.encodedSha256, workSignal, foreground() ? "high" : "low",
-          value => report({ completedObjects: 0, completedBytes: 0, totalBytes: 0, stage: "download", ...value }));
-        const body = await decodePack(encoded, chunk, workSignal);
-        active(workSignal); await this.#write("packs", chunk.sha256, body);
-        forgetChunk(chunk.sha256,scoped);
-        await this.#chunk(chunk, scoped, workSignal);
+        const network = this.#network, write = this.#write;
+        if (network === undefined || write === undefined) throw damaged();
+        let stage: RootfsPackStage = "fetch";
+        try {
+          const encoded = await network.fetchBlob(artifact.url, artifact.encodedBytes, artifact.encodedSha256, workSignal, foreground() ? "high" : "low",
+            value => report({ completedObjects: 0, completedBytes: 0, totalBytes: 0, stage: "download", ...value }));
+          stage = "decode"; const body = await decodePack(encoded, chunk, workSignal);
+          active(workSignal); stage = "write"; await write("packs", chunk.sha256, body);
+          forgetChunk(chunk.sha256,scoped);
+          stage = "verify"; await this.#chunk(chunk, scoped, workSignal);
+        } catch (error: unknown) { active(workSignal); throw packAcquisitionFailure(error, chunk.sha256, stage); }
       };
       const locks = typeof navigator === "object" ? navigator.locks : undefined;
       if (locks === undefined) await acquire();
@@ -246,18 +251,20 @@ export class RootfsPackCache {
       :(await this.#chunk(chunk,scoped,signal)).slice(extent.offset,end);
     if(bytes.length!==extent.bytes)throw damaged();active(signal);return bytes;
   }
-  async readBlob(manifest:UserspaceRootfsManifest,digest:string,blob:UserspaceRootfsBlob,signal?:AbortSignal):Promise<Uint8Array<ArrayBuffer>|undefined> {
+  /** The verified file from its packs, or none; `missed` learns why packs that hold it could not serve it. */
+  async readBlob(manifest:UserspaceRootfsManifest,digest:string,blob:UserspaceRootfsBlob,signal?:AbortSignal,missed?:(miss:RootfsPackMiss)=>void):Promise<Uint8Array<ArrayBuffer>|undefined> {
     const index=this.#indexes.get(digest)??await this.index(manifest,digest)??this.#transports.get(digest)?.index;if(index===undefined)return undefined;
     const descriptor=index.blobs.find(entry=>entry.sha256===blob.sha256);if(descriptor===undefined)return undefined;
     const scoped=this.#reads??reads(),chunks=new Map(index.chunks.map(chunk=>[chunk.sha256,chunk])),output=new Uint8Array(blob.bytes);
+    let current="";
     try {
       for(const extent of descriptor.extents) {
-        const chunk=chunks.get(extent.chunk);if(chunk===undefined)throw damaged();
+        current=extent.chunk;const chunk=chunks.get(extent.chunk);if(chunk===undefined)throw damaged();
         output.set(await this.#extent(chunk,extent,scoped,signal),extent.fileOffset);
       }
       const key=verificationKey(descriptor,blob.bytes,chunks);
       if(!scoped.verifiedBlobs.has(key)){if(await sha256(output)!==blob.sha256)throw damaged();active(signal);scoped.verifiedBlobs.add(key);}active(signal);return output;
-    } catch {active(signal);return undefined;}
+    } catch(error:unknown) {active(signal);missed?.(packMiss(error,current));return undefined;}
   }
   async openFile(manifest:UserspaceRootfsManifest,digest:string,blob:UserspaceRootfsBlob,signal:AbortSignal,release:()=>void,guarded=false):Promise<WorkspaceReadLease|undefined> {
     const releaseLock = guarded ? undefined : this.#reads?.lock?.borrow() ?? await retainRootfsRead(signal);

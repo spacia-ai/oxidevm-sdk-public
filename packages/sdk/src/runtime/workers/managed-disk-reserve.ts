@@ -1,5 +1,6 @@
-import { normalizeStorageError, VMError } from "../errors.js";
-export { DISK_RESERVE_BYTES } from "./browser-quota.js";
+import { normalizeStorageError } from "../errors.js";
+import { refusedForSpace } from "./browser-quota.js";
+export { DISK_RESERVE_BYTES, refusedForSpace } from "./browser-quota.js";
 const FILE = "space.reserve";
 
 /**
@@ -70,10 +71,4 @@ export class SpaceReserve {
     this.#closed = true;
     this.release();
   }
-}
-
-/** Whether the browser refused a write for lack of space. */
-export function refusedForSpace(error: unknown): boolean {
-  return (error instanceof DOMException && error.name === "QuotaExceededError")
-    || (error instanceof VMError && error.code === "QUOTA_EXCEEDED");
 }

@@ -515,7 +515,7 @@ async function initialize(request: Extract<StorageRequest, { readonly type: "ini
   workspaceStore = new WorkspaceStore(backend);
   userspaceRootStorage = new UserspaceRootStorage(backend);
   if (rootfsNetworkPort !== undefined) {
-    rootfsStore = RootfsStore.opfs(storage.oxidevm, new RootfsNetworkClient(rootfsNetworkPort));
+    rootfsStore = RootfsStore.opfs(storage.oxidevm, new RootfsNetworkClient(rootfsNetworkPort), workspaceReserve);
   }
   const nativeRoots = rootfsStore;
   snapshotStore = await SnapshotStore.open(storage.root, {

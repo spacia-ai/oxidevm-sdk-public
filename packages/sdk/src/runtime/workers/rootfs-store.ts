@@ -27,7 +27,8 @@ import type { UserspaceRootfsRead } from "./userspace-storage-channel.js";
 import { buildWorkspaceDelta } from "./workspace-delta.js";
 import type { WorkspaceImage } from "./workspace-rebase.js";
 
-import { activate, remove, verifiedFile, verifiedBytes, openDatabase, sha256, type Backend } from "./rootfs-store-backend.js";
+import { activate, remove, verifiedFile, verifiedBytes, openDatabase, sha256, type Backend, type RootfsSpaceReserve } from "./rootfs-store-backend.js";
+import type { RootfsPackMiss } from "./rootfs-pack-failures.js";
 import { RootfsCheckpoints, type RootfsCheckpointOwner, type RootfsCheckpointSource, type RootfsCheckpointDestination, type RootfsCheckpointBaseline } from "./rootfs-checkpoints.js";
 export type { RootfsCheckpointOwner, RootfsCheckpointDestination, RootfsCheckpointBaseline } from "./rootfs-checkpoints.js";
 
@@ -52,8 +53,9 @@ export class RootfsStore {
     this.#checkpoints = new RootfsCheckpoints(backend, network);
   }
 
-  static opfs(root: FileSystemDirectoryHandle, network: RootfsNetworkClient): RootfsStore {
-    return new RootfsStore({ kind: "opfs", root }, network);
+  /** Image writes refused for space release the origin's disk `reserve` once and run again. */
+  static opfs(root: FileSystemDirectoryHandle, network: RootfsNetworkClient, reserve?: RootfsSpaceReserve): RootfsStore {
+    return new RootfsStore({ kind: "opfs", root, ...(reserve === undefined ? {} : { reserve }) }, network);
   }
 
   static inspectCachedCheckpoint(root: FileSystemDirectoryHandle, owner: RootfsCheckpointOwner, trusted: TrustedRootfsKey): Promise<RootfsCheckpointSource | undefined> {
@@ -373,19 +375,21 @@ export class RootfsStore {
     blob: UserspaceRootfsManifest["blobs"][number],
   ): Promise<Uint8Array<ArrayBuffer>> {
     const source=this.#activeSource;
-    if(source!==undefined){const packed=await this.#checkpoints.packs.readBlob(source.manifest,source.digest,blob);if(packed!==undefined)return packed;}
+    let miss: RootfsPackMiss | undefined;
+    const missed = (value: RootfsPackMiss) => { miss = value; };
+    if(source!==undefined){const packed=await this.#checkpoints.packs.readBlob(source.manifest,source.digest,blob,undefined,missed);if(packed!==undefined)return packed;}
     const cached = await verifiedBytes(this.#backend, "blobs", blob.sha256, blob.bytes, blob.sha256);
     if (cached !== undefined) return cached;
-    if (this.#localOnly) throw new VMError("STORAGE_ERROR", "Installed image data is missing; repair the image cache", { reason: "image-not-cached" });
+    if (this.#localOnly) throw new VMError("STORAGE_ERROR", "Installed image data is missing; repair the image cache", { reason: "image-not-cached", ...(miss === undefined ? {} : { pack: miss.reason, chunk: miss.chunk }) });
     await this.#checkpoints.ensureBlob(blob, undefined, source);
     if (source !== undefined) {
-      const packed = await this.#checkpoints.packs.readBlob(source.manifest, source.digest, blob);
+      const packed = await this.#checkpoints.packs.readBlob(source.manifest, source.digest, blob, undefined, missed);
       if (packed !== undefined) return packed;
     }
     const content=await verifiedBytes(this.#backend,"blobs",blob.sha256,blob.bytes,blob.sha256);
     if (content===undefined) {
       await remove(this.#backend, "blobs", blob.sha256);
-      throw new VMError("STORAGE_ERROR", "persisted rootfs blob failed verification");
+      throw new VMError("STORAGE_ERROR", "persisted rootfs blob failed verification", { reason: "image-not-cached", ...(miss === undefined ? {} : { pack: miss.reason, chunk: miss.chunk }) });
     }
     return content;
   }

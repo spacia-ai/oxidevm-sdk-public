@@ -1149,13 +1149,9 @@ async function serviceHostRequest(
           ...(request.expectedSha256 === undefined ? {} : { sha256: response.sha256 }),
         });
       } catch (error) {
-        const kind = error instanceof VMError && error.code === "STORAGE_NOT_FOUND"
-          ? "not-found"
-          : error instanceof VMError && error.code === "ABORTED"
-            ? "aborted"
-            : "io";
         if (runtimeState !== active) return;
-        await completeHostRequest(active, request.generation, request.id, { kind });
+        // The guest sees only ENOENT, EINTR or EIO; the profile keeps the storage owner's typed cause.
+        await completeHostRequest(active, request.generation, request.id, { kind: active.storageFailures.record(error, request.path) });
       }
     }
   } catch (error) {

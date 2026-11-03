@@ -10,7 +10,7 @@ describe("local data erasure protocol", () => {
   it("accepts only a versioned, argument-free erasure request", () => {
     const request = { id: 1, version: PROTOCOL_VERSION, type: "erase-local-data" };
     expect(decodeStorageIncoming(request)).toEqual(request);
-    expect(PROTOCOL_VERSION).toBe(178);
+    expect(PROTOCOL_VERSION).toBe(179);
     storageResponseDecoders["erase-local-data"](undefined);
     for (const invalid of [
       { ...request, version: PROTOCOL_VERSION - 1 }, { ...request, version: PROTOCOL_VERSION + 1 },
