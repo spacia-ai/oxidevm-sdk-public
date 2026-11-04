@@ -80,6 +80,17 @@ async function execute(invocation: CLIInvocation, io: CLIEnvironment): Promise<C
   }
 }
 
+/**
+ * The exit status of a command that produced a result: 3 when a check it ran failed, 4 when `wasm test` was refused (the
+ * browser or image cannot run the module, so no property ran; distinct from a failure), otherwise 0.
+ */
+export function reportExitCode(report: CliReport): 0 | 3 | 4 {
+  if (report.kind !== "result") return 0;
+  if (report.command === "wasm test" && report.result.result === "refused") return 4;
+  const failed = (report.command === "doctor" || report.command === "image test" || report.command === "snapshot test" || report.command === "wasm doctor" || report.command === "wasm build" || report.command === "wasm test") && report.result.result === "failed" || report.command === "wasm release" && report.result.build.result === "failed";
+  return failed ? 3 : 0;
+}
+
 /** One boundary normalizes output and exit codes; resource-owning SDK operations perform cleanup. */
 export async function runCLI(arguments_: readonly string[], io: CLIEnvironment): Promise<number> {
   const json = arguments_.includes("--json"); let command: CliCommand | null = null;
@@ -96,8 +107,7 @@ export async function runCLI(arguments_: readonly string[], io: CLIEnvironment):
     const report = decodeCliReport(await execute(invocation, io));
     io.stdout(json ? `${JSON.stringify(report)}\n` : command.startsWith("wasm ") ? printable(successText(report)) : successText(report));
     if (invocation.command === "init" && invocation.start && report.command === "init" && report.kind === "result") await startApplication(report.result.directory, invocation.packageManager, io);
-    const failed = report.kind === "result" && ((report.command === "doctor" || report.command === "image test" || report.command === "snapshot test" || report.command === "wasm doctor" || report.command === "wasm build" || report.command === "wasm test") && report.result.result === "failed" || report.command === "wasm release" && report.result.build.result === "failed");
-    return failed ? 3 : 0;
+    return reportExitCode(report);
   } catch (error) {
     const interrupted = io.signal.aborted;
     const code = interrupted ? "ABORTED" : error instanceof VMError ? error.code : "STORAGE_ERROR";

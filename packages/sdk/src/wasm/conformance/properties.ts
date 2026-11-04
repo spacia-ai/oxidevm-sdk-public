@@ -2,13 +2,17 @@ import type { ProcessExit, ProcessHandle } from "../../contracts.js";
 import { MODULE_EXIT, MODULE_EXIT_REASONS } from "../exit-codes.js";
 import type { EndpointDecl } from "../manifest-types.js";
 import type { ModuleReach } from "../reach.js";
-import { MAX_MESSAGE_LENGTH, WASM_TEST_PROPERTIES, type WasmPropertyResult, type WasmPropertyStatus, type WasmTestProperty } from "./report.js";
+import { MODULE_ISOLATION_CAPABILITIES, MODULE_ISOLATION_REASON } from "../../runtime/protocol/module-isolation.js";
+import { MAX_MESSAGE_LENGTH, PREREQUISITE_REASON, WASM_TEST_PROPERTIES, type WasmPropertyResult, type WasmPropertyStatus, type WasmTestProperty, type WasmTestRefusal } from "./report.js";
 
 /** What the properties need to know about the module under test. */
 export interface ConformanceSubject {
   readonly kind: "command" | "service";
   readonly endpoints: Readonly<Record<string, EndpointDecl>>;
-  /** The declared network reach (engine ADR 0029); the VM under test is never connected, so every run is offline. */
+  /**
+   * The declared network reach (engine ADR 0029). The VM under test is never connected, so every run is offline and
+   * `network-offline` applies to every module, with a reach or without one.
+   */
   readonly reach: ModuleReach;
 }
 
@@ -98,12 +102,53 @@ function field(error: unknown, key: "code" | "message"): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function reason(error: unknown): string | undefined {
+function detailOf(error: unknown, key: "reason" | "capability" | "missing"): unknown {
   if (typeof error !== "object" || error === null || !("detail" in error)) return undefined;
   const detail: unknown = Reflect.get(error, "detail");
-  if (typeof detail !== "object" || detail === null) return undefined;
-  const value: unknown = Reflect.get(detail, "reason");
+  return typeof detail === "object" && detail !== null ? Reflect.get(detail, key) : undefined;
+}
+
+function reason(error: unknown): string | undefined {
+  const value = detailOf(error, "reason");
   return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * Whether `spawnModule` refused to run the module at all: the browser cannot isolate module workers (a closed
+ * capability), or the browser or image lacks a declared prerequisite. Anything else is a property's failure.
+ */
+export function refusalOf(error: unknown): WasmTestRefusal | undefined {
+  if (field(error, "code") !== "FEATURE_NOT_AVAILABLE") return undefined;
+  const message = clip(field(error, "message") ?? "the module was refused");
+  const why = reason(error);
+  if (why === MODULE_ISOLATION_REASON) {
+    const named = detailOf(error, "capability");
+    const capability = MODULE_ISOLATION_CAPABILITIES.find(candidate => candidate === named);
+    return capability === undefined ? undefined : { code: "FEATURE_NOT_AVAILABLE", reason: MODULE_ISOLATION_REASON, capability, message };
+  }
+  if (why !== PREREQUISITE_REASON) return undefined;
+  const listed = detailOf(error, "missing");
+  const missing = Array.isArray(listed) ? Array.from<unknown>(listed).filter((item): item is string => typeof item === "string").slice(0, 64).map(item => item.slice(0, 256)) : [];
+  return { code: "FEATURE_NOT_AVAILABLE", reason: PREREQUISITE_REASON, missing: missing.length > 0 ? missing : ["a declared prerequisite"], message };
+}
+
+/** Ends the whole run: once the module is refused, no property can be checked. */
+class ModuleRefused extends Error {
+  constructor(readonly refusal: WasmTestRefusal) { super(refusal.message); }
+}
+
+/** Lets a refusal through a property's own error handling. */
+function passRefusal(error: unknown): void {
+  if (error instanceof ModuleRefused) throw error;
+}
+
+/** The ports with every module start and probe turning a refusal into `ModuleRefused`. */
+function refusing(ports: ConformancePorts): ConformancePorts {
+  const guard = <T>(work: () => Promise<T>): Promise<T> => work().catch((error: unknown) => {
+    const refusal = refusalOf(error);
+    throw refusal === undefined ? error : new ModuleRefused(refusal);
+  });
+  return { ...ports, start: copy => guard(() => ports.start(copy)), probe: endpoints => guard(() => ports.probe(endpoints)) };
 }
 
 function explain(error: unknown): string {
@@ -176,6 +221,7 @@ async function integrity(subject: ConformanceSubject, ports: ConformancePorts, r
     else results.set("integrity", "failed", started, `the copy with an altered adapter byte ran: ${exit === "expired" ? "it did not exit" : describe(exit)}`);
     await results.read(tampered);
   } catch (error: unknown) {
+    passRefusal(error);
     if (reason(error) === MODULE_EXIT_REASONS.integrity) results.set("integrity", "passed", started);
     else results.set("integrity", "failed", started, `the altered copy was not refused for its integrity: ${explain(error)}`);
   }
@@ -184,29 +230,31 @@ async function integrity(subject: ConformanceSubject, ports: ConformancePorts, r
 
 /**
  * network-offline for a command (N-9): the VM under test is local-only, so the run with the author's arguments is an
- * offline run. It must end within its bound with a status from 0 to 119, and a failure must say why on standard error.
+ * offline run, for a module with a reach and for one without. It must end within its bound with a status from 0 to
+ * 119, and a failure must say why on standard error.
  */
-function offline(subject: ConformanceSubject, results: Results, started: number, exit: ProcessExit | "expired"): void {
-  if (subject.reach === "none") { results.set("network-offline", "not-applicable", started, "the module declares no network reach"); return; }
+function offline(results: Results, started: number, exit: ProcessExit | "expired", failure: RunnerRecord | undefined): void {
+  if (failure?.fault === "undeclared-capability") { results.set("network-offline", "not-applicable", started, "the adapter faulted on an undeclared capability; see declared-host"); return; }
   if (exit === "expired") { results.set("network-offline", "failed", started, "offline, the command did not end within its bound; fail once with one line and exit 69"); return; }
   if (exit.kind !== "exited" || exit.code > MODULE_EXIT.adapterMax) { results.set("network-offline", "failed", started, `offline, the command ended with ${describe(exit)}; print kit.net.describe(error) and exit 69`); return; }
   if (exit.code !== 0 && !wroteLine(results.lastStderr)) { results.set("network-offline", "failed", started, `offline, the command exited ${String(exit.code)} without a line on standard error; print kit.net.describe(error)`); return; }
   results.set("network-offline", "passed", started);
 }
 
-async function command(subject: ConformanceSubject, ports: ConformancePorts, results: Results, limits: ConformanceLimits): Promise<void> {
+async function command(ports: ConformancePorts, results: Results, limits: ConformanceLimits): Promise<void> {
   results.skip(SERVICE_ONLY, "a command module runs to completion; the service properties do not apply");
   const started = ports.now();
   let run: StartedModule;
   try { run = await ports.start("genuine"); }
   catch (error: unknown) {
+    passRefusal(error);
     results.set("exit-range", "failed", started, `the command did not start: ${explain(error)}`);
-    if (subject.reach !== "none") results.set("network-offline", "failed", started, `the command did not start: ${explain(error)}`);
+    results.set("network-offline", "failed", started, `offline, the command did not start: ${explain(error)}`);
     return;
   }
   const exit = await within(run.process.exit, limits.commandMs, () => run.process.kill("SIGKILL").catch(() => undefined));
   const { failure } = await results.read(run);
-  offline(subject, results, started, exit);
+  offline(results, started, exit, failure);
   if (exit === "expired") { results.set("exit-range", "failed", started, `the command did not exit within ${String(limits.commandMs)} ms and was killed`); return; }
   if (exit.kind !== "exited") { results.set("exit-range", "failed", started, `the command ended by ${describe(exit)}`); return; }
   if (exit.code <= MODULE_EXIT.adapterMax) { results.set("exit-range", "passed", started); return; }
@@ -237,8 +285,9 @@ async function service(subject: ConformanceSubject, ports: ConformancePorts, res
   let started = ports.now(), first: StartedModule;
   try { first = await ports.start("genuine"); results.set("ready", "passed", started); }
   catch (error: unknown) {
+    passRefusal(error);
     results.set("ready", "failed", started, `the service did not become ready: ${explain(error)}`);
-    if (subject.reach !== "none") results.set("network-offline", "failed", started, `offline, the service did not become ready: ${explain(error)}`);
+    results.set("network-offline", "failed", started, `offline, the service did not become ready: ${explain(error)}`);
     results.skip(SERVICE_ONLY, "the service never became ready");
     return;
   }
@@ -246,14 +295,14 @@ async function service(subject: ConformanceSubject, ports: ConformancePorts, res
   const refused = await ports.probe(subject.endpoints);
   results.set("endpoints", refused.length === 0 ? "passed" : "failed", started, `no connection to ${refused.join(", ")}`);
   // A service that stays ready while the VM is local-only keeps serving its VM clients (N-9).
-  if (subject.reach === "none") results.set("network-offline", "not-applicable", started, "the module declares no network reach");
-  else results.set("network-offline", refused.length === 0 ? "passed" : "failed", started, `offline, the service stopped serving: no connection to ${refused.join(", ")}`);
+  results.set("network-offline", refused.length === 0 ? "passed" : "failed", started, `offline, the service stopped serving: no connection to ${refused.join(", ")}`);
   started = ports.now();
   try {
     const second = await ports.start("genuine");
     await stoppedCleanly(ports, second, results);
     results.set("duplicate-start", "failed", started, "a second instance started beside the first; it must be refused with exit status 124");
   } catch (error: unknown) {
+    passRefusal(error);
     if (field(error, "code") === "QUOTA_EXCEEDED") results.set("duplicate-start", "passed", started);
     else results.set("duplicate-start", "failed", started, `the second start failed for another reason: ${explain(error)}`);
   }
@@ -272,7 +321,7 @@ async function service(subject: ConformanceSubject, ports: ConformancePorts, res
   try {
     const failure = await cycle(subject, ports, results);
     results.set("restart", failure === undefined ? "passed" : "failed", started, failure ?? "");
-  } catch (error: unknown) { results.set("restart", "failed", started, `the second start failed: ${explain(error)}`); }
+  } catch (error: unknown) { passRefusal(error); results.set("restart", "failed", started, `the second start failed: ${explain(error)}`); }
   started = ports.now();
   try {
     const victim = await ports.start("genuine");
@@ -281,14 +330,24 @@ async function service(subject: ConformanceSubject, ports: ConformancePorts, res
     await results.read(victim);
     const failure = await cycle(subject, ports, results);
     results.set("kill-recover", failure === undefined ? "passed" : "failed", started, failure ?? "");
-  } catch (error: unknown) { results.set("kill-recover", "failed", started, `starting after a kill failed: ${explain(error)}`); }
+  } catch (error: unknown) { passRefusal(error); results.set("kill-recover", "failed", started, `starting after a kill failed: ${explain(error)}`); }
 }
 
-/** Runs every property of the catalog against one module and returns them in catalog order. */
-export async function runProperties(subject: ConformanceSubject, ports: ConformancePorts, limits: ConformanceLimits): Promise<readonly WasmPropertyResult[]> {
-  const results = new Results(ports);
-  await integrity(subject, ports, results);
-  if (subject.kind === "command") await command(subject, ports, results, limits);
-  else await service(subject, ports, results);
-  return results.finish();
+/** A completed run lists every property in catalog order; a refused one says why the module could not run at all. */
+export type ConformanceOutcome =
+  | { readonly kind: "completed"; readonly properties: readonly WasmPropertyResult[] }
+  | { readonly kind: "refused"; readonly refusal: WasmTestRefusal };
+
+/** Runs every property of the catalog against one module, unless the browser or image refuses the module. */
+export async function runProperties(subject: ConformanceSubject, ports: ConformancePorts, limits: ConformanceLimits): Promise<ConformanceOutcome> {
+  const guarded = refusing(ports), results = new Results(guarded);
+  try {
+    await integrity(subject, guarded, results);
+    if (subject.kind === "command") await command(guarded, results, limits);
+    else await service(subject, guarded, results);
+  } catch (error: unknown) {
+    if (error instanceof ModuleRefused) return { kind: "refused", refusal: error.refusal };
+    throw error;
+  }
+  return { kind: "completed", properties: results.finish() };
 }

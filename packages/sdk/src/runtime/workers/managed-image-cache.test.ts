@@ -107,7 +107,7 @@ describe("managed image preparation", () => {
     vi.stubGlobal("fetch", () => Promise.reject(new TypeError("offline")));
     const prepared=await prepareManagedDisk({ oxidevm: context.oxidevm, workspace: context.workspace, workspaceId: "another", bases: context.bases },
       MANIFEST_URL, undefined, "live", () => {}, { imagePreparation: "before-ready" });
-    try {expect(()=>prepared.disk.read(0,new Uint8Array(1))).toThrowError("Cached image chunk is damaged");}
+    try {expect(()=>prepared.disk.read(0,new Uint8Array(1))).toThrow("Cached image chunk is damaged");}
     finally {prepared.disk.close();}
   });
   it("reuses a complete image from another workspace before readiness without probing its server", async () => {

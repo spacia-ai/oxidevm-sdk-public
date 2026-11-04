@@ -389,7 +389,10 @@ const entryField = (entry: unknown, key: string): unknown => typeof entry === "o
 describe.each(PROJECTS)("$label, checked with its own settings against this SDK", project => {
   it("passes its own tests (test/*.test.ts) with this repository's Vitest", async () => {
     const directory = await generatedProject(project);
-    const report: unknown = JSON.parse(await runTool(directory, join(installed("vitest"), "vitest.mjs"), ["run", "--reporter=json"]));
+    // Vitest 5's JSON reporter writes a file rather than stdout; keep it outside the project.
+    const reportFile = join(await temporary(), "vitest-report.json");
+    await runTool(directory, join(installed("vitest"), "vitest.mjs"), ["run", "--reporter=json", `--outputFile.json=${reportFile}`]);
+    const report: unknown = JSON.parse(await readFile(reportFile, "utf8"));
     const results = entryField(report, "testResults");
     if (!Array.isArray(results)) throw new Error("the Vitest report has no testResults");
     const files = Array.from<unknown>(results).map(result => `${relative(directory, String(entryField(result, "name")))}: ${String(entryField(result, "status"))}`);

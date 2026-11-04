@@ -3,7 +3,7 @@ import { fileURLToPath, URL } from "node:url";
 
 import { defineConfig } from "vite";
 
-import { classicEntries } from "./classic-entries";
+import { classicEntries } from "./classic-entries.ts";
 import { PREVIEW_HEADERS } from "./headers.ts";
 export { PREVIEW_HEADERS } from "./headers.ts";
 
@@ -16,7 +16,7 @@ export default defineConfig({
   }],
   build: {
     outDir: "../../assets/preview", emptyOutDir: true,
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         bootstrap: fileURLToPath(new URL("./index.html", import.meta.url)),
         "service-worker": fileURLToPath(new URL("./src/service-worker.ts", import.meta.url)),

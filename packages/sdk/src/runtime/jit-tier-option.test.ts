@@ -10,14 +10,14 @@ it("keeps Userspace Tier 1 by default and validates the experimental option", ()
     expect(decodeJitTierOption({ [JIT_TIER_OPTION]: tier })).toBe(tier);
   }
   for (const tier of [null, 2, "Tier2", "tier3", {}]) {
-    expect(() => decodeJitTierOption({ [JIT_TIER_OPTION]: tier })).toThrowError();
+    expect(() => decodeJitTierOption({ [JIT_TIER_OPTION]: tier })).toThrow();
   }
 });
 
 it("rejects a runtime that did not admit the requested tier", () => {
   const exports = { oxidevm_userspace_jit_configure: () => 0, oxidevm_userspace_jit_tier: () => 1 };
   expect(() => configureMountedRuntime({ exports }, { ...UNCONFIGURED_MOUNT, jitTier: "tier2" }, false))
-    .toThrowError("Userspace JIT tier was not admitted");
+    .toThrow("Userspace JIT tier was not admitted");
 });
 
 it("decodes the tier at the worker boundary and carries it into fresh mounts", () => {
@@ -27,5 +27,5 @@ it("decodes the tier at the worker boundary and carries it into fresh mounts", (
     if (decoded.type !== "initialize") throw new Error("initialize expected");
     expect(mountSettings(decoded).jitTier).toBe(tier ?? "tier1");
   }
-  expect(() => decodeUserspaceRequest({ ...request, jitTier: "tier3" })).toThrowError();
+  expect(() => decodeUserspaceRequest({ ...request, jitTier: "tier3" })).toThrow();
 });

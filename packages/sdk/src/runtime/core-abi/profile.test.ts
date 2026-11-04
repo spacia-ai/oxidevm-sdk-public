@@ -542,7 +542,7 @@ describe("runtime profile codec", () => {
     const bytes = profileRecord(16);
     new DataView(bytes.buffer).setBigUint64(HEADER_LENGTH + 126 * 8, 9n, true);
 
-    expect(() => decodeCoreRuntimeProfile(bytes)).toThrowError(
+    expect(() => decodeCoreRuntimeProfile(bytes)).toThrow(
       "runtime Tier-2 failure counters do not agree",
     );
   });
@@ -551,7 +551,7 @@ describe("runtime profile codec", () => {
     const bytes = profileRecord(16);
     new DataView(bytes.buffer).setBigUint64(HEADER_LENGTH + 175 * 8, 99n, true);
 
-    expect(() => decodeCoreRuntimeProfile(bytes)).toThrowError(
+    expect(() => decodeCoreRuntimeProfile(bytes)).toThrow(
       "runtime Tier-retirement privilege counters do not reconcile",
     );
   });

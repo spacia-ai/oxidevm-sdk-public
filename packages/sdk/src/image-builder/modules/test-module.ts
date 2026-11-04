@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { defineImage, isImageRef, type ImageRef, type TrustedImageKey } from "../../image.js";
 import { record, string } from "../../runtime/decode.js";
 import { VMError, serializeUnknownError } from "../../runtime/errors.js";
-import { decodeWasmPropertyResult, decodeWasmTestReport, type WasmTestReport } from "../../wasm/conformance/report.js";
+import { decodeWasmPropertyResult, decodeWasmTestRefusal, decodeWasmTestReport, refusedProperties, type WasmPropertyResult, type WasmTestRefusal, type WasmTestReport } from "../../wasm/conformance/report.js";
 import { loadImageBrowserRunner } from "../browser-automation.js";
 import { readImageBundle } from "../bundle.js";
 import { pinnedEngineCompliance, resolveEngineCompliance } from "../engine-compliance.js";
@@ -47,9 +47,21 @@ function launchPins(release: VerifiedRelease, base: string): ServedPins {
   };
 }
 
+/** What the page found: every property, or the refusal that kept the module from running at all. Exported for its tests. */
+export function pageOutcome(page: Readonly<Record<string, unknown>>): { readonly properties: readonly WasmPropertyResult[]; readonly refusal?: WasmTestRefusal } {
+  if (page["refusal"] !== undefined) {
+    const refusal = decodeWasmTestRefusal(page["refusal"]);
+    return { properties: refusedProperties(refusal), refusal };
+  }
+  const listed: unknown = page["properties"];
+  if (!Array.isArray(listed)) throw new VMError("PROTOCOL_ERROR", "the wasm test page returned no properties");
+  return { properties: Array.from<unknown>(listed).map(decodeWasmPropertyResult) };
+}
+
 /**
  * Runs the runner-contract properties against a built module (`oxidevm wasm build` output) in a real browser,
- * with the pinned engine and a Userspace image. The release is verified before any browser starts.
+ * with the pinned engine and a Userspace image. The release is verified before any browser starts. A browser or
+ * image that cannot run the module at all gives a `refused` report, not a failure.
  */
 export async function testModule(directory: string, options: ModuleTestOptions): Promise<WasmTestReport> {
   abortIfRequested(options.signal);
@@ -90,12 +102,11 @@ export async function testModule(directory: string, options: ModuleTestOptions):
       const failure = record(page["error"], "wasm test page error");
       throw new VMError("FEATURE_NOT_AVAILABLE", `the wasm test page failed: ${string(failure["message"], "page error message").slice(0, 2048)}`, { reason: "wasm-test-page", code: string(failure["code"], "page error code") });
     }
-    const listed: unknown = page["properties"];
-    if (!Array.isArray(listed)) throw new VMError("PROTOCOL_ERROR", "the wasm test page returned no properties");
-    const properties = Array.from<unknown>(listed).map(decodeWasmPropertyResult);
+    const { properties, refusal } = pageOutcome(page);
     const sdk = getSDKRelease();
     return decodeWasmTestReport({
-      schemaVersion: 1, result: properties.some(property => property.status === "failed") ? "failed" : "passed",
+      schemaVersion: 1, result: refusal !== undefined ? "refused" : properties.some(property => property.status === "failed") ? "failed" : "passed",
+      ...(refusal === undefined ? {} : { refusal }),
       module: { id: release.manifest.id, version: release.manifest.version, kind: release.manifest.process.kind, release: release.id },
       sdkVersion: sdk.sdkVersion, engineRelease: sdk.engineRelease,
       browser: { name: options.browser, version: string(result["version"], "browser version") },

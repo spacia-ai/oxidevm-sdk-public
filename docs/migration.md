@@ -332,6 +332,23 @@ engine:pin` refuses a schema 3 release.
   `FEATURE_NOT_AVAILABLE` with reason `native-bridge-signal-listener` until the
   image is rebuilt.
 
+## Module conformance outcomes
+
+- **`network-offline` for every module.** `oxidevm wasm test` now checks
+  `network-offline` for a module that declares no reach as well (it was
+  `not-applicable`): with the VM local-only, a command run with your `--arg`s
+  ends with a status from 0 to 119 and, when it fails, writes a line on
+  standard error; a service stays ready. A command without a reach that exits
+  non-zero without a line on standard error now fails this property.
+- **A `refused` result.** When the browser cannot isolate module workers
+  (`wasm-module-isolation-unavailable`, with its `capability`) or lacks a
+  declared prerequisite (`wasm-module-prerequisite`, with what is `missing`),
+  `oxidevm wasm test` reports `result: "refused"` with a `refusal` object,
+  every property `not-applicable`, and exits `4`. Before, such a run failed
+  `integrity` and `exit-range` and exited `3`. Passed and failed reports keep
+  `schemaVersion` 1 and their shape; the SDK exports the new
+  `WasmTestRefusal` type from `@oxidevm/sdk/image-builder`.
+
 ## Module author fixes
 
 Fixes found while building a large interpreter module (Pyodide) against the

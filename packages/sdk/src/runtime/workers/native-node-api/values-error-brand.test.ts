@@ -34,7 +34,9 @@ it.each(["node", "bun"] as const)("uses exact Error brands for %s without invoki
   }
   const original = new Error("captured"), replacement = Object.defineProperty(function FakeError() { return undefined; }, "isError", { get: observed });
   vi.stubGlobal("Error", replacement);
-  expect(values.dispatch("napi_is_error", [values.add(original)], empty).args).toEqual([1n]);
+  const captured = values.dispatch("napi_is_error", [values.add(original)], empty).args;
+  vi.unstubAllGlobals();
+  expect(captured).toEqual([1n]);
   expect(observed).not.toHaveBeenCalled(); values.dispose();
 });
 

@@ -83,6 +83,7 @@
     "packages/cli/package.json",
     "packages/cli/tsconfig.build.json",
     "packages/cli/tsconfig.json",
+    "packages/cli/tsconfig.test.json",
     "packages/sdk/LICENSE",
     "packages/sdk/NOTICE",
     "packages/sdk/assets/image-catalog.json",

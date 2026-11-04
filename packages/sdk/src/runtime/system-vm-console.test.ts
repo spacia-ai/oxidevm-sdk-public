@@ -17,7 +17,7 @@ it("forwards console geometry and rejects invalid or cancelled resizes before se
   expect(control.inputs.filter(input => input["type"] === "resize-system-console"))
     .toMatchObject([{ columns: 120, rows: 36 }]);
   for (const size of [{ columns: 0, rows: 24 }, { columns: 80, rows: 1001 }, { columns: 1.5, rows: 24 }]) {
-    expect(() => vm.diagnostics.resizeSystemConsole(size)).toThrowError("console dimensions must be integers from 1 to 1000");
+    expect(() => vm.diagnostics.resizeSystemConsole(size)).toThrow("console dimensions must be integers from 1 to 1000");
   }
   await expect(vm.diagnostics.resizeSystemConsole({ columns: 80, rows: 24 }, { signal: AbortSignal.abort() }))
     .rejects.toMatchObject({ code: "ABORTED" });

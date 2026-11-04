@@ -14,3 +14,6 @@ patchedDependencies:
   node-inspect-extracted@3.3.2: patches/node-inspect-extracted@3.3.2.patch
 
 minimumReleaseAge: 1440
+
+overrides:
+  minimatch: 11.0.4

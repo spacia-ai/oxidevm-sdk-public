@@ -3,13 +3,13 @@ import type { ProcessExit, ProcessHandle, UserspaceVM } from "../../index.js";
 import { exactKeys, integer, record, string } from "../../runtime/decode.js";
 import { moduleHandle, type LaunchPins, type PinnedFile } from "../../wasm/handle.js";
 import { decodeResolvedManifest, isServiceDecl } from "../../wasm/manifest.js";
-import { runProperties, type ConformancePorts, type StartedModule } from "../../wasm/conformance/properties.js";
+import { refusalOf, runProperties, type ConformancePorts, type StartedModule } from "../../wasm/conformance/properties.js";
 import { probeHandle, probeTargets, refusedEndpoints } from "../../wasm/conformance/probe.js";
 import { spawnModule, stopModule } from "../../wasm/spawn.js";
 import { moduleReach } from "../../wasm/reach.js";
 
 // The page of `oxidevm wasm test`: it runs the property catalog in a real Userspace VM and writes
-// `{ "properties": [...] }` or `{ "error": {...} }` into #oxidevm-qualification for the Node side to decode.
+// `{ "properties": [...] }`, `{ "refusal": {...} }` (the module could not run here at all) or `{ "error": {...} }` into #oxidevm-qualification for the Node side to decode.
 const output = document.createElement("pre"); output.id = "oxidevm-qualification"; document.body.append(output);
 const MAX_STDERR_CHARS = 64 * 1024;
 const decoder = new TextDecoder();
@@ -73,14 +73,16 @@ async function run(): Promise<unknown> {
         return exit.kind === "exited" && exit.code === 0 ? [] : refused.length > 0 ? refused : targets.map(entry => entry.name);
       },
     };
-    const properties = await runProperties({ kind: isServiceDecl(manifest) ? "service" : "command", endpoints: isServiceDecl(manifest) ? manifest.expose : {}, reach: moduleReach(manifest.requires.host) }, ports, { commandMs: integer(config["commandMs"], "commandMs", 1) });
-    return { properties };
+    const outcome = await runProperties({ kind: isServiceDecl(manifest) ? "service" : "command", endpoints: isServiceDecl(manifest) ? manifest.expose : {}, reach: moduleReach(manifest.requires.host) }, ports, { commandMs: integer(config["commandMs"], "commandMs", 1) });
+    return outcome.kind === "completed" ? { properties: outcome.properties } : { refusal: outcome.refusal };
   } finally { await vm.dispose(); }
 }
 
 run().then(
   result => { output.textContent = JSON.stringify(result); },
   (error: unknown) => {
+    const refusal = refusalOf(error);
+    if (refusal !== undefined) { output.textContent = JSON.stringify({ refusal }); return; }
     const failure = error instanceof VMError ? { code: error.code, message: error.message } : { code: "FEATURE_NOT_AVAILABLE", message: error instanceof Error ? error.message : "the wasm test page failed" };
     output.textContent = JSON.stringify({ error: { code: failure.code, message: failure.message.slice(0, 2048) } });
   },

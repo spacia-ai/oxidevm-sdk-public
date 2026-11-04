@@ -65,6 +65,6 @@ it("keeps Linux netlink errors distinct from malformed transport replies", () =>
     if (operation.number === 0) return operation.decode({ value: BigInt(reply.length), bytes: reply });
     return operation.decode({ value: operation.number === 1 ? BigInt(operation.payload.length - 12) : 0n, bytes: new Uint8Array() });
   });
-  try { expect(() => networkInterfaces(client)).toThrowError(new LinuxError(13)); }
+  try { expect(() => networkInterfaces(client)).toThrow(new LinuxError(13)); }
   finally { client.dispose(); channel.port2.close(); }
 });

@@ -27,7 +27,7 @@ describe("shared managed bases", () => {
       // The unused second chunk is still checked before its first bytes reach the guest.
       file.setBytes(Uint8Array.of(1,2,3,4,9,6,7,8));
       const output=new Uint8Array(1);
-      expect(()=>second.read(4,output)).toThrowError("Cached image chunk is damaged");
+      expect(()=>second.read(4,output)).toThrow("Cached image chunk is damaged");
       expect(output).toEqual(Uint8Array.of(0));
     } finally {first.release();second.release();}
     file.setBytes(Uint8Array.of(9,2,3,4,5,6,7,8));

@@ -19,5 +19,5 @@ await build({ configFile: false, root, worker: { format: "es" }, plugins: [{
   },
 }], build: {
   target: "esnext", outDir: output, emptyOutDir: true,
-  rollupOptions: { preserveEntrySignatures: "strict", input: { diagnostics: resolve(sdkDist, "diagnostics.js"), "tsc-adapter": resolve(sdkDist, "runtime/workers/command-interceptors/worker-system.js"), runtime: resolve(sdkDist, "runtime/index.js"), sdk: resolve(sdkDist, "index.js"), machine: resolve(sdkDist, "machine.js"), ...(process.argv[4] === "native-addon" ? { "native-diagnostics": resolve(root, "tests/diagnostics/native-addon-runtime.ts") } : {}) }, output: { entryFileNames: "[name].js", format: "es" } },
+  rolldownOptions: { preserveEntrySignatures: "strict", input: { diagnostics: resolve(sdkDist, "diagnostics.js"), "tsc-adapter": resolve(sdkDist, "runtime/workers/command-interceptors/worker-system.js"), runtime: resolve(sdkDist, "runtime/index.js"), sdk: resolve(sdkDist, "index.js"), machine: resolve(sdkDist, "machine.js"), ...(process.argv[4] === "native-addon" ? { "native-diagnostics": resolve(root, "tests/diagnostics/native-addon-runtime.ts") } : {}) }, output: { entryFileNames: "[name].js", format: "es" } },
 } });

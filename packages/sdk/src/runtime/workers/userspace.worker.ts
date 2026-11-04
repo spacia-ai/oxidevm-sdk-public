@@ -2,7 +2,7 @@ import { JsProcessWorkers } from "./js-process/driver.js";
 import { ModuleCommands, nativeModuleCommandTable } from "./js-process/module-commands.js";
 import { ModuleCopies } from "./js-process/module-copies.js";
 import { prepareModuleStart, type ModuleStart } from "./js-process/module-artifacts.js";
-import { isolationUnavailable } from "../protocol/module-frame.js";
+import { isolationUnavailable } from "../protocol/module-isolation.js";
 import { nativePromiseCapability } from "../promise-brand.js";
 import { nativeErrorCapability } from "../error-brand.js";
 import { captureUserspaceJitProfileForRuntime } from "./userspace-jit-profile.js";
@@ -76,6 +76,7 @@ import { UserspacePreviewRuntime } from "./userspace-preview-runtime.js";
 import {
   createUserspaceWakeTimer,
   nativeExecutionPending,
+  preparesAgainAfter,
   rearmsWakeTimer,
   shouldAcknowledgeOutputGeneration,
   wakeTimerAction,
@@ -1042,7 +1043,10 @@ function finishResult(active: RuntimeState): void {
   } else if (result?.kind === "step-limit") {
     if (hasNativeWork(active)) scheduleRun(active);
   } else if (result !== undefined && rearmsWakeTimer(result.kind)) {
-    if (hasNativeWork(active)) scheduleNextWake(active);
+    if (hasNativeWork(active)) {
+      if (preparesAgainAfter(result.kind)) scheduleRun(active);
+      else scheduleNextWake(active);
+    }
     void scheduleWorkspaceCommit();
   }
 }
