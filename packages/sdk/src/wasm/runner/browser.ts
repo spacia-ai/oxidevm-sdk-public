@@ -1,10 +1,13 @@
+import type { LinuxProcessContext } from "../../js-process-types.js";
 import type { ProcessId } from "../../values.js";
+import { atFiles } from "../../runtime/js-process/at-operations.js";
+import { clockHost, randomHost } from "../../runtime/js-process/clock-random.js";
+import { processSync } from "../../runtime/js-process/process-sync.js";
 import type { LinuxClient } from "../../runtime/js-process/transport.js";
 import type { RunnerLaunch } from "../../runtime/js-process/launch.js";
 import { processNetPorts } from "./net-ports.js";
 import { dispositionOperation, maskOperation, pendingOperation } from "../../runtime/js-process/signals.js";
 import { process } from "../../runtime/js-process/process.js";
-import type { LinuxParts } from "./host.js";
 import type { BrowserProbe } from "./prerequisites.js";
 import type { RunnerContext } from "./run.js";
 import type { SignalTransport } from "./signals.js";
@@ -56,13 +59,15 @@ export function clientSignals(client: LinuxClient): SignalTransport {
 }
 
 /**
- * Binds the runner to this worker's dynamic `import`, its process's signals and its process's VM network (with the TLS
- * module its start carried); it fetches nothing and holds no lock.
+ * Binds the runner to this worker's dynamic `import`, its process's signals, its process's synchronous Linux calls
+ * (`host.at`, `host.clock`, `host.random`, `host.process.*Sync`) and its VM network (with the TLS module its start
+ * carried); it fetches nothing and holds no lock.
  */
-export function browserContext(linux: LinuxParts, client: LinuxClient, launch: RunnerLaunch | undefined): RunnerContext {
+export function browserContext(linux: LinuxProcessContext, client: LinuxClient, launch: RunnerLaunch | undefined): RunnerContext {
   const local = globalThis.fetch.bind(globalThis);
   return {
     ...linux,
+    filesAt: atFiles(client), clock: clockHost(client), random: randomHost(client), processSync: processSync(client),
     browser: probeBrowser(globalThis),
     importAdapter: importAdapterFromBlob,
     signals: clientSignals(client),

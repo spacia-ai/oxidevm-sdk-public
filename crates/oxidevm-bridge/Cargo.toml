@@ -1,0 +1,22 @@
+[package]
+name = "oxidevm-bridge"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "Process identity, native Linux programs and VM sockets for Rust programs running as WebAssembly (wasm32-wasip1) in an OxideVM virtual machine"
+repository = "https://github.com/spacia-ai/oxidevm-sdk-public"
+homepage = "https://oxidevm.dev"
+documentation = "https://docs.rs/oxidevm-bridge"
+readme = "README.md"
+keywords = ["wasm", "wasi", "oxidevm", "linux", "browser"]
+categories = ["wasm", "os"]
+include = ["src/**/*.rs", "Cargo.toml", "README.md", "LICENSE", "NOTICE"]
+
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

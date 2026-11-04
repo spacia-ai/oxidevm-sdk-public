@@ -187,7 +187,8 @@
     "scripts/esbuild/",
     "examples/starter/src/",
     "examples/starter/dev/",
-    "packages/sdk/legal/"
+    "packages/sdk/legal/",
+    "crates/oxidevm-bridge/"
   ],
   "assets": {
     "examples/starter/public/fonts/archivo.woff2": {

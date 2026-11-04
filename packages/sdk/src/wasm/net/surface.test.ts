@@ -42,3 +42,28 @@ describe("host.net.connectSync reads with a timeout (ADR 0029, N-4)", () => {
     connection.close();
   });
 });
+
+describe("host.net.connectUnixSync (Userspace API 147)", () => {
+  const unixNetwork = (reach: "vm" | "none") => {
+    const network = new MemoryNetwork(reach);
+    network.listenUnix("/run/echo.sock", { data: (connection, bytes) => { connection.write(bytes); } });
+    return network;
+  };
+
+  it("connects a Unix stream socket of the module process to a path in the VM", () => {
+    const network = unixNetwork("vm");
+    const net = createModuleNetwork({ ports: { sockets: network.sockets(), sync: network.syncSockets(), tls: null }, reach: "vm", signal: new AbortController().signal, tls: PASS_THROUGH_TLS }).host;
+    const connection = net?.connectUnixSync("/run/echo.sock");
+    connection?.write(new TextEncoder().encode("hi"));
+    expect(new TextDecoder().decode(connection?.read(16))).toBe("hi");
+    expect(connection?.alpn).toBeNull();
+    connection?.close();
+    expect(thrown(() => net?.connectUnixSync("/run/missing.sock"))).toMatchObject({ name: "NetError", code: "ENOENT", errno: 2, syscall: "connect", hostname: "/run/missing.sock" });
+    for (const path of ["", "a\0b", `/${"x".repeat(107)}`]) expect(thrown(() => net?.connectUnixSync(path)), path).toMatchObject({ code: "INVALID_ARGUMENT", detail: { reason: "net-unix-path" } });
+  });
+
+  it("is refused for a module without a reach, as Rust refuses its Unix connect (EACCES)", () => {
+    const sockets = unixNetwork("none").syncSockets(), fd = sockets.stream("unix");
+    expect(thrown(() => { sockets.connect(fd, { family: "unix", path: "/run/echo.sock" }); })).toMatchObject({ errno: 13 });
+  });
+});

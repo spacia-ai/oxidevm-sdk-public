@@ -101,7 +101,7 @@ it("forwards metadata, mask, PATH and signal-disposition operations, then reject
     // OXJR 65550 (ADR 0027): SIGINT caught with the interrupt flag; Rust validates the record.
     port.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "request", sequence: 4, sync: false, operation: 65550, payload: new Uint8Array([2, 2, 2]) });
     await vi.waitFor(() => expect(native.submitted).toEqual([65545, 65547, 65548, 65550]));
-    port.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "request", sequence: 5, sync: false, operation: 65551, payload: new Uint8Array() });
+    port.postMessage({ version: JS_PROCESS_PROTOCOL_VERSION, type: "request", sequence: 5, sync: false, operation: 65553, payload: new Uint8Array() });
     await running;
     expect(native.submitted).toEqual([65545, 65547, 65548, 65550, 1]);
     expect(native.exits()).toBe(1);

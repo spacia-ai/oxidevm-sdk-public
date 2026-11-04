@@ -212,7 +212,7 @@ describe("commands a program in the VM runs", () => {
       [{ ...stale, artifacts: {} }, throwing, 120, /^python: cannot start: The verified copies of the module's files do not match its launch description$/u],
       [await commandLaunch(needing, "python"), needing, 122, /^python: Missing: guest executable \/usr\/bin\/python3$/u],
       [stale, throwing, 123, /^python: the module failed: first second$/u],
-      [await commandLaunch(reaching, "python"), reaching, 123, /^python: the module used process\.info, process\.spawn, process\.signals, which its manifest does not declare: /u],
+      [await commandLaunch(reaching, "python"), reaching, 123, /^python: the module used process\.info, process\.spawn, process\.signals, process\.sync, which its manifest does not declare: /u],
     ] as const;
     for (const [command, release, status, line] of cases) {
       const running = launch({ release, command, args: ["python"] });

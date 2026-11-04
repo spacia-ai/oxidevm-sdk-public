@@ -24,7 +24,8 @@ export interface NetSockets {
 }
 
 export interface NetSyncSockets {
-  stream(family: "ipv4" | "ipv6"): number;
+  /** A stream socket: TCP over IPv4 or IPv6, or a Unix-domain stream socket (`connectUnixSync`). */
+  stream(family: LinuxSocketAddress["family"]): number;
   connect(fd: number, address: LinuxSocketAddress): void;
   read(fd: number, max: number): Uint8Array;
   /** Never blocks: what has arrived (up to `max` bytes, empty at the peer's end of stream), or null when nothing has. */

@@ -4,7 +4,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["**/node_modules/**", "**/dist/**", "**/.cache/**", "**/.oxidevm/**", ".candidate/**", ".private/**", "config/public-files/**", "packages/sdk/assets/**", "**/public/**", "coverage/**", "test-results/**", "playwright-report/**"] },
+  { ignores: ["**/node_modules/**", "**/dist/**", "crates/**/target/**", "**/.cache/**", "**/.oxidevm/**", ".candidate/**", ".private/**", "config/public-files/**", "packages/sdk/assets/**", "**/public/**", "coverage/**", "test-results/**", "playwright-report/**"] },
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked.map(config => ({ ...config, files: ["**/*.ts", "**/*.tsx"] })),
   {

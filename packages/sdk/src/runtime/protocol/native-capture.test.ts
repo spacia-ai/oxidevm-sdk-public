@@ -228,14 +228,14 @@ it("admits retained TCP urgent marks in native95 and rejects newer socket graphs
 });
 
 it("admits captured urgent notifications in native96 and rejects newer graphs", () => {
-  expect(USERSPACE_API_VERSION).toBe(146);
+  expect(USERSPACE_API_VERSION).toBe(147);
   expect(PROTOCOL_VERSION).toBe(179);
   expect(decodeNativeGraphVersion(graph(96))).toBe(96);
   expect(() => decodeNativeGraphVersion(graph(NATIVE_LOGICAL_CHECKPOINT_VERSION + 1))).toThrow(/header is invalid/u);
 });
 
 it("pairs retained urgent-pointer announcements with native97 and rejects future peers", () => {
-  expect(USERSPACE_API_VERSION).toBe(146);
+  expect(USERSPACE_API_VERSION).toBe(147);
   expect(PROTOCOL_VERSION).toBe(179);
   expect(NATIVE_LOGICAL_CHECKPOINT_VERSION).toBe(100);
   expect(decodeNativeGraphVersion(graph(97))).toBe(97);

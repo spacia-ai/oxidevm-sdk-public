@@ -78,7 +78,7 @@ export const files = {
   link: (from: LinuxPath, to: LinuxPath) => operation(86, new Writer().path(from).path(to), noValue),
   symlink: (target: LinuxPath, path: LinuxPath) => operation(88, new Writer().path(target).path(path), noValue),
   readlink: (path: LinuxPath) => operation(89, new Writer().path(path), decodeLinkTarget),
-  getdents: (fd: number): LinuxOperation<readonly LinuxDirectoryEntry[]> => operation(217, new Writer().u64(fd).u64(64 * 1024), decodeEntries),
+  getdents: (fd: number): LinuxOperation<readonly LinuxDirectoryEntry[]> => operation(217, new Writer().u64(fd).u64(GETDENTS_BYTES), decodeEntries),
 };
 const MSG_NOSIGNAL = 0x4000n, AT_SYMLINK_NOFOLLOW = 0x100n, UTIME_NOW = 0x3fff_ffffn, UTIME_OMIT = 0x3fff_fffen;
 /** A time as the seconds (signed, two's complement) and nanoseconds Linux takes; milliseconds before the epoch round down. */
@@ -102,25 +102,31 @@ function decodeLinkTarget(result: LinuxResult): string {
   if (result.bytes.byteLength === 0 || result.bytes.byteLength > 4095 || result.value !== BigInt(result.bytes.byteLength)) protocol("Invalid Linux readlink result");
   return new TextDecoder().decode(result.bytes);
 }
-function decodeStat(result: LinuxResult): LinuxFileStat & { readonly rdev: bigint; readonly blockSize: bigint; readonly blocks: bigint } {
+export function decodeStat(result: LinuxResult): LinuxFileStat & { readonly rdev: bigint; readonly blockSize: bigint; readonly blocks: bigint } {
   if (result.value !== 0n || result.bytes.byteLength !== 144) protocol("Invalid Linux stat result");
   const v = new DataView(result.bytes.buffer, result.bytes.byteOffset, result.bytes.byteLength);
   const time = (offset: number) => { const ns = v.getBigUint64(offset + 8, true); if (ns >= 1_000_000_000n) protocol("Invalid Linux timestamp"); return v.getBigInt64(offset, true) * 1_000_000_000n + ns; };
   return { device: v.getBigUint64(0, true), inode: v.getBigUint64(8, true), links: v.getBigUint64(16, true), mode: v.getUint32(24, true), uid: v.getUint32(28, true), gid: v.getUint32(32, true), size: v.getBigInt64(48, true), rdev: v.getBigUint64(40, true), blockSize: v.getBigInt64(56, true), blocks: v.getBigInt64(64, true), accessedNs: time(72), modifiedNs: time(88), changedNs: time(104) };
 }
-function decodeEntries(result: LinuxResult): readonly LinuxDirectoryEntry[] {
-  if (result.value !== BigInt(result.bytes.byteLength)) protocol("Invalid Linux directory result");
-  const entries: LinuxDirectoryEntry[] = [], view = new DataView(result.bytes.buffer, result.bytes.byteOffset, result.bytes.byteLength);
+/** One linux_dirent64 record as getdents64 wrote it: d_ino, d_off (the cookie that resumes after it), d_type and the raw name. */
+export interface DirentRecord { readonly inode: bigint; readonly next: bigint; readonly type: number; readonly nameBytes: Uint8Array<ArrayBuffer> }
+/** The records of one getdents64 batch of at most `maxBytes` bytes; every record is checked against its own length. */
+export function decodeDirents(result: LinuxResult, maxBytes: number): readonly DirentRecord[] {
+  if (result.value !== BigInt(result.bytes.byteLength) || result.bytes.byteLength > maxBytes) protocol("Invalid Linux directory result");
+  const records: DirentRecord[] = [], view = new DataView(result.bytes.buffer, result.bytes.byteOffset, result.bytes.byteLength);
   let offset = 0;
   while (offset < result.bytes.byteLength) {
     if (offset + 20 > result.bytes.byteLength) protocol("Truncated Linux directory entry");
     const length = view.getUint16(offset + 16, true);
     if (length < 20 || length % 8 !== 0 || length > result.bytes.byteLength - offset) protocol("Invalid Linux directory entry length");
     const end = result.bytes.indexOf(0, offset + 19);
-    if (end < 0 || end >= offset + length) protocol("Invalid Linux directory entry name");
-    const nameBytes = result.bytes.slice(offset + 19, end);
-    entries.push({ nameBytes, name: new TextDecoder().decode(nameBytes), type: view.getUint8(offset + 18) });
+    if (end <= offset + 19 || end >= offset + length) protocol("Invalid Linux directory entry name");
+    records.push({ inode: view.getBigUint64(offset, true), next: view.getBigUint64(offset + 8, true), type: view.getUint8(offset + 18), nameBytes: result.bytes.slice(offset + 19, end) });
     offset += length;
   }
-  return entries;
+  return records;
+}
+const GETDENTS_BYTES = 64 * 1024;
+function decodeEntries(result: LinuxResult): readonly LinuxDirectoryEntry[] {
+  return decodeDirents(result, GETDENTS_BYTES).map(record => ({ nameBytes: record.nameBytes, name: new TextDecoder().decode(record.nameBytes), type: record.type }));
 }

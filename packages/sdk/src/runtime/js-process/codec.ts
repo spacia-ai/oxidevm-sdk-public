@@ -32,7 +32,7 @@ export const NATIVE_BROKER_PROCESS_VERSION = 2;
 export const JS_MAILBOX_BYTES = 16 * 1024 ** 2 + 4096;
 export const JS_MAX_IO_BYTES = 16 * 1024 ** 2;
 /** OXJR 65550 sets a trappable signal's host disposition (engine ADR 0027). */
-export const JS_MAX_OPERATION = 65550;
+export const JS_MAX_OPERATION = 65552;
 /** The mailbox header is four Int32s: reply state, reply length and reply sequence, then the count of
  * requests the worker posted, which the execution worker compares with the requests it received. */
 export function jsMailboxAttention(mailbox: SharedArrayBuffer): AttentionCounter {

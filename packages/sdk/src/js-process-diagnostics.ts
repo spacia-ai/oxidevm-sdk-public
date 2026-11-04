@@ -12,11 +12,13 @@ import { lateFailureDetail, lateFailureKind, type LateFailureKind } from "./runt
 import { isModuleCommandName, moduleCommandPath } from "./runtime/module-command-names.js";
 import type { ModuleReach } from "./wasm/reach.js";
 
-/** Rust's closed bridge service operations by number; 65550 (a signal's host disposition) exists from trace 17. */
+/** Rust's closed bridge service operations by number; 65550 (a signal's host disposition) exists from trace 17, 65551
+ * and 65552 (descriptor-relative times, the timed poll) from Userspace API 147. */
 const serviceOperations = [
   [65536, "realpath"], [65537, "info"], [65538, "spawn"], [65539, "cancel"], [65540, "prepare-thread"], [65541, "start-thread"],
   [65542, "stop-thread"], [65543, "wait-thread"], [65544, "reap-thread"], [65545, "path-info"], [65546, "prepare-thread-eval"],
-  [65547, "umask"], [65548, "path-search"], [65549, "poll-pipes"], [65550, "signal-disposition"],
+  [65547, "umask"], [65548, "path-search"], [65549, "poll-pipes"], [65550, "signal-disposition"], [65551, "utimensat-at"],
+  [65552, "poll-timed"],
 ] as const;
 type ServiceOperation = typeof serviceOperations[number][1];
 const serviceOperationKinds: ReadonlyMap<number, ServiceOperation> = new Map(serviceOperations);

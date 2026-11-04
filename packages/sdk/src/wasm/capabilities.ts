@@ -1,4 +1,4 @@
-import type { LinuxFiles, LinuxProcesses, LinuxSockets, LinuxSyncFiles } from "../js-process-types.js";
+import type { ClockHost, LinuxAtFiles, LinuxFiles, LinuxProcesses, LinuxSockets, LinuxSyncFiles, ProcessSync, RandomHost } from "../js-process-types.js";
 import type { LinuxSignal, RealtimeSignalName, RealtimeSignalNumber, SignalName } from "../runtime/process-signals.js";
 
 /** Client-side socket operations. Listening belongs to the runner and is declared by `expose`. */
@@ -150,6 +150,11 @@ export interface NetHost {
   connect(options: NetConnectOptions): Promise<NetConnection>;
   resolveSync(name: string): readonly string[];
   connectSync(options: Omit<NetConnectOptions, "signal">): NetSyncConnection;
+  /**
+   * Connects to the Unix-domain stream socket at `path` in the VM (a filesystem path of 1 to 107 bytes, no abstract
+   * names), synchronously; Rust holds it to the module's reach as it does TCP (Userspace API 147).
+   */
+  connectUnixSync(path: string): NetSyncConnection;
   /** A sans-IO TLS session for `serverName` (`kit.tls.session`). */
   tls(options: NetTlsOptions): NetTlsSession;
 }
@@ -162,6 +167,12 @@ export interface NetHost {
 export interface CapabilityMap {
   readonly "files.sync": { readonly fs: LinuxSyncFiles };
   readonly "files.async": { readonly files: LinuxFiles };
+  /** Descriptor-relative, positional and readiness operations, synchronous (Userspace API 147). */
+  readonly "files.at": { readonly at: LinuxAtFiles };
+  /** The VM's realtime and monotonic clocks (Userspace API 147). */
+  readonly clock: { readonly clock: ClockHost };
+  /** The VM's entropy, as getrandom gives it to native programs (Userspace API 147). */
+  readonly random: { readonly random: RandomHost };
   /** Raw client sockets; a new module pairs it with a reach token (`net.vm` or `net.internet`). */
   readonly "sockets.connect": { readonly sockets: ClientSockets };
   /** Network reach: programs in this VM only (engine ADR 0029). */
@@ -171,6 +182,8 @@ export interface CapabilityMap {
   readonly "process.info": { readonly process: Pick<LinuxProcesses, "info" | "cwd"> };
   readonly "process.spawn": { readonly process: Pick<LinuxProcesses, "spawn" | "wait" | "signal"> };
   readonly "process.signals": { readonly process: { readonly signals: ProcessSignals } };
+  /** Synchronous process calls, merged into `host.process`; `runSync` and owned children (Userspace API 147). */
+  readonly "process.sync": { readonly process: ProcessSync };
 }
 export type Capability = keyof CapabilityMap;
 
@@ -179,6 +192,11 @@ export const CAPABILITY_MIN_API: Readonly<Record<Capability, number>> = {
   // 144 added utimes (utimensat, 280) and write with noSignal (sendto, 44) to both file facades.
   "files.sync": 144,
   "files.async": 144,
+  // 147 added the descriptor-relative file operations (openat2 and the *at family, utimensat_at), poll_timed, the clocks
+  // (clock_gettime, clock_getres), getrandom, and the owned spawn flag (bit 64) that process.sync's runSync relies on.
+  "files.at": 147,
+  clock: 147,
+  random: 147,
   "sockets.connect": 143,
   // 146 carries each module process's declared reach to Rust, which enforces it (OXMC 2, the module spawn).
   "net.vm": 146,
@@ -187,6 +205,7 @@ export const CAPABILITY_MIN_API: Readonly<Record<Capability, number>> = {
   "process.spawn": 143,
   // 145 delivers the trappable signals of a JS process to the process instead of their default action (engine ADR 0027).
   "process.signals": 145,
+  "process.sync": 147,
 };
 
 /** The first Userspace API version that runs a module's `commands` from the VM's PATH (engine ADR 0027). */

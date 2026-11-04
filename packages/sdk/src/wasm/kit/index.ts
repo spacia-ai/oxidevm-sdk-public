@@ -6,12 +6,14 @@ import { runNative } from "./native-run.js";
 import { emscriptenNetwork, emscriptenNetworkImports, linuxErrnoOf } from "./emscripten-network.js";
 import { describeNetError } from "./net.js";
 import { handshakeSync, tlsSession } from "./tls.js";
+import { admit, admitShape, AdmissionError, compile, LIMITS, readProgram, ROOT_PREOPEN, run } from "./wasi/index.js";
 
 export type { AtomicDirectory } from "./directory.js";
 export type { Gate } from "./gate.js";
 export type { NativeRunHost, NativeRunRequest, NativeRunResult } from "./native-run.js";
 export type { BlockingIo } from "./tls.js";
 export type { EmscriptenNetwork } from "./emscripten-network.js";
+export type { Preopen, WasiHost, WasiIO, WasiRunHost, WasiRunOptions } from "./wasi/index.js";
 
 /**
  * Helpers the runner hands every adapter as `host.kit`. They hold no state of their own, so an
@@ -49,6 +51,29 @@ export interface Kit {
     readonly session: typeof tlsSession;
     readonly handshakeSync: typeof handshakeSync;
   };
+  /**
+   * wasm32-wasip1 programs (a Rust `cargo build --target wasm32-wasip1`, C, Zig) as this module's Linux process: WASI
+   * Preview1 over the VM's live files, clocks and entropy, plus the `oxidevm_bridge_v1` imports for process identity,
+   * native children and VM sockets (the `oxidevm-bridge` Rust crate).
+   */
+  readonly wasi: {
+    /** Runs an admitted program once with fresh state; resolves with the module's exit status. */
+    readonly run: typeof run;
+    /** Checks the bytes, compiles, then checks the imports; a refused program runs no code. */
+    readonly compile: typeof compile;
+    /** Reads a program file once through one descriptor, at most `limits.programBytes`. */
+    readonly readProgram: typeof readProgram;
+    /** Checks only the bytes (structure, memory, table, start section). */
+    readonly admitShape: typeof admitShape;
+    /** Checks only a compiled program's imports and exports. */
+    readonly admit: typeof admit;
+    /** What `admitShape`, `admit` and `compile` throw for a refused program. */
+    readonly AdmissionError: typeof AdmissionError;
+    /** The profile's limits. */
+    readonly limits: typeof LIMITS;
+    /** The default grant: the whole VM tree under the process's own credentials. */
+    readonly rootPreopen: typeof ROOT_PREOPEN;
+  };
   /** Network failures (ADR 0029, N-5). */
   readonly net: {
     /** One line for a failure; a command prints it and exits `MODULE_EXIT.unavailable` (69). */
@@ -67,5 +92,6 @@ export const kit: Kit = Object.freeze({
   directory: Object.freeze({ sync: syncPath, createAtomically: createDirectoryAtomically }),
   emscripten: Object.freeze({ network: emscriptenNetwork, networkImports: emscriptenNetworkImports }),
   tls: Object.freeze({ session: tlsSession, handshakeSync }),
+  wasi: Object.freeze({ run, compile, readProgram, admitShape, admit, AdmissionError, limits: LIMITS, rootPreopen: ROOT_PREOPEN }),
   net: Object.freeze({ describe: describeNetError, errno: linuxErrnoOf }),
 });

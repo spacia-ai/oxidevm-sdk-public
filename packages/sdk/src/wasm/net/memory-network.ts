@@ -16,7 +16,7 @@ import type { TlsLayer } from "./streams.js";
  * fails with FEATURE_NOT_AVAILABLE (`testhost-blocked-read`) instead of hanging the test.
  */
 export const VM_ADDRESS = "10.0.2.15";
-const EPERM = 1, EBADF = 9, EACCES = 13, EINVAL = 22, ECONNRESET = 104, ECONNREFUSED = 111, ENOTCONN = 107;
+const EPERM = 1, ENOENT = 2, EBADF = 9, EACCES = 13, EINVAL = 22, ECONNRESET = 104, ECONNREFUSED = 111, ENOTCONN = 107;
 const MAX_READ = 256 * 1024;
 
 export type NetworkState = "local-only" | "connected" | "revoked";
@@ -48,7 +48,7 @@ export type MemoryDatagramServer = (bytes: Uint8Array) => Uint8Array | null;
 
 interface Stream {
   readonly kind: "stream";
-  readonly family: "ipv4" | "ipv6";
+  readonly family: LinuxSocketAddress["family"];
   peer: { readonly server: MemoryServer; readonly connection: MemoryConnection; readonly external: boolean; readonly port: number } | null;
   readonly inbox: Uint8Array[];
   serverEnded: boolean;
@@ -76,6 +76,8 @@ export class MemoryNetwork {
   constructor(readonly reach: ModuleReach) {}
 
   listen(address: string, port: number, server: MemoryServer): void { this.#servers.set(`${address}:${String(port)}`, server); }
+  /** A Unix-domain stream service at `path`, inside the VM: any reach but `none` may connect to it. */
+  listenUnix(path: string, server: MemoryServer): void { this.#servers.set(`unix:${path}`, server); }
   listenDatagram(address: string, port: number, server: MemoryDatagramServer): void { this.#datagramServers.set(`${address}:${String(port)}`, server); }
   file(path: string, text: string): void { this.files.set(path, new TextEncoder().encode(text)); }
 
@@ -149,7 +151,7 @@ export class MemoryNetwork {
     return socket;
   }
 
-  openStream(family: "ipv4" | "ipv6"): number {
+  openStream(family: LinuxSocketAddress["family"]): number {
     const fd = this.#next++;
     this.#sockets.set(fd, { kind: "stream", family, peer: null, inbox: [], serverEnded: false, failed: 0, waiter: null });
     return fd;
@@ -158,20 +160,32 @@ export class MemoryNetwork {
 
   connect(fd: number, address: LinuxSocketAddress): void {
     const stream = this.#stream(fd);
-    if (address.family === "unix") throw new LinuxError(ECONNREFUSED);
+    if ((stream.family === "unix") !== (address.family === "unix")) throw new LinuxError(EINVAL);
+    if (address.family === "unix") {
+      // Rust holds a Unix connect to the module's reach too: none refuses it, any other reach stays inside the VM.
+      if (this.reach === "none") throw new LinuxError(EACCES);
+      const server = this.#servers.get(`unix:${address.path}`);
+      if (server === undefined) throw new LinuxError(ENOENT);
+      this.#attach(stream, server, address.path, false, 0);
+      return;
+    }
     const errno = this.decide(address.address, address.port, "tcp");
     if (errno !== 0) throw new LinuxError(errno);
     const server = this.#servers.get(`${address.address}:${String(address.port)}`);
     if (server === undefined) throw new LinuxError(ECONNREFUSED);
+    this.#attach(stream, server, address.address, !isLoopback(address.address) && address.address !== VM_ADDRESS, address.port);
+  }
+
+  #attach(stream: Stream, server: MemoryServer, remote: string, external: boolean, port: number): void {
     const wake = (): void => { const waiter = stream.waiter; stream.waiter = null; waiter?.(); };
     const connection: MemoryConnection = {
-      remote: address.address,
+      remote,
       write: bytes => { if (stream.failed === 0 && !stream.serverEnded) { stream.inbox.push(bytes.slice()); wake(); } },
       end: () => { stream.serverEnded = true; wake(); },
       reset: () => { stream.failed = ECONNRESET; wake(); },
       after: (ms, action) => { this.after(ms, action); },
     };
-    stream.peer = { server, connection, external: !isLoopback(address.address) && address.address !== VM_ADDRESS, port: address.port };
+    stream.peer = { server, connection, external, port };
     server.connected?.(connection);
   }
 

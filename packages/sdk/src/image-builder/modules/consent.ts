@@ -80,7 +80,7 @@ export function consentCard(resolution: Resolution, source: ModuleSource): Conse
     guestFiles: (manifest.guestFiles ?? []).map(file => file.to),
     network: {
       reach: moduleReach(manifest.requires.host), hosts: manifest.network?.hosts ?? [],
-      ...(manifest.network?.purpose === undefined ? {} : { purpose: manifest.network.purpose }), children: manifest.requires.host.includes("process.spawn"),
+      ...(manifest.network?.purpose === undefined ? {} : { purpose: manifest.network.purpose }), children: manifest.requires.host.includes("process.spawn") || manifest.requires.host.includes("process.sync"),
     },
     durablePaths: manifest.state?.durable ?? [],
     options: Object.keys(manifest.options ?? {}),

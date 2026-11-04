@@ -194,7 +194,11 @@ it("reads the signal-disposition service operation (65550) from trace 17 only", 
     .u64(1n).u64(2n).u64(3n).u64(4n).u32(10).u32(10).u32(65550).u32(1).u32(0).finish();
   expect(decodeJSProcessTrace(service(17)).events[0]).toMatchObject({ operation: { kind: "signal-disposition" }, transition: "completed" });
   expect(() => decodeJSProcessTrace(service(16))).toThrow("Invalid JS service operation");
-  const beyond = service(17); new DataView(beyond.buffer).setUint32(28 + 40, 65551, true);
+  for (const [number, kind] of [[65551, "utimensat-at"], [65552, "poll-timed"]] as const) {
+    const named = service(17); new DataView(named.buffer).setUint32(28 + 40, number, true);
+    expect(decodeJSProcessTrace(named).events[0]).toMatchObject({ operation: { kind } });
+  }
+  const beyond = service(17); new DataView(beyond.buffer).setUint32(28 + 40, 65553, true);
   expect(() => decodeJSProcessTrace(beyond)).toThrow("Invalid JS service operation");
 });
 
