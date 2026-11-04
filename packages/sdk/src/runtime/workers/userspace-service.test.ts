@@ -4,6 +4,7 @@ import {
   createUserspaceWakeTimer,
   nativeExecutionPending,
   failUserspaceRuntime,
+  preparesAgainAfter,
   rearmsWakeTimer,
   shouldAcknowledgeOutputGeneration,
   shouldServicePendingWork,
@@ -66,6 +67,15 @@ describe("Userspace wake timer", () => {
     expect(wakeTimerAction(0xffff_ffff)).toEqual({ kind: "none" });
     expect(wakeTimerAction(0)).toEqual({ kind: "run-now" });
     expect(wakeTimerAction(17)).toEqual({ kind: "arm", delayMs: 17 });
+  });
+
+  it("prepares again after an exit, which may leave another process runnable", () => {
+    // The engine reports a resident loop's exit once; a signal or input delivered before the next
+    // preparation can already have made another process runnable, and only a preparation runs it.
+    expect(preparesAgainAfter("exit")).toBe(true);
+    expect(preparesAgainAfter("blocked")).toBe(false);
+    expect(preparesAgainAfter("step-limit")).toBe(false);
+    expect(preparesAgainAfter("fault")).toBe(false);
   });
 
   it("re-arms at every blocked or exit boundary, even when no deadline changed", () => {

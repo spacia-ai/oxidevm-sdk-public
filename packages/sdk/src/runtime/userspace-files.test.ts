@@ -5,9 +5,9 @@ import { VMError } from "./errors.js";
 
 it("decodes file errors and rejects malformed, truncated and trailing records", () => {
   const bytes = new AgentPayloadWriter().u32(1).u8(2).u8(1).u32(2).finish();
-  expect(() => decodeUserspaceFileRecord(bytes, { operation: "stat", path: "/x" })).toThrowError("Workspace entry is missing");
-  expect(() => decodeUserspaceFileRecord(bytes.subarray(0, -1), { operation: "stat", path: "/x" })).toThrowError();
-  expect(() => decodeUserspaceFileRecord(Uint8Array.from([...bytes, 0]), { operation: "stat", path: "/x" })).toThrowError();
+  expect(() => decodeUserspaceFileRecord(bytes, { operation: "stat", path: "/x" })).toThrow("Workspace entry is missing");
+  expect(() => decodeUserspaceFileRecord(bytes.subarray(0, -1), { operation: "stat", path: "/x" })).toThrow();
+  expect(() => decodeUserspaceFileRecord(Uint8Array.from([...bytes, 0]), { operation: "stat", path: "/x" })).toThrow();
   expect(() => encodeUserspaceFileRequest({ operation: "read", path: "/x", maxBytes: 16 * 1024 * 1024 + 1 })).toThrow();
 });
 it("decodes change cursors without number conversion and validates ordering", () => {
@@ -18,7 +18,7 @@ it("decodes change cursors without number conversion and validates ordering", ()
 
 it("rejects untrusted paths, versions, ordering and random bytes with protocol errors", () => {
   const path = new AgentPayloadWriter().u32(1).u8(2).string("/../outside").finish();
-  expect(() => decodeUserspaceFileRequest(path)).toThrowError(VMError);
+  expect(() => decodeUserspaceFileRequest(path)).toThrow(VMError);
   let seed = 7;
   for (let i = 0; i < 1_000; i++) {
     const bytes = Uint8Array.from({ length: i % 64 }, () => { seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0; return seed >>> 24; });
@@ -27,10 +27,10 @@ it("rejects untrusted paths, versions, ordering and random bytes with protocol e
     }
   }
   const unordered = new AgentPayloadWriter().u32(1).u64(1n).u8(0).u32(2).string("/").string("z").string("/").string("a").finish();
-  expect(() => decodeUserspaceFileChanges(unordered)).toThrowError(VMError);
+  expect(() => decodeUserspaceFileChanges(unordered)).toThrow(VMError);
 });
 
 it("rejects the retired compiler-only realpath transport", () => {
   const bytes = new AgentPayloadWriter().u32(1).u8(9).string("/alias/index.d.ts").finish();
-  expect(() => decodeUserspaceFileRequest(bytes)).toThrowError(VMError);
+  expect(() => decodeUserspaceFileRequest(bytes)).toThrow(VMError);
 });

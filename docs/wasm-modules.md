@@ -839,14 +839,34 @@ tests). Every property is `passed`, `failed` or `not-applicable`, with a reason:
 | `declared-host` | the adapter reached for no host member its `requires.host` did not declare |
 | `network-direct` | the module used no browser network API (they are refused in the module frame) |
 | `network-declared` | the module connected to nothing beyond its declared reach |
-| `network-offline` | with the VM local-only (as it is during the test), a command with your `--arg`s ends with a status from 0 to 119 and, when it fails, a line on standard error; a service stays ready. Not applicable without a reach |
+| `network-offline` | with the VM local-only (as it is during the test), a command with your `--arg`s ends with a status from 0 to 119 and, when it fails, a line on standard error; a service stays ready. It applies to every module, with a reach or without one: the VM is local-only for both |
 
 The runner reports an undeclared member once, as a `{"oxidevm":"warning",...}`
 line on standard error, and still hands the adapter `undefined` for it. Without
 `--image` the test boots the public starter image; name another with `--image`
 when the module needs programs the starter does not have. `--option name=value`
-sets an option (a JSON number, boolean or array stays typed). A failed property
-exits `3`.
+sets an option (a JSON number, boolean or array stays typed).
+
+A run ends in one of three results, which `--json` reports as `result` and the
+exit status repeats:
+
+| Result | Exit | Means |
+| --- | --- | --- |
+| `passed` | `0` | every applicable property passed |
+| `failed` | `3` | at least one property failed |
+| `refused` | `4` | the browser or image cannot run the module at all, so no property ran; every property is `not-applicable` and `refusal` says why |
+
+A refusal is `FEATURE_NOT_AVAILABLE` from `spawnModule`, with one of two closed
+reasons: `wasm-module-isolation-unavailable` with the `capability` that failed
+(for example `blob-workers` in a browser that cannot start a worker from a
+`blob:` URL; the module frame, engine ADR 0028, never falls back to the page's
+origin), or `wasm-module-prerequisite` with what is `missing` (a browser
+feature or guest executable the manifest requires). Text output prints one
+`REFUSED` line instead of the property list. Refused is not a failure of the
+module: run it in a browser or with an image that has what it needs. A report
+that passed or failed is unchanged (`schemaVersion` 1, no `refusal` field).
+Errors before the browser runs (an invalid `dist/`, no browser) still exit `1`
+or `2` with an error report.
 
 Release by tag. `oxidevm wasm release` builds and prints the steps; it runs none:
 

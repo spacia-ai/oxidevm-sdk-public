@@ -11,7 +11,7 @@ export default defineConfig(
     files: ["**/*.ts", "**/*.tsx"],
     languageOptions: {
       parserOptions: {
-        project: ["./tsconfig.config.json", "./tsconfig.examples-node.json", "./tsconfig.browser-tests.json", "./packages/sdk/tsconfig.browser.json", "./packages/sdk/tsconfig.worker.json", "./packages/sdk/tsconfig.test.json", "./packages/sdk/tsconfig.worker-test.json", "./packages/sdk/tsconfig.node.json", "./packages/sdk/tsconfig.browser-tools.json", "./packages/sdk/tsconfig.preview-browser.json", "./packages/sdk/tsconfig.preview-worker.json", "./packages/sdk/tsconfig.preview-node.json", "./packages/sdk/tsconfig.preview-test.json", "./packages/sdk/tsconfig.runtime-host.json", "./packages/sdk/tsconfig.runtime-host-worker.json", "./packages/cli/tsconfig.json", "./examples/starter/tsconfig.json", "./examples/starter/tsconfig.node.json"],
+        project: ["./tsconfig.config.json", "./tsconfig.examples-node.json", "./tsconfig.browser-tests.json", "./packages/sdk/tsconfig.browser.json", "./packages/sdk/tsconfig.worker.json", "./packages/sdk/tsconfig.test.json", "./packages/sdk/tsconfig.worker-test.json", "./packages/sdk/tsconfig.node.json", "./packages/sdk/tsconfig.browser-tools.json", "./packages/sdk/tsconfig.preview-browser.json", "./packages/sdk/tsconfig.preview-worker.json", "./packages/sdk/tsconfig.preview-node.json", "./packages/sdk/tsconfig.preview-test.json", "./packages/sdk/tsconfig.runtime-host.json", "./packages/sdk/tsconfig.runtime-host-worker.json", "./packages/cli/tsconfig.json", "./packages/cli/tsconfig.test.json", "./examples/starter/tsconfig.json", "./examples/starter/tsconfig.node.json"],
         tsconfigRootDir: import.meta.dirname,
       },
     },

@@ -59,7 +59,7 @@ export default defineConfig({
   }],
   build: {
     outDir: "../../assets/runtime-host", emptyOutDir: true, sourcemap: false,
-    rollupOptions: {
+    rolldownOptions: {
       input: { index: fileURLToPath(new URL("./index.html", import.meta.url)), sw: fileURLToPath(new URL("./src/sw.ts", import.meta.url)) },
       output: { entryFileNames: chunk => chunk.name === "sw" ? "sw.js" : "assets/[name]-[hash].js" },
     },

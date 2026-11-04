@@ -53,6 +53,16 @@ export function rearmsWakeTimer(result: UserspaceRunResult["kind"]): boolean {
   return result === "blocked" || result === "exit";
 }
 
+/**
+ * An exit boundary reports the process that ended in the turn, not that nothing can run: the engine
+ * hands a resident loop's stored exit to the next preparation once, and a signal or input delivered
+ * before that preparation may already have made another process runnable. Such a process has no
+ * deadline, so only another preparation runs it; one with nothing to run answers `blocked`.
+ */
+export function preparesAgainAfter(result: UserspaceRunResult["kind"]): boolean {
+  return result === "exit";
+}
+
 export interface UserspaceTimerHost<Handle> {
   readonly set: (callback: () => void, delayMs: number) => Handle;
   readonly clear: (handle: Handle) => void;

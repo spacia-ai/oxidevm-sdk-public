@@ -1,5 +1,6 @@
 import { boolean, exactKeys, record, string } from "../decode.js";
 import { VMError } from "../errors.js";
+import { MODULE_ISOLATION_CAPABILITIES, type ModuleIsolationCapability } from "./module-isolation.js";
 
 /**
  * The module frame's bootstrap (engine ADR 0028), module frame bootstrap version 2. The opener (the application page, or
@@ -18,18 +19,6 @@ import { VMError } from "../errors.js";
 export const MODULE_FRAME_BOOTSTRAP_VERSION = 2;
 /** Spawn, start, stop and signal notices on the attached port and each process's channel. */
 export const MODULE_BROKER_VERSION = 1;
-
-/** Why modules cannot run in this browser (`FEATURE_NOT_AVAILABLE`, `reason: "wasm-module-isolation-unavailable"`). */
-export const MODULE_ISOLATION_CAPABILITIES = [
-  "frame-load", "frame-cross-origin-isolation", "separate-origin", "worker-shared-memory", "worker-atomics-wait",
-  "blob-workers", "wasm-compilation", "separate-agent-cluster", "module-frame-lost", "frame-policy",
-] as const;
-export type ModuleIsolationCapability = (typeof MODULE_ISOLATION_CAPABILITIES)[number];
-export const MODULE_ISOLATION_REASON = "wasm-module-isolation-unavailable";
-
-export function isolationUnavailable(capability: ModuleIsolationCapability, message: string): VMError {
-  return new VMError("FEATURE_NOT_AVAILABLE", message, { reason: MODULE_ISOLATION_REASON, capability });
-}
 
 function protocol(message: string): never { throw new VMError("PROTOCOL_ERROR", message); }
 

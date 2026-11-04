@@ -6,7 +6,7 @@ import { HttpParser, type HttpRequestHead, type HttpResponseHead } from "./http-
 const require = createRequire(import.meta.url);
 const bytes: unknown = require("undici/lib/llhttp/llhttp-wasm.js");
 if (!(bytes instanceof Uint8Array)) throw new TypeError("Invalid llhttp artifact bytes");
-if (createHash("sha256").update(bytes).digest("hex") !== "57184a16144b5bc880e29105fa35d75c93dd318563e1b743e110de845e2ab661") throw new Error("llhttp artifact identity drift");
+if (createHash("sha256").update(bytes).digest("hex") !== "ab4573a06c43574936dc98c3943b10a4ee32798e9797329e9f327e5f64115f54") throw new Error("llhttp artifact identity drift");
 const module = new WebAssembly.Module(new Uint8Array(bytes));
 
 it("parses fragmented chunked bodies, empty headers, trailers and pipelined requests", () => {

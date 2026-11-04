@@ -51,7 +51,7 @@ it("enforces pinned Node class signatures without prototype traps or native effe
     new Proxy(Object.create(instance), { getPrototypeOf: trap }),
     Object.create(new Proxy(instance, { getPrototypeOf: trap }))]) {
     invoke.mockClear();
-    expect(() => { Reflect.apply(first.method, receiver, []); }).toThrowError(new TypeError("Illegal invocation"));
+    expect(() => { Reflect.apply(first.method, receiver, []); }).toThrow(new TypeError("Illegal invocation"));
     expect(invoke).not.toHaveBeenCalled();
   }
   expect(trap).not.toHaveBeenCalled();
@@ -144,7 +144,7 @@ it("permits method construction without branding its result as a class instance"
     const instance: unknown = Reflect.construct(native.method, [], target);
     expect(invoke).toHaveBeenCalledTimes(1);
     invoke.mockClear();
-    expect(() => { Reflect.apply(native.method, instance, []); }).toThrowError(new TypeError("Illegal invocation"));
+    expect(() => { Reflect.apply(native.method, instance, []); }).toThrow(new TypeError("Illegal invocation"));
     expect(invoke).not.toHaveBeenCalled();
   }
 });

@@ -1,6 +1,6 @@
 {
   "name": "oxidevm-sdk-workspace",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
@@ -42,8 +42,8 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.65.0",
     "typescript-interceptor": "npm:typescript@6.0.2",
-    "vite": "7.3.6",
-    "vitest": "3.2.4",
+    "vite": "8.3.5",
+    "vitest": "5.1.0",
     "@oxidevm/cli": "workspace:*"
   }
 }

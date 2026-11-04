@@ -11,7 +11,8 @@ import { localWorkerProcess, isolatedWorkerProcess, type WorkerProcess } from ".
 import { writeWorkerMailbox } from "../../js-process/worker-mailbox.js";
 import { decodeLateFailure, decodeLateFailureNotice, encodeLateFailureReport, lateFailureOf, lateFailureSentence, type LateFailure, type LateFailureNotice } from "../../js-process/late-failure.js";
 import type { RunnerCommandLaunch, RunnerHostLaunch, RunnerLaunch, RunnerVerifiedFile } from "../../js-process/launch.js";
-import { isolationUnavailable, MODULE_BROKER_VERSION } from "../../protocol/module-frame.js";
+import { MODULE_BROKER_VERSION } from "../../protocol/module-frame.js";
+import { isolationUnavailable } from "../../protocol/module-isolation.js";
 import { copyKey, type CopyKey } from "../../protocol/userspace-module-files.js";
 import { parseLaunchArgument } from "../../../wasm/runner/descriptor.js";
 import { moduleReach, moduleReachCode } from "../../../wasm/reach.js";

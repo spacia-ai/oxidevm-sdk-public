@@ -145,7 +145,13 @@ export function initText(result: WasmInitResult): string {
 }
 
 export function testText(report: WasmTestReport): string {
+  const heading = `${report.module.id} ${report.module.version} (${report.module.kind}, release ${report.module.release.slice(0, 12)}) in ${report.browser.name} ${report.browser.version}\n`;
+  if (report.refusal !== undefined) {
+    const { refusal } = report;
+    const what = "capability" in refusal ? `capability ${refusal.capability}` : `missing ${refusal.missing.join(", ")}`;
+    return `${heading}REFUSED ${refusal.reason}, ${what}: ${refusal.message}\nNo property ran: this browser or image cannot run the module.\n`;
+  }
   const lines = report.properties.map(entry => `${entry.status === "passed" ? "ok    " : entry.status === "failed" ? "FAIL  " : "n/a   "}${entry.property}${entry.message === undefined ? "" : `: ${entry.message}`}`);
   const failed = report.properties.filter(entry => entry.status === "failed").length;
-  return `${report.module.id} ${report.module.version} (${report.module.kind}, release ${report.module.release.slice(0, 12)}) in ${report.browser.name} ${report.browser.version}\n${lines.join("\n")}\n${failed === 0 ? "All applicable properties passed." : `${String(failed)} propert${failed === 1 ? "y" : "ies"} failed.`}\n`;
+  return `${heading}${lines.join("\n")}\n${failed === 0 ? "All applicable properties passed." : `${String(failed)} propert${failed === 1 ? "y" : "ies"} failed.`}\n`;
 }

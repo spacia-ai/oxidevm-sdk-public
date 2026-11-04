@@ -1,6 +1,6 @@
 import type {SnapshotKind,SnapshotRef} from "./snapshots.js";
 import { VMError } from "../errors.js";
-export const NATIVE_LOGICAL_CHECKPOINT_VERSION = 99;
+export const NATIVE_LOGICAL_CHECKPOINT_VERSION = 100;
 export const NATIVE_CHECKPOINT_FRAME_BYTES = 65536;
 export function supportsNativeCheckpointVersion(version: number): boolean {
   return Number.isInteger(version) && version >= 1 && version <= NATIVE_LOGICAL_CHECKPOINT_VERSION;

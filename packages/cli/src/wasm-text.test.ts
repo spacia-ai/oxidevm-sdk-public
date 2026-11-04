@@ -1,6 +1,8 @@
-import type { ConsentCard } from "@oxidevm/sdk/image-builder";
+import { WASM_TEST_PROPERTIES, type ConsentCard } from "@oxidevm/sdk/image-builder";
 import { describe, expect, it } from "vitest";
 import { consentText, printable, testText, type ConsentView } from "./wasm-text.js";
+import { decodeCliReport } from "./report.js";
+import { reportExitCode } from "./run.js";
 
 const CARD: ConsentCard = {
   id: "tool", version: "1.0.0", source: "github:acme/tool@v1.0.0", release: "r".repeat(64), license: { spdx: "MIT", copyleft: false },
@@ -131,6 +133,32 @@ describe("the wasm test report", () => {
       ],
     });
     expect(text).toBe("kv 1.0.0 (service, release 0123456789ab) in chromium 140.0\nok    integrity\nn/a   exit-range: a service is stopped, not run to completion\nFAIL  eof-stop: it did not exit within 20 s of end of input and was killed\n1 property failed.\n");
+  });
+});
+
+describe("the wasm test outcomes and their exit statuses", () => {
+  const base = { schemaVersion: 1, module: { id: "tool", version: "1.0.0", kind: "command", release: "0123456789abcdef" }, sdkVersion: "0.0.13", engineRelease: "sha256:e", browser: { name: "webkit", version: "26.0" }, image: { manifestSHA256: "d" } } as const;
+  const all = (status: string, message?: string) => WASM_TEST_PROPERTIES.map(property => ({ property, status, elapsedMs: 0, ...(message === undefined ? {} : { message }) }));
+  const envelope = (result: unknown) => decodeCliReport({ schemaVersion: 3, kind: "result", command: "wasm test", result });
+
+  it("exits 0 when every applicable property passed", () => {
+    const report = envelope({ ...base, result: "passed", properties: all("passed") });
+    expect(reportExitCode(report)).toBe(0);
+  });
+
+  it("exits 3 when a property failed", () => {
+    const report = envelope({ ...base, result: "failed", properties: all("failed", "it broke") });
+    expect(reportExitCode(report)).toBe(3);
+  });
+
+  it("exits 4 and says why, with the reason and capability, when the browser refused the module", () => {
+    const refusal = { code: "FEATURE_NOT_AVAILABLE", reason: "wasm-module-isolation-unavailable", capability: "blob-workers", message: "Modules cannot run in this browser: it cannot start a worker from a blob: URL" };
+    const report = envelope({ ...base, result: "refused", refusal, properties: all("not-applicable", "not run: the browser refused the module (wasm-module-isolation-unavailable, blob-workers)") });
+    expect(reportExitCode(report)).toBe(4);
+    if (report.kind !== "result" || report.command !== "wasm test") throw new Error("not a wasm test report");
+    expect(testText(report.result)).toBe("tool 1.0.0 (command, release 0123456789ab) in webkit 26.0\nREFUSED wasm-module-isolation-unavailable, capability blob-workers: Modules cannot run in this browser: it cannot start a worker from a blob: URL\nNo property ran: this browser or image cannot run the module.\n");
+    const missing = { ...report.result, refusal: { code: "FEATURE_NOT_AVAILABLE", reason: "wasm-module-prerequisite", missing: ["browser feature jspi", "guest executable /usr/bin/python3"], message: "tool did not start" } } as const;
+    expect(testText(missing)).toContain("REFUSED wasm-module-prerequisite, missing browser feature jspi, guest executable /usr/bin/python3: tool did not start\n");
   });
 });
 

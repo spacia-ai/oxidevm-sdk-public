@@ -16,6 +16,6 @@ self.onmessage = async () => {
   self.postMessage('verified');
 };\n`);
     await expect(build({ configFile: false, root, logLevel: "silent", worker: { format: "iife" },
-      build: { write: false, minify: false, rollupOptions: { input: join(root, "entry.js") } } })).resolves.toBeDefined();
+      build: { write: false, minify: false, rolldownOptions: { input: join(root, "entry.js") } } })).resolves.toBeDefined();
   } finally { await rm(root, { recursive: true, force: true }); }
 });

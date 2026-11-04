@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isolationUnavailable } from "./runtime/protocol/module-frame.js";
+import { isolationUnavailable } from "./runtime/protocol/module-isolation.js";
 import type { ModuleFrameOpener } from "./module-execution.js";
 import { adaptVM, bindFrameOwner, ownedModuleCommands, ownedModules } from "./vm-adapter.js";
 import { record } from "./runtime/decode.js";

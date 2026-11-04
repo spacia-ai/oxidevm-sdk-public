@@ -11,7 +11,10 @@ const metadata: unknown = JSON.parse(readFileSync(join(compiler, "package.json")
 assert(typeof metadata === "object" && metadata !== null && "version" in metadata && metadata.version === "1.16.18");
 const parser: unknown = require("undici/lib/llhttp/llhttp-wasm.js");
 assert(Buffer.isBuffer(parser));
+// Vite 8 bundles with Rolldown, which, unlike Vite 7's CommonJS plugin, leaves Node's free `global` in CommonJS
+// dependencies (@babel/traverse's evaluator reads global[name]) as is; a worker has no `global`.
 const defines = {
+  global: "globalThis",
   NATIVE_COMPILER_WASM_BASE64: JSON.stringify(readFileSync(join(compiler, "wasm_bg.wasm")).toString("base64")),
   NATIVE_HTTP_PARSER_BASE64: JSON.stringify(parser.toString("base64")),
   ASSISTANCE_SYSTEM_SOURCE: JSON.stringify(readFileSync(require.resolve("systemjs/dist/s.min.js"), "utf8").replace(/^\/\/# sourceMappingURL=.*$/gmu, "")),

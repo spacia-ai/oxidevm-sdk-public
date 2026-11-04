@@ -1,7 +1,8 @@
 import { VMError } from "./errors.js";
 import { openExecutionFrame } from "./execution-frame.js";
 import type { ModuleFrameSources } from "../module-execution.js";
-import { decodeModuleFrameAnswer, isolationUnavailable, missingCapability, MODULE_FRAME_BOOTSTRAP_VERSION, type ModuleFrameProbe } from "./protocol/module-frame.js";
+import { decodeModuleFrameAnswer, missingCapability, MODULE_FRAME_BOOTSTRAP_VERSION, type ModuleFrameProbe } from "./protocol/module-frame.js";
+import { isolationUnavailable } from "./protocol/module-isolation.js";
 
 /**
  * Opens one module frame (engine ADR 0028): an `<iframe sandbox="allow-scripts" allow="cross-origin-isolated">` whose

@@ -162,7 +162,7 @@ function packageJson(id: string, kind: "command" | "service"): string {
   return `${JSON.stringify({
     name: id, private: true, license: "Apache-2.0", type: "module",
     scripts: { build: "oxidevm wasm build", check: "tsc --noEmit && tsc --noEmit -p test && eslint . --max-warnings 0 && oxidevm wasm build --check", release: "oxidevm wasm release", test: "vitest run", "test:conformance": conformance },
-    devDependencies: { "@eslint/js": "10.0.1", "@oxidevm/cli": version, "@oxidevm/sdk": version, "@types/node": "24.13.3", eslint: "10.7.0", playwright: TEMPLATE_PLAYWRIGHT, typescript: "6.0.3", "typescript-eslint": "8.65.0", vitest: "3.2.4" },
+    devDependencies: { "@eslint/js": "10.0.1", "@oxidevm/cli": version, "@oxidevm/sdk": version, "@types/node": "24.13.3", eslint: "10.7.0", playwright: TEMPLATE_PLAYWRIGHT, typescript: "6.0.3", "typescript-eslint": "8.65.0", vitest: "5.1.0" },
   }, null, 2)}\n`;
 }
 

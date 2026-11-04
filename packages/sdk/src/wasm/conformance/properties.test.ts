@@ -3,7 +3,7 @@ import type { ProcessExit, ProcessHandle } from "../../contracts.js";
 import { VMError } from "../../runtime/errors.js";
 import { decodeProcessId } from "../../values.js";
 import type { EndpointDecl } from "../manifest-types.js";
-import { runProperties, runnerDiagnostics, type ConformancePorts, type ConformanceSubject, type StartedModule } from "./properties.js";
+import { runProperties, runnerDiagnostics, type ConformanceOutcome, type ConformancePorts, type ConformanceSubject, type StartedModule } from "./properties.js";
 import { decodeWasmTestReport, WASM_TEST_PROPERTIES, type WasmPropertyResult, type WasmTestProperty } from "./report.js";
 
 const ENDPOINTS: Readonly<Record<string, EndpointDecl>> = { rpc: { kind: "unix", path: "/workspace/_oxidevm/kv.sock", protocol: "kv/1" }, tcp: { kind: "tcp", port: 5432, protocol: "kv/1" } };
@@ -20,6 +20,8 @@ interface FakeBehaviour {
   readonly duplicateAllowed?: boolean;
   readonly captureWhileRunning?: boolean;
   readonly refused?: readonly string[];
+  /** What the endpoint probe throws instead of answering. */
+  readonly probeError?: VMError;
 }
 
 class World {
@@ -69,13 +71,19 @@ class World {
       capture: () => this.running > 0 && !(this.behaviour.captureWhileRunning ?? false)
         ? Promise.reject(new VMError("FEATURE_NOT_AVAILABLE", "cannot capture a live JS process"))
         : Promise.resolve(),
-      probe: () => Promise.resolve(this.behaviour.refused ?? []),
+      probe: () => this.behaviour.probeError === undefined ? Promise.resolve(this.behaviour.refused ?? []) : Promise.reject(this.behaviour.probeError),
     };
   }
 }
 
+async function outcome(subject: ConformanceSubject, behaviour: FakeBehaviour): Promise<ConformanceOutcome> {
+  return runProperties(subject, new World(behaviour).ports(), { commandMs: 50 });
+}
+
 async function run(subject: ConformanceSubject, behaviour: FakeBehaviour): Promise<ReadonlyMap<WasmTestProperty, WasmPropertyResult>> {
-  const results = await runProperties(subject, new World(behaviour).ports(), { commandMs: 50 });
+  const completed = await outcome(subject, behaviour);
+  if (completed.kind !== "completed") throw new Error(`the run was refused: ${completed.refusal.message}`);
+  const results = completed.properties;
   expect(results.map(result => result.property)).toEqual(WASM_TEST_PROPERTIES);
   // Every outcome is a valid report entry.
   decodeWasmTestReport({ schemaVersion: 1, result: results.some(result => result.status === "failed") ? "failed" : "passed", module: { id: "m", version: "1", kind: subject.kind, release: "r" }, sdkVersion: "0", engineRelease: "e", browser: { name: "chromium", version: "1" }, image: { manifestSHA256: "a" }, properties: results });
@@ -92,14 +100,15 @@ const statuses = (results: ReadonlyMap<WasmTestProperty, WasmPropertyResult>): R
 
 describe("command modules", () => {
   it("pass integrity, exit-range and declared-host, and skip the service properties", async () => {
-    const results = await run(COMMAND, { genuine: () => ({ kind: "exited", code: 2 }) });
-    expect(statuses(results)).toEqual({ integrity: "passed", "exit-range": "passed", ready: "not-applicable", endpoints: "not-applicable", "duplicate-start": "not-applicable", "snapshot-refused": "not-applicable", "eof-stop": "not-applicable", restart: "not-applicable", "kill-recover": "not-applicable", "declared-host": "passed", "network-direct": "passed", "network-declared": "passed", "network-offline": "not-applicable" });
+    const results = await run(COMMAND, { genuine: () => ({ kind: "exited", code: 2 }), stderr: "tool: usage: tool <a> <b>\n" });
+    expect(statuses(results)).toEqual({ integrity: "passed", "exit-range": "passed", ready: "not-applicable", endpoints: "not-applicable", "duplicate-start": "not-applicable", "snapshot-refused": "not-applicable", "eof-stop": "not-applicable", restart: "not-applicable", "kill-recover": "not-applicable", "declared-host": "passed", "network-direct": "passed", "network-declared": "passed", "network-offline": "passed" });
   });
 
-  it("fail exit-range, and only exit-range, when main returns a status above 119", async () => {
+  it("fail exit-range and network-offline when main returns a status above 119 when main returns a status above 119", async () => {
     const results = await run(COMMAND, { genuine: () => ({ kind: "exited", code: 123 }), stderr: record({ oxidevm: "error", v: 1, kind: "adapter", fault: "exit-status", message: "tool: main must return an integer exit status from 0 to 119" }) });
     expectFailed(results, "exit-range", "exit-status fault");
-    expect([...results.values()].filter(result => result.status === "failed").map(result => result.property)).toEqual(["exit-range"]);
+    expectFailed(results, "network-offline", "exit status 123");
+    expect([...results.values()].filter(result => result.status === "failed").map(result => result.property)).toEqual(["exit-range", "network-offline"]);
   });
 
   it("fail declared-host, and only declared-host, when the adapter reaches for an undeclared capability", async () => {
@@ -107,6 +116,7 @@ describe("command modules", () => {
     const results = await run(COMMAND, { genuine: () => ({ kind: "exited", code: 123 }), stderr });
     expectFailed(results, "declared-host", "process.info, process.spawn");
     expect(results.get("exit-range")?.status).toBe("not-applicable");
+    expect(results.get("network-offline")?.status).toBe("not-applicable");
     expect([...results.values()].filter(result => result.status === "failed").map(result => result.property)).toEqual(["declared-host"]);
   });
 
@@ -129,7 +139,7 @@ describe("command modules", () => {
 describe("service modules", () => {
   it("pass every property when the service follows the runner contract", async () => {
     const results = await run(SERVICE, {});
-    expect(statuses(results)).toEqual({ integrity: "passed", "exit-range": "not-applicable", ready: "passed", endpoints: "passed", "duplicate-start": "passed", "snapshot-refused": "passed", "eof-stop": "passed", restart: "passed", "kill-recover": "passed", "declared-host": "passed", "network-direct": "passed", "network-declared": "passed", "network-offline": "not-applicable" });
+    expect(statuses(results)).toEqual({ integrity: "passed", "exit-range": "not-applicable", ready: "passed", endpoints: "passed", "duplicate-start": "passed", "snapshot-refused": "passed", "eof-stop": "passed", restart: "passed", "kill-recover": "passed", "declared-host": "passed", "network-direct": "passed", "network-declared": "passed", "network-offline": "passed" });
   });
 
   it("fail eof-stop, and only eof-stop, when the service ignores end of input", async () => {
@@ -204,9 +214,51 @@ describe("network properties", () => {
     expectFailed(await run(INTERNET, { genuine: () => "running" }), "network-offline", "did not end within its bound");
   });
 
+  // ISS-10: N-9 holds for every module, so a module without a reach is checked as well; the VM is local-only for it too.
+  it("network-offline applies to a module that declares no reach", async () => {
+    expect(statuses(await run(COMMAND, { genuine: () => ({ kind: "exited", code: 0 }) }))["network-offline"]).toBe("passed");
+    expect(statuses(await run(COMMAND, { genuine: () => ({ kind: "exited", code: 1 }), stderr: "tool: no input\n" }))["network-offline"]).toBe("passed");
+    expectFailed(await run(COMMAND, { genuine: () => ({ kind: "exited", code: 1 }) }), "network-offline", "without a line on standard error");
+    expectFailed(await run(COMMAND, { genuine: () => "running" }), "network-offline", "did not end within its bound");
+    expectFailed(await run(COMMAND, { genuine: () => new VMError("GUEST_CRASH", "tool did not start: adapter") }), "network-offline", "did not start");
+    expect(statuses(await run(SERVICE, {}))["network-offline"]).toBe("passed");
+    expectFailed(await run(SERVICE, { refused: ["rpc"] }), "network-offline", "stopped serving");
+    expectFailed(await run(SERVICE, { genuine: () => new VMError("GUEST_CRASH", "kv crashed") }), "network-offline", "did not become ready");
+  });
+
   it("network-offline passes a service that stays ready offline, and fails one that does not", async () => {
     expect(statuses(await run({ ...SERVICE, reach: "internet" }, {}))["network-offline"]).toBe("passed");
     expectFailed(await run({ ...SERVICE, reach: "internet" }, { refused: ["tcp"] }), "network-offline", "stopped serving");
     expectFailed(await run({ ...SERVICE, reach: "vm" }, { genuine: () => new VMError("GUEST_CRASH", "kv crashed") }), "network-offline", "did not become ready");
+  });
+});
+
+// A browser or image that cannot run the module at all refuses the run: no property passes or fails (wasm test exits 4).
+describe("refused runs", () => {
+  const isolation = (capability: string): VMError => new VMError("FEATURE_NOT_AVAILABLE", `Modules cannot run in this browser: ${capability} is unavailable`, { reason: "wasm-module-isolation-unavailable", capability });
+  const missing = new VMError("FEATURE_NOT_AVAILABLE", "tool did not start: Missing: browser feature jspi", { reason: "wasm-module-prerequisite", status: 122, missing: ["browser feature jspi"] });
+
+  it("refuses with the capability when the browser cannot isolate module workers, instead of failing integrity and exit-range", async () => {
+    expect(await outcome(COMMAND, { tampered: isolation("blob-workers"), genuine: () => isolation("blob-workers") })).toEqual({
+      kind: "refused", refusal: { code: "FEATURE_NOT_AVAILABLE", reason: "wasm-module-isolation-unavailable", capability: "blob-workers", message: "Modules cannot run in this browser: blob-workers is unavailable" },
+    });
+  });
+
+  it("refuses a service whose module frame is lost on a later start, and one whose endpoint probe is refused", async () => {
+    expect(await outcome(SERVICE, { genuine: attempt => attempt === 3 ? isolation("module-frame-lost") : "running" })).toMatchObject({ kind: "refused", refusal: { capability: "module-frame-lost" } });
+    expect(await outcome(SERVICE, { probeError: isolation("frame-policy") })).toMatchObject({ kind: "refused", refusal: { capability: "frame-policy" } });
+  });
+
+  it("refuses with what is missing when the browser or image lacks a declared prerequisite", async () => {
+    expect(await outcome(COMMAND, { genuine: () => missing })).toEqual({
+      kind: "refused", refusal: { code: "FEATURE_NOT_AVAILABLE", reason: "wasm-module-prerequisite", missing: ["browser feature jspi"], message: "tool did not start: Missing: browser feature jspi" },
+    });
+    expect(await outcome({ ...SERVICE, reach: "internet" }, { genuine: () => missing })).toMatchObject({ kind: "refused", refusal: { reason: "wasm-module-prerequisite" } });
+  });
+
+  it("still fails, not refuses, for an error outside the closed refusal set", async () => {
+    expectFailed(await run(COMMAND, { tampered: isolation("telepathy"), genuine: () => ({ kind: "exited", code: 0 }) }), "integrity", "FEATURE_NOT_AVAILABLE");
+    expectFailed(await run(COMMAND, { genuine: () => new VMError("FEATURE_NOT_AVAILABLE", "tool did not start", { reason: "wasm-artifact-sync-read" }) }), "exit-range", "did not start");
+    expect(statuses(await run(SERVICE, {}))["snapshot-refused"]).toBe("passed");
   });
 });

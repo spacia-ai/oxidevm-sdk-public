@@ -55,7 +55,7 @@ export { decodeWasmAddResult, decodeWasmDoctorReport, decodeWasmInspectResult, d
 export { testModule } from "./modules/test-module.js";
 export type { ModuleTestOptions } from "./modules/test-module.js";
 export { decodeWasmTestReport, WASM_TEST_PROPERTIES } from "../wasm/conformance/report.js";
-export type { WasmPropertyResult, WasmPropertyStatus, WasmTestProperty, WasmTestReport } from "../wasm/conformance/report.js";
+export type { WasmPropertyResult, WasmPropertyStatus, WasmTestProperty, WasmTestRefusal, WasmTestReport } from "../wasm/conformance/report.js";
 export type { AddConsent, WasmAddResult, WasmInspectResult, WasmStageResult } from "./modules/reports.js";
 export { buildModule, DEFAULT_MODULE_FILE, DEFAULT_OUTPUT_DIRECTORY, MAX_ADAPTER_BYTES } from "./modules/author/build.js";
 export type { BuildOptions as WasmBuildOptions, BuildResult as WasmBuildResult } from "./modules/author/build.js";

@@ -28,7 +28,8 @@ export const wasmHelp = `
     Runs the runner-contract properties against the built module (dist/ by default) in a real browser: integrity, exit
     status, readiness, endpoints, duplicate start, snapshots, stop on end of input, restart, recovery after a kill,
     declared capabilities, and the network standard (no direct browser network, nothing beyond the reach, offline). Uses
-    the public starter image unless --image names another. Exits 3 when a property fails.
+    the public starter image unless --image names another. Exits 3 when a property fails, and 4 when the browser or image
+    refuses the module (no isolated module workers, or a missing prerequisite), so no property ran.
   wasm release [--project <directory>] [--out <directory>] [--module <file>] [--repo <owner/name>]
     Builds, then prints the steps that publish the build as a GitHub release: tag, draft, verify, publish. It runs none of them.
 

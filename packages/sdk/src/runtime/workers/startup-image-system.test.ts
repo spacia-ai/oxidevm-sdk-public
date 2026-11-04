@@ -59,7 +59,7 @@ it("does not scan a retained system base at startup and verifies each used chunk
     } finally {prepared.disk.close();}
     await writeOpfsFile(f.images,`${f.stem}.pack`,new Uint8Array(8192));
     const damaged=await prepareManagedDisk(storage,f.url.href,f.trusted,"live",()=>{}, {cachedOnly:true,manifestSHA256:await sha256Hex(new TextEncoder().encode(f.text))});
-    try {expect(()=>damaged.disk.read(0,new Uint8Array(1))).toThrowError("Cached image chunk is damaged");}
+    try {expect(()=>damaged.disk.read(0,new Uint8Array(1))).toThrow("Cached image chunk is damaged");}
     finally {damaged.disk.close();}
     expect(fetcher).not.toHaveBeenCalled();
   } finally {reading.mockRestore();fetcher.mockRestore();}

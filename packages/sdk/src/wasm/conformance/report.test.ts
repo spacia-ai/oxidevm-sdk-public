@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { decodeWasmPropertyResult, decodeWasmTestReport, MAX_MESSAGE_LENGTH, WASM_TEST_PROPERTIES } from "./report.js";
+import { MODULE_EXIT_REASONS } from "../exit-codes.js";
+import { decodeWasmPropertyResult, decodeWasmTestReport, MAX_MESSAGE_LENGTH, PREREQUISITE_REASON, refusedProperties, WASM_TEST_PROPERTIES } from "./report.js";
 
 const passedAll = WASM_TEST_PROPERTIES.map(property => ({ property, status: "passed", elapsedMs: 1 }));
 const report = (overrides: Readonly<Record<string, unknown>> = {}): Readonly<Record<string, unknown>> => ({
@@ -24,5 +25,26 @@ describe("wasm test reports", () => {
     expect(() => decodeWasmPropertyResult({ property: "ready", status: "failed", elapsedMs: 1 })).toThrow("needs a message");
     expect(() => decodeWasmPropertyResult({ property: "ready", status: "failed", message: "x".repeat(MAX_MESSAGE_LENGTH + 1), elapsedMs: 1 })).toThrow("longer than");
     expect(decodeWasmPropertyResult({ property: "ready", status: "not-applicable", message: "a command", elapsedMs: 0 })).toEqual({ property: "ready", status: "not-applicable", message: "a command", elapsedMs: 0 });
+  });
+
+  it("decodes a refused report: the closed reason, its capability or what is missing, and every property not run", () => {
+    const refusal = { code: "FEATURE_NOT_AVAILABLE", reason: "wasm-module-isolation-unavailable", capability: "blob-workers", message: "Modules cannot run in this browser" } as const;
+    const refused = report({ result: "refused", refusal, properties: refusedProperties(refusal) });
+    expect(decodeWasmTestReport(refused)).toMatchObject({ result: "refused", refusal });
+    expect(refusedProperties(refusal).every(entry => entry.status === "not-applicable" && entry.message === "not run: the browser refused the module (wasm-module-isolation-unavailable, blob-workers)")).toBe(true);
+    expect(PREREQUISITE_REASON).toBe(MODULE_EXIT_REASONS.prerequisite);
+    const missing = { code: "FEATURE_NOT_AVAILABLE", reason: "wasm-module-prerequisite", missing: ["browser feature jspi"], message: "tool did not start" } as const;
+    expect(decodeWasmTestReport(report({ result: "refused", refusal: missing, properties: refusedProperties(missing) })).refusal).toEqual(missing);
+  });
+
+  it("keeps passed and failed reports as they were, and rejects a refusal that disagrees with the report", () => {
+    const refusal = { code: "FEATURE_NOT_AVAILABLE", reason: "wasm-module-isolation-unavailable", capability: "blob-workers", message: "x" };
+    expect(Object.keys(decodeWasmTestReport(report()))).not.toContain("refusal");
+    expect(() => decodeWasmTestReport(report({ refusal }))).toThrow("only a refused report");
+    expect(() => decodeWasmTestReport(report({ result: "refused", properties: passedAll }))).toThrow("needs its refusal");
+    expect(() => decodeWasmTestReport(report({ result: "refused", refusal }))).toThrow("ran no property");
+    expect(() => decodeWasmTestReport(report({ result: "refused", refusal: { ...refusal, capability: "telepathy" }, properties: passedAll }))).toThrow("capability must be one of");
+    expect(() => decodeWasmTestReport(report({ result: "refused", refusal: { ...refusal, reason: "wasm-module-busy" }, properties: passedAll }))).toThrow("reason must be one of");
+    expect(() => decodeWasmTestReport(report({ result: "refused", refusal: { ...refusal, missing: [] }, properties: passedAll }))).toThrow("unexpected protocol field missing");
   });
 });
