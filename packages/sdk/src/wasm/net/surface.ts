@@ -8,7 +8,7 @@ import { createFetch } from "./fetch.js";
 import { ConnectionPool } from "./pool.js";
 import type { NetPorts } from "./ports.js";
 import { resolve, resolveSync } from "./resolver.js";
-import { dial, dialSync, engineTls, type ByteStream, type TlsLayer } from "./streams.js";
+import { dial, dialSync, dialUnixSync, engineTls, type ByteStream, type TlsLayer } from "./streams.js";
 import { decodeTrust } from "./tls-trust.js";
 import { createWebSocket } from "./websocket.js";
 
@@ -67,6 +67,16 @@ function reporting(ports: NetPorts, refused: ((destination: ReachRefusal) => voi
 }
 
 const READ_BYTES = 64 * 1024;
+/** sun_path holds 108 bytes, the terminating NUL included. */
+const MAX_UNIX_PATH_BYTES = 107;
+
+/** A filesystem Unix socket path: non-empty, without NUL, at most 107 bytes. Abstract names are not admitted. */
+function unixPath(path: unknown): string {
+  if (typeof path !== "string" || path === "" || path.includes("\0") || new TextEncoder().encode(path).byteLength > MAX_UNIX_PATH_BYTES) {
+    throw new VMError("INVALID_ARGUMENT", `a Unix socket path must be 1 to ${String(MAX_UNIX_PATH_BYTES)} bytes without NUL`, { reason: "net-unix-path" });
+  }
+  return path;
+}
 
 function connection(stream: ByteStream): NetConnection {
   return {
@@ -124,6 +134,7 @@ export function createModuleNetwork(inputs: ModuleNetworkInputs): ModuleNetwork 
     connect: async (options: NetConnectOptions) => connection(await dial(ports.sockets, reach, tls, { ...connectOptions(options), signal: options.signal === undefined ? signal : AbortSignal.any([options.signal, signal]) })),
     resolveSync: (name: string) => resolveSync(ports.sync, reach, name),
     connectSync: (options: Omit<NetConnectOptions, "signal">) => syncConnection(dialSync(ports.sync, reach, tls, connectOptions(options))),
+    connectUnixSync: (path: string) => syncConnection(dialUnixSync(ports.sync, unixPath(path))),
     tls: (options: NetTlsOptions) => tls.session(options.serverName, options.alpn ?? [], decodeTrust(options.trust)),
   });
   return {

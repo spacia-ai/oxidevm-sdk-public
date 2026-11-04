@@ -332,6 +332,26 @@ engine:pin` refuses a schema 3 release.
   `FEATURE_NOT_AVAILABLE` with reason `native-bridge-signal-listener` until the
   image is rebuilt.
 
+## Module host operations for WASI adapters
+
+Manifests may declare four new `requires.host` capabilities, all needing
+Userspace API 147: `files.at` (`host.at`), `clock` (`host.clock`), `random`
+(`host.random`) and `process.sync` (`infoSync`, `spawnSync`, `waitSync`,
+`signalSync` and `runSync` on `host.process`). `host.net` gains
+`connectUnixSync(path)`, and `NetErrorCode` gains `ENOENT`, which a Unix socket
+path that names nothing reports. The public types are `LinuxAtFiles`,
+`LinuxDirent`, `LinuxNanoTime`, `LinuxPollRequest`, `LinuxPollReady`,
+`ClockHost`, `LinuxClock`, `RandomHost`, `ProcessSync`, `NativeSyncChildSpec`,
+`NativeSyncRunSpec` and `NativeSyncRunResult` from `@oxidevm/sdk/js-process`.
+A manifest that declares `process.sync` lists "programs it starts follow the
+VM's own network policy" on its consent card, as `process.spawn` does. Nothing
+changes for a manifest that declares none of them.
+
+`host.kit.wasi` runs `wasm32-wasip1` programs over these capabilities (`run`,
+`compile`, `readProgram`, `admitShape`, `admit`, `AdmissionError`, `limits`,
+`rootPreopen`), and the `oxidevm-bridge` Rust crate (`crates/oxidevm-bridge`)
+calls its `oxidevm_bridge_v1` imports. Both are additive.
+
 ## Module conformance outcomes
 
 - **`network-offline` for every module.** `oxidevm wasm test` now checks

@@ -186,3 +186,29 @@ describe("testHost synchronous artifacts", () => {
     expect(await testHost(reader, { artifacts: { "lib.zip": new TextEncoder().encode("PK-data") } }).run()).toMatchObject({ status: 0, stderr: "7 PK-data\n" });
   });
 });
+
+describe("testHost WASI host operations (Userspace API 147)", () => {
+  const encoder = new TextEncoder(), decoder = new TextDecoder();
+  const wasi = defineModule({
+    manifest: { id: "wasi", version: "0.1.0", abi: "raw", artifacts: [], process: { kind: "command" }, requires: { host: ["files.at", "clock", "random", "process.sync", "net.vm"] }, license: { spdx: "MIT" } },
+    adapter: host => ({
+      main: () => {
+        const { at } = host, dir = at.openat(at.cwd, "/workspace", 0o200000, 0);
+        const fd = at.openat(dir, "out.txt", 0o1 | 0o100, 0o644);
+        at.pwrite(fd, encoder.encode(`t=${String(host.clock.now("monotonic") > 0n)}`), 0n);
+        const bytes = new Uint8Array(4); host.random.fill(bytes);
+        const names = at.getdents(dir, 4096).map(entry => decoder.decode(entry.name));
+        const connection = host.net.connectUnixSync("/run/echo.sock");
+        connection.write(encoder.encode("unix")); const echoed = decoder.decode(connection.read(16)); connection.close();
+        host.log(`${names.join(",")} ${String(bytes.length)} ${echoed} pid=${String(host.process.infoSync().pid)}`);
+        return 0;
+      },
+    }),
+  });
+
+  it("gives an adapter host.at over the run's files, deterministic clocks and random, infoSync and Unix sockets", async () => {
+    const run = await testHost(wasi, { files: { "/workspace/in.txt": "x" }, net: { unix: { "/run/echo.sock": { data: (connection, bytes) => { connection.write(bytes); } } } } }).run();
+    expect(run).toMatchObject({ status: 0, stderr: ".,..,in.txt,out.txt 4 unix pid=42\n" });
+    expect(decoder.decode(run.files["/workspace/out.txt"])).toBe("t=true");
+  });
+});

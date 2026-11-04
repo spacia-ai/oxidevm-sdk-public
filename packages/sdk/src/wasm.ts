@@ -8,7 +8,7 @@ export type {
   ResolvedOptions, ServiceHooks, Stdio, Terminals,
 } from "./wasm/define.js";
 export { kit } from "./wasm/kit/index.js";
-export type { AtomicDirectory, BlockingIo, EmscriptenNetwork, Gate, Kit, NativeRunHost, NativeRunRequest, NativeRunResult } from "./wasm/kit/index.js";
+export type { AtomicDirectory, BlockingIo, EmscriptenNetwork, Gate, Kit, NativeRunHost, NativeRunRequest, NativeRunResult, Preopen, WasiHost, WasiIO, WasiRunHost, WasiRunOptions } from "./wasm/kit/index.js";
 export { NetError } from "./wasm/net/errors.js";
 export type { NetErrorCode, NetErrorReason } from "./wasm/net/errors.js";
 export { TlsError } from "./wasm/net/tls.js";

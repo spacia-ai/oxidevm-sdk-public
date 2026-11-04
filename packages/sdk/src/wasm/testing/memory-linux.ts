@@ -1,5 +1,6 @@
-import type { FileDescriptor, LinuxFiles, LinuxFileStat, LinuxProcesses, LinuxSockets, LinuxSocketAddress, LinuxSyncFiles } from "../../js-process-types.js";
+import type { ClockHost, FileDescriptor, LinuxFiles, LinuxFileStat, LinuxPath, LinuxProcessInfo, LinuxProcesses, LinuxSockets, LinuxSocketAddress, LinuxSyncFiles, ProcessSync, RandomHost, SeekOrigin } from "../../js-process-types.js";
 import { LinuxError, descriptor } from "../../runtime/js-process/codec.js";
+import { MemoryTree, memoryAtFiles, writeAt, type MemoryFile, type TreeHandle } from "./memory-files.js";
 import { VMError } from "../../runtime/errors.js";
 import { decodeProcessId } from "../../values.js";
 import type { LinuxParts } from "../runner/host.js";
@@ -11,6 +12,16 @@ export class Channel {
   readonly #waiting: (() => void)[] = [];
   #ended = false;
   push(bytes: Uint8Array): void { this.#chunks.push(bytes); this.#wake(); }
+  /** Whether a read would return now: bytes are waiting or the stream has ended. */
+  get ready(): boolean { return this.#chunks.length > 0 || this.#ended; }
+  /** What a read finds now without waiting: bytes, end of file (empty), or null when it would wait. */
+  readNow(count: number): Uint8Array | null {
+    const next = this.#chunks[0];
+    if (next === undefined) return this.#ended ? new Uint8Array() : null;
+    if (next.length <= count) { this.#chunks.shift(); return next; }
+    this.#chunks[0] = next.subarray(count);
+    return next.subarray(0, count);
+  }
   end(): void { this.#ended = true; this.#wake(); }
   #wake(): void { for (const wake of this.#waiting.splice(0)) wake(); }
   async read(count: number, signal?: AbortSignal): Promise<Uint8Array> {
@@ -45,12 +56,18 @@ type Handle =
   | { readonly kind: "output"; readonly lines: string[]; readonly bytes: Uint8Array[] }
   | { readonly kind: "socket"; readonly receive: Channel; readonly send: Channel }
   | { readonly kind: "listener"; readonly key?: string; readonly incoming: Channel; readonly queue: FileDescriptor[] }
-  | { readonly kind: "unbound" };
+  | { readonly kind: "unbound" }
+  | TreeHandle;
 
+const O_ACCMODE = 3, O_WRONLY = 1, O_RDWR = 2, O_APPEND = 0o2000, O_NONBLOCK = 0o4000, POLLIN = 1, POLLOUT = 4;
 const text = (path: string | Uint8Array): string => typeof path === "string" ? path : new TextDecoder().decode(path);
 /** An operation the in-memory Linux does not model: ENOSYS, as Linux answers a call it lacks. */
 const unmodelled = (): never => { throw new LinuxError(38); };
 const STAT: LinuxFileStat = { device: 0n, inode: 1n, links: 1n, mode: 0o100755, uid: 0, gid: 0, size: 0n, accessedNs: 0n, modifiedNs: 0n, changedNs: 0n };
+/** The standard streams are pipes: S_IFIFO with owner read and write. */
+const STREAM_STAT: LinuxFileStat = { ...STAT, mode: 0o010600, uid: 1000, gid: 1000 };
+/** The fake's clocks: realtime starts at 2026-01-01T00:00:00Z, monotonic at 1 s, and every reading moves both on by 1 ms. */
+export const FAKE_CLOCK = { realtimeStartNs: 1_767_225_600_000_000_000n, monotonicStartNs: 1_000_000_000n, stepNs: 1_000_000n, resolutionNs: 1n } as const;
 
 export interface FakeLinuxConfig {
   /** `info().args`: the launch descriptor first, then the command's own arguments. */
@@ -76,6 +93,11 @@ export interface FakeLinuxConfig {
    * client connect, a Unix socket included, is refused with EACCES. Unrestricted when omitted.
    */
   readonly reach?: ModuleReach;
+  /**
+   * The seed of `random.fill`. The fake's entropy is NOT random: the same seed always gives the same bytes (a xorshift32
+   * stream), so tests are reproducible. Never use it for anything secret.
+   */
+  readonly randomSeed?: number;
 }
 
 export interface FakeLinux extends LinuxParts {
@@ -102,8 +124,12 @@ export interface FakeLinux extends LinuxParts {
   readonly operations: string[];
   /** Endpoints currently listening. */
   listening(): readonly string[];
-  /** Descriptors open right now (listeners, connections). */
+  /** Descriptors open right now (listeners, connections, files and directories). */
   readonly open: ReadonlySet<FileDescriptor>;
+  /** Symbolic links created through `host.at`, by path, with the target bytes they store. */
+  readonly symlinks: ReadonlyMap<string, Uint8Array>;
+  /** Moves the fake's clocks on by `ns` nanoseconds without a reading. */
+  advanceClock(ns: bigint): void;
 }
 
 /** An in-memory Linux process: enough sockets, pipes and files to drive the runner without an engine. */
@@ -119,10 +145,13 @@ export function fakeLinux(config: FakeLinuxConfig): FakeLinux {
   /** Regular files from `paths` that were unlinked. */
   const removedFiles = new Set<string>();
   /** Files and directories created through the file API. */
-  const written = new Map<string, { bytes: Uint8Array; mode: number; inode: bigint }>();
+  const written = new Map<string, MemoryFile>();
   const directories = new Set<string>(["/", "/workspace", "/tmp"]);
   const operations: string[] = [];
-  for (const [path, file] of Object.entries(config.existingFiles ?? {})) written.set(path, { bytes: Uint8Array.from(file.bytes), mode: file.mode, inode: nextInode++ });
+  let clock = 0n;
+  const realtime = (): bigint => FAKE_CLOCK.realtimeStartNs + clock;
+  const created = (bytes: Uint8Array, mode: number): MemoryFile => ({ bytes: Uint8Array.from(bytes), mode, inode: nextInode++, accessedNs: realtime(), modifiedNs: realtime(), changedNs: realtime() });
+  for (const [path, file] of Object.entries(config.existingFiles ?? {})) written.set(path, created(file.bytes, file.mode));
   const acceptFailures = [...config.acceptFailures ?? []];
   const bound = new Map<string, FileDescriptor>();
   const occupied = new Set(config.occupied ?? []);
@@ -140,18 +169,97 @@ export function fakeLinux(config: FakeLinuxConfig): FakeLinux {
     return found;
   };
 
+  /** Status flags of the descriptors the tree does not own; the standard streams start O_RDONLY and O_WRONLY. */
+  const streamFlags = new Map<number, number>([[0, 0], [1, 1], [2, 1]]);
+  const tree = new MemoryTree(written, directories, {
+    cwd: config.cwd ?? "/", operations, unlinked,
+    handle: fd => { const item = table.get(fd); return item?.kind === "file" || item?.kind === "directory" ? item : undefined; },
+    isOpen: fd => table.has(fd),
+    open: item => { const fd = descriptor(next++); table.set(fd, item); return fd; },
+    streamReadiness: (fd, events) => {
+      const item = table.get(fd);
+      if (item === undefined) return undefined;
+      const input = item.kind === "stdin" ? item.input : item.kind === "socket" ? item.receive : undefined;
+      return ((events & POLLIN) !== 0 && input?.ready === true ? POLLIN : 0) | ((events & POLLOUT) !== 0 && (item.kind === "output" || item.kind === "socket") ? POLLOUT : 0);
+    },
+    streamFlags: fd => table.has(fd) ? { get: () => streamFlags.get(fd) ?? O_RDWR, set: flags => { streamFlags.set(fd, flags); } } : undefined,
+    now: realtime,
+    advance: ms => { clock += BigInt(ms) * 1_000_000n; },
+    known: path => removedFiles.has(path) ? undefined : config.paths?.[path],
+  }, () => nextInode++);
+  const at = memoryAtFiles(tree);
+
+  const readFrom = (item: TreeHandle & { readonly kind: "file" }, count: number): Uint8Array => {
+    if ((item.flags & O_ACCMODE) === O_WRONLY) throw new LinuxError(9);
+    const start = Number(item.offset), bytes = item.file.bytes.slice(start, start + count);
+    item.offset += BigInt(bytes.length);
+    return bytes;
+  };
   const read = async (fd: FileDescriptor, count: number, options?: { readonly signal?: AbortSignal }): Promise<Uint8Array> => {
     const item = handle(fd);
     if (item.kind === "stdin") return item.input.read(count, options?.signal);
     if (item.kind === "socket") return item.receive.read(count, options?.signal);
-    throw new LinuxError(22);
+    if (item.kind === "file") return readFrom(item, count);
+    throw new LinuxError(item.kind === "directory" ? 21 : 22);
   };
-  const writeAll = (fd: FileDescriptor, bytes: Uint8Array, options?: { readonly noSignal?: boolean }): void => {
+  /** A read that cannot wait: what has arrived, EAGAIN for O_NONBLOCK, or a typed refusal instead of hanging the test. */
+  const readSync = (fd: FileDescriptor, count: number): Uint8Array => {
     const item = handle(fd);
-    if (item.kind === "output") { item.bytes.push(Uint8Array.from(bytes)); item.lines.push(...decoder.decode(bytes).split("\n").filter(line => line !== "")); return; }
-    if (item.kind === "socket") { socketWrites.push({ noSignal: options?.noSignal === true }); item.send.push(Uint8Array.from(bytes)); return; }
-    throw new LinuxError(22);
+    if (item.kind === "file") return readFrom(item, count);
+    const input = item.kind === "stdin" ? item.input : item.kind === "socket" ? item.receive : undefined;
+    if (input === undefined) throw new LinuxError(item.kind === "directory" ? 21 : 22);
+    const bytes = input.readNow(count);
+    if (bytes !== null) return bytes;
+    if (((streamFlags.get(fd) ?? 0) & O_NONBLOCK) !== 0) throw new LinuxError(11);
+    throw new VMError("FEATURE_NOT_AVAILABLE", "testHost: a blocking read with nothing to read would wait forever (supply stdin, or end it)", { reason: "testhost-blocked-read" });
   };
+  /** One write: all of `bytes`, to an output, a socket or a file (at its offset, or its end with O_APPEND). */
+  const write = (fd: FileDescriptor, bytes: Uint8Array, options?: { readonly noSignal?: boolean }): number => {
+    const item = handle(fd);
+    if (item.kind === "output") { item.bytes.push(Uint8Array.from(bytes)); item.lines.push(...decoder.decode(bytes).split("\n").filter(line => line !== "")); return bytes.length; }
+    if (item.kind === "socket") { socketWrites.push({ noSignal: options?.noSignal === true }); item.send.push(Uint8Array.from(bytes)); return bytes.length; }
+    if (item.kind === "file") {
+      if ((item.flags & O_ACCMODE) === 0) throw new LinuxError(9);
+      const offset = (item.flags & O_APPEND) !== 0 ? item.file.bytes.length : Number(item.offset);
+      writeAt(item, bytes, offset, realtime()); item.offset = BigInt(offset + bytes.length);
+      return bytes.length;
+    }
+    throw new LinuxError(item.kind === "stdin" ? 9 : item.kind === "directory" ? 21 : 22);
+  };
+  const writeAll = (fd: FileDescriptor, bytes: Uint8Array, options?: { readonly noSignal?: boolean }): void => { write(fd, bytes, options); };
+  const seek = (fd: FileDescriptor, offset: bigint, origin: SeekOrigin = "start"): bigint => {
+    const item = handle(fd);
+    if (item.kind !== "file" && item.kind !== "directory") throw new LinuxError(29);
+    const base = origin === "start" ? 0n : origin === "current" ? item.offset : item.kind === "file" ? BigInt(item.file.bytes.length) : 0n;
+    if (item.kind === "directory" && origin === "end") throw new LinuxError(22);
+    const position = base + offset;
+    if (position < 0n) throw new LinuxError(22);
+    item.offset = position;
+    return position;
+  };
+  const fstat = (fd: FileDescriptor): LinuxFileStat => {
+    const item = handle(fd);
+    if (item.kind === "file") return tree.stat(item.path, { kind: "file", file: item.file });
+    if (item.kind === "directory") return tree.stat(item.path, { kind: "directory" });
+    if (item.kind === "stdin" || item.kind === "output") return STREAM_STAT;
+    return { ...STREAM_STAT, mode: 0o140777 };
+  };
+  const syncFlush = (fd: FileDescriptor): void => { const item = handle(fd); if (item.kind !== "file" && item.kind !== "directory") throw new LinuxError(22); };
+  const openPath = (path: LinuxPath, flags = 0, mode = 0o666): FileDescriptor => at.openat(at.cwd, path, flags, mode);
+  const info = (): LinuxProcessInfo => ({ pid: decodeProcessId(42), parentPid: null, uid: 1000, gid: 1000, cwd: config.cwd ?? "/", args: config.args, environment: config.environment ?? [], terminal: null });
+  /** xorshift32: deterministic test bytes, never entropy. */
+  let seed = (config.randomSeed ?? 0x9e37_79b9) >>> 0 || 1;
+  const random: RandomHost = Object.freeze({
+    fill: (bytes: Uint8Array) => {
+      for (let index = 0; index < bytes.length; index++) { seed ^= seed << 13; seed >>>= 0; seed ^= seed >>> 17; seed ^= seed << 5; seed >>>= 0; bytes[index] = seed & 0xff; }
+    },
+  });
+  const reading = (start: bigint): bigint => { const value = start + clock; clock += FAKE_CLOCK.stepNs; return value; };
+  const clockHost: ClockHost = Object.freeze({
+    now: (which: "realtime" | "monotonic") => reading(which === "realtime" ? FAKE_CLOCK.realtimeStartNs : FAKE_CLOCK.monotonicStartNs),
+    resolution: () => FAKE_CLOCK.resolutionNs,
+  });
+  const processSync: ProcessSync = Object.freeze({ infoSync: info, spawnSync: unmodelled, waitSync: unmodelled, signalSync: unmodelled, runSync: unmodelled });
   const close = (fd: FileDescriptor): void => {
     const item = handle(fd);
     closed.push(fd);
@@ -162,7 +270,9 @@ export function fakeLinux(config: FakeLinuxConfig): FakeLinux {
   const key = (address: LinuxSocketAddress): string => address.family === "unix" ? `unix:${address.path}` : `tcp:${String(address.port)}`;
 
   const files: LinuxFiles = {
-    open: unmodelled, read, write: unmodelled, seek: unmodelled,
+    open: (path, flags, mode) => Promise.resolve().then(() => openPath(path, flags, mode)), read,
+    write: (fd, bytes, options) => Promise.resolve().then(() => write(fd, bytes, options)),
+    seek: (fd, offset, origin) => Promise.resolve().then(() => seek(fd, offset, origin)),
     close: fd => { close(fd); return Promise.resolve(); },
     dup: unmodelled, pipe: unmodelled,
     stat: path => { const mode = config.paths?.[text(path)]; return mode === undefined ? Promise.reject(new LinuxError(2)) : Promise.resolve({ ...STAT, mode }); },
@@ -175,7 +285,7 @@ export function fakeLinux(config: FakeLinuxConfig): FakeLinux {
       const mode = removedFiles.has(name) ? undefined : config.paths?.[name];
       return mode === undefined ? Promise.reject(new LinuxError(2)) : Promise.resolve({ ...STAT, mode });
     },
-    fstat: unmodelled, readdir: unmodelled, realpath: unmodelled,
+    fstat: fd => Promise.resolve().then(() => fstat(fd)), readdir: unmodelled, realpath: unmodelled,
     mkdir: path => {
       const name = text(path);
       if (directories.has(name) || written.has(name)) return Promise.reject(new LinuxError(17));
@@ -198,7 +308,7 @@ export function fakeLinux(config: FakeLinuxConfig): FakeLinux {
       if (config.paths?.[name] !== undefined && !removedFiles.has(name)) { removedFiles.add(name); unlinked.push(name); return Promise.resolve(); }
       return Promise.reject(new LinuxError(2));
     },
-    fsync: unmodelled,
+    fsync: fd => Promise.resolve().then(() => { syncFlush(fd); }),
     chmod: (path, mode) => {
       const name = text(path), file = written.get(name);
       if (file === undefined) return Promise.reject(new LinuxError(2));
@@ -212,21 +322,21 @@ export function fakeLinux(config: FakeLinuxConfig): FakeLinux {
     writeFile: (path, bytes) => {
       const name = text(path);
       if (config.writeFailure !== undefined) return Promise.reject(new LinuxError(config.writeFailure));
-      written.set(name, { bytes: Uint8Array.from(bytes), mode: 0o644, inode: nextInode++ });
+      written.set(name, created(bytes, 0o644));
       operations.push(`write ${name}`);
       return Promise.resolve();
     },
     writeAll: (fd, bytes, options) => { writeAll(fd, bytes, options); return Promise.resolve(); },
   };
   const filesSync: LinuxSyncFiles = {
-    open: unmodelled, read: unmodelled, write: unmodelled, seek: unmodelled, close: unmodelled, dup: unmodelled, pipe: unmodelled,
-    stat: unmodelled, lstat: unmodelled, fstat: unmodelled, readdir: unmodelled, realpath: unmodelled,
-    mkdir: () => undefined, rename: unmodelled, unlink: unmodelled, fsync: unmodelled, chmod: unmodelled, fchmod: unmodelled,
+    open: openPath, read: readSync, write, seek, close, dup: unmodelled, pipe: unmodelled,
+    stat: unmodelled, lstat: unmodelled, fstat, readdir: unmodelled, realpath: unmodelled,
+    mkdir: () => undefined, rename: unmodelled, unlink: unmodelled, fsync: syncFlush, chmod: unmodelled, fchmod: unmodelled,
     truncate: unmodelled, ftruncate: unmodelled, utimes: unmodelled, link: unmodelled, symlink: unmodelled, readlink: unmodelled,
     readFile: path => { const file = written.get(text(path)); if (file === undefined) throw new LinuxError(2); return Uint8Array.from(file.bytes); },
     writeFile: (path, bytes) => {
       if (config.writeFailure !== undefined) throw new LinuxError(config.writeFailure);
-      written.set(text(path), { bytes: Uint8Array.from(bytes), mode: 0o644, inode: nextInode++ }); operations.push(`write ${text(path)}`);
+      written.set(text(path), created(bytes, 0o644)); operations.push(`write ${text(path)}`);
     },
     writeAll,
   };
@@ -264,16 +374,18 @@ export function fakeLinux(config: FakeLinuxConfig): FakeLinux {
         if ((await item.incoming.read(1, options?.signal)).length === 0 && item.queue.length === 0) throw new LinuxError(22);
       }
     },
-    address: unmodelled, shutdown: unmodelled, read, write: unmodelled,
+    address: unmodelled, shutdown: unmodelled, read, write: (fd, bytes, options) => Promise.resolve().then(() => write(fd, bytes, options)),
     close: fd => { close(fd); return Promise.resolve(); },
   };
   const process: LinuxProcesses = {
-    info: () => Promise.resolve({ pid: decodeProcessId(42), parentPid: null, uid: 1000, gid: 1000, cwd: config.cwd ?? "/", args: config.args, environment: config.environment ?? [], terminal: null }),
+    info: () => Promise.resolve(info()),
     cwd: unmodelled, chdir: unmodelled, spawn: unmodelled, wait: unmodelled, signal: unmodelled,
   };
 
   return {
     stdin: descriptor(0), stdout: descriptor(1), stderr: descriptor(2), files, filesSync, sockets: socketApi, process,
+    filesAt: at, clock: clockHost, random, processSync, symlinks: tree.symlinks,
+    advanceClock: ns => { if (ns < 0n) throw new VMError("INVALID_ARGUMENT", "the fake clock only moves forward"); clock += ns; },
     stdoutLines, stderrLines, unlinked, closed, socketWrites, connects,
     stdoutBytes: () => joined(stdoutBytes), stderrBytes: () => joined(stderrBytes),
     endStdin: () => { stdin.end(); },

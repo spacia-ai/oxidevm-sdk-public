@@ -48,7 +48,7 @@ describe("host construction", () => {
       const linux = fakeLinux({ args: [] });
       const { host } = buildHost({ linux, capabilities: [capability], options: {}, artifacts, signal: new AbortController().signal, signals, ...(net === undefined ? {} : { net }) });
       expect(Object.keys(host).sort()).toEqual([...BASE, "net"].sort());
-      expect(memberNames(host, "net")).toEqual(["connect", "connectSync", "resolve", "resolveSync", "tls"]);
+      expect(memberNames(host, "net")).toEqual(["connect", "connectSync", "connectUnixSync", "resolve", "resolveSync", "tls"]);
       const member: unknown = Reflect.get(host, "net");
       const call = (name: string, ...args: unknown[]): Promise<unknown> => Promise.resolve().then((): unknown => {
         const method: unknown = typeof member === "object" && member !== null ? Reflect.get(member, name) : undefined;
@@ -114,6 +114,36 @@ describe("host.process.signals", () => {
     expect(Reflect.get(Object(Reflect.get(partial, "process")), "signals")).toBeUndefined();
     const none = buildHost({ ...inputs, capabilities: [] }).host;
     expect(Reflect.get(none, "process")).toBeUndefined();
-    expect(reached).toEqual([{ member: "process.signals", capabilities: ["process.signals"] }, { member: "process", capabilities: ["process.info", "process.spawn", "process.signals"] }]);
+    expect(reached).toEqual([{ member: "process.signals", capabilities: ["process.signals"] }, { member: "process", capabilities: ["process.info", "process.spawn", "process.signals", "process.sync"] }]);
+  });
+});
+
+// Userspace API 147: files.at, clock, random and process.sync, each only when declared.
+describe("host.at, host.clock, host.random and the synchronous process calls", () => {
+  it("adds each member only for its capability and hands over the process's own owners", () => {
+    const { host, linux } = build(["files.at", "clock", "random"]);
+    expect(Object.keys(host).sort()).toEqual([...BASE, "at", "clock", "random"].sort());
+    expect(Reflect.get(host, "at")).toBe(linux.filesAt);
+    expect(Reflect.get(host, "clock")).toBe(linux.clock);
+    expect(Reflect.get(host, "random")).toBe(linux.random);
+    for (const capability of ["files.at", "clock", "random"] as const) expect(build([capability]).members).toEqual([...BASE, capability === "files.at" ? "at" : capability].sort());
+  });
+
+  it("merges process.sync into host.process beside the other process capabilities", () => {
+    expect(memberNames(build(["process.sync"]).host, "process")).toEqual(["infoSync", "runSync", "signalSync", "spawnSync", "waitSync"]);
+    expect(memberNames(build(["process.info", "process.sync"]).host, "process")).toEqual(["cwd", "info", "infoSync", "runSync", "signalSync", "spawnSync", "waitSync"]);
+    expect(memberNames(build(["process.spawn"]).host, "process")).toEqual(["signal", "spawn", "wait"]);
+  });
+
+  it("reports reads of the undeclared members and names the capability that provides each", () => {
+    const linux = fakeLinux({ args: [] }), reached: unknown[] = [];
+    const inputs = { linux, options: {}, artifacts, signal: new AbortController().signal, signals, undeclared: (access: unknown) => { reached.push(access); } };
+    const host = buildHost({ ...inputs, capabilities: ["process.info"] }).host;
+    for (const member of ["at", "clock", "random"]) expect(Reflect.get(host, member)).toBeUndefined();
+    expect(Reflect.get(Object(Reflect.get(host, "process")), "runSync")).toBeUndefined();
+    expect(reached).toEqual([
+      { member: "at", capabilities: ["files.at"] }, { member: "clock", capabilities: ["clock"] }, { member: "random", capabilities: ["random"] },
+      { member: "process.runSync", capabilities: ["process.sync"] },
+    ]);
   });
 });

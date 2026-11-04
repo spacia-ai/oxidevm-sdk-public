@@ -39,6 +39,8 @@ export interface TestNet {
    * blocking read cannot wait for here, while a TCP service answers synchronously or later on the network's clock.
    */
   readonly tcp?: Readonly<Record<string, TestTcpService>>;
+  /** Unix-domain stream services by socket path in the VM, for `host.net.connectUnixSync`; served like `tcp`. */
+  readonly unix?: Readonly<Record<string, TestTcpService>>;
 }
 
 /** The service's end of one connection: write, end, reset, or act later on the network's clock (`after`). */
@@ -152,6 +154,7 @@ function network(definition: Module, net: TestNet = {}): MemoryNetwork {
     if (match?.[1] === undefined || !Number.isInteger(port) || port < 1 || port > 65535) throw new VMError("INVALID_ARGUMENT", `testHost net.tcp keys are host:port, not ${target}`, { reason: "testhost-tcp" });
     memory.listen(addressOf(match[1].toLowerCase(), origins.length + index), port, service);
   });
+  for (const [path, service] of Object.entries(net.unix ?? {})) memory.listenUnix(path, service);
   for (const [port, handler] of Object.entries(net.vm ?? {})) memory.listen(VM_ADDRESS, Number(port), handlerServer("http", handler));
   memory.listenDatagram(NAMESERVER, 53, dnsAnswerer(names));
   return memory;

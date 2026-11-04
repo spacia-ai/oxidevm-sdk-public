@@ -71,7 +71,7 @@ describe("Userspace Wasm records", () => {
     }
   });
   it("uses the admitted registration API", () => {
-    expect(USERSPACE_API_VERSION).toBe(146);
+    expect(USERSPACE_API_VERSION).toBe(147);
   });
 
   it("distinguishes completed exits from fatal signals without inferring from shell codes", () => {
@@ -87,7 +87,7 @@ describe("Userspace Wasm records", () => {
   });
 
   it("uses the bounded workspace snapshot API", () => {
-    expect(USERSPACE_API_VERSION).toBe(146);
+    expect(USERSPACE_API_VERSION).toBe(147);
   });
 
   it("decodes the closed pending-work bitmask and rejects reserved bits", () => {

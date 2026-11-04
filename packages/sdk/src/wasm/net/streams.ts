@@ -128,6 +128,20 @@ export async function dialTcp(sockets: NetSockets, reach: ModuleReach, host: str
   throw last;
 }
 
+/**
+ * Connects a Unix-domain stream socket of the module process to `path` (`host.net.connectUnixSync`). Rust's socket owner
+ * holds the connection to the module's reach as it does for TCP; nothing here decides who may connect.
+ */
+export function dialUnixSync(sockets: NetSyncSockets, path: string): SyncByteStream {
+  let fd: number;
+  try { fd = sockets.stream("unix"); } catch (error: unknown) { throw netError(error, "socket", path); }
+  try { sockets.connect(fd, { family: "unix", path }); return tcpSyncStream(sockets, fd, path); }
+  catch (error: unknown) {
+    try { sockets.close(fd); } catch { /* already closed */ }
+    throw netError(error, "connect", path);
+  }
+}
+
 export function dialTcpSync(sockets: NetSyncSockets, reach: ModuleReach, host: string, portNumber: number): SyncByteStream {
   const target = port(portNumber);
   let last: unknown = new NetError("ENOTFOUND", `getaddrinfo ENOTFOUND ${host}`, { hostname: host });

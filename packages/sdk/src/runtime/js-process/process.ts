@@ -1,6 +1,7 @@
-import type { LinuxProcessInfo, LinuxProcesses, NativeChildSpec } from "../../js-process-types.js";
+import type { LinuxProcessInfo, LinuxProcesses, NativeChild, NativeChildSpec } from "../../js-process-types.js";
+import type { ProcessExit } from "../../contracts.js";
 import { decodeProcessId } from "../../values.js";
-import { type LinuxResult, descriptor, noValue, operation, protocol, Reader, Writer } from "./codec.js";
+import { type LinuxOperation, type LinuxResult, descriptor, noValue, operation, protocol, Reader, Writer } from "./codec.js";
 import { knownLinuxSignal } from "../process-signals.js";
 import type { LinuxClient } from "./transport.js";
 
@@ -24,7 +25,9 @@ export function searchPathOperation(filename: string, path: string) {
 }
 
 type SpawnInvocation = { readonly kind: "search" | "selected"; readonly argv0: string };
-export function spawnPayload(spec: NativeChildSpec, ipc = false, invocation?: SpawnInvocation): Writer {
+/** Flag bit 64 of OXJR 65538 (Userspace API 147): the child's parent-death signal is SIGKILL from its creation. */
+const OWNED = 64;
+export function spawnPayload(spec: NativeChildSpec, ipc = false, invocation?: SpawnInvocation, owned = false): Writer {
   const writer = new Writer().path(spec.command).strings(spec.args ?? []);
   if (spec.env === undefined) writer.u8(0);
   else writer.u8(1).strings(Object.entries(spec.env).map(([key, value]) => {
@@ -32,23 +35,35 @@ export function spawnPayload(spec: NativeChildSpec, ipc = false, invocation?: Sp
   }));
   if (spec.cwd === undefined) writer.u8(0); else writer.u8(1).path(spec.cwd);
   writer.u8((spec.stdio?.stdin === "pipe" ? 1 : 0) | (spec.stdio?.stdout === "pipe" ? 2 : 0) | (spec.stdio?.stderr === "pipe" ? 4 : 0) | (ipc ? 8 : 0)
-    | (invocation === undefined ? 0 : 16) | (invocation?.kind === "selected" ? 32 : 0));
+    | (invocation === undefined ? 0 : 16) | (invocation?.kind === "selected" ? 32 : 0) | (owned ? OWNED : 0));
   if (invocation !== undefined) writer.path(invocation.argv0);
   return writer;
 }
+/** The process operations both the asynchronous facade and the synchronous one (`process-sync.ts`) send. */
+export const processOperations = {
+  /** OXJR 65537: this process's id, credentials, terminal, directory, arguments and environment. */
+  info: (): LinuxOperation<LinuxProcessInfo> => operation(65537, new Writer(), result => decodeInfo(result.bytes)),
+  /** OXJR 65538; `owned` sets flag bit 64. */
+  spawn: (spec: NativeChildSpec, owned = false): LinuxOperation<NativeChild> => operation(65538, spawnPayload(spec, false, undefined, owned), decodeSpawn),
+  /** OXJR 61: waitpid(pid); the reply value is the wait status. */
+  wait: (pid: number): LinuxOperation<ProcessExit> => operation(61, new Writer().u32(pid), decodeExit),
+  /** OXJR 62: kill(pid, signal). */
+  signal: (pid: number, signal: number): LinuxOperation<void> => operation(62, new Writer().u32(pid).u8(signal), noValue),
+};
 export function process(client: LinuxClient): LinuxProcesses {
   return {
-    info: () => client.call(operation(65537, new Writer(), result => decodeInfo(result.bytes))),
+    info: () => client.call(processOperations.info()),
     cwd: () => client.call(operation(79, new Writer(), result => { if (result.bytes.at(-1) !== 0 || result.value !== BigInt(result.bytes.byteLength)) protocol("Invalid Linux cwd result"); return new TextDecoder().decode(result.bytes.subarray(0, -1)); })),
     chdir: path => client.call(operation(80, new Writer().path(path), noValue)),
-    spawn: (spec, options) => client.call(operation(65538, spawnPayload(spec), decodeSpawn), options?.signal),
-    wait: (pid, options) => client.call(operation(61, new Writer().u32(pid), result => {
-      if (result.bytes.byteLength !== 0 || result.value > 0xffffn) protocol("Invalid native child exit status");
-      const status = Number(result.value), signal = status & 0x7f;
-      return signal === 0 ? { kind: "exited", code: status >> 8 } : { kind: "signaled", signal: knownLinuxSignal(signal), signalNumber: signal };
-    }), options?.signal),
-    signal: (pid, signal) => client.call(operation(62, new Writer().u32(pid).u8(signal), noValue)),
+    spawn: (spec, options) => client.call(processOperations.spawn(spec), options?.signal),
+    wait: (pid, options) => client.call(processOperations.wait(pid), options?.signal),
+    signal: (pid, signal) => client.call(processOperations.signal(pid, signal)),
   };
+}
+function decodeExit(result: LinuxResult): ProcessExit {
+  if (result.bytes.byteLength !== 0 || result.value > 0xffffn) protocol("Invalid native child exit status");
+  const status = Number(result.value), signal = status & 0x7f;
+  return signal === 0 ? { kind: "exited", code: status >> 8 } : { kind: "signaled", signal: knownLinuxSignal(signal), signalNumber: signal };
 }
 function decodeInfo(bytes: Uint8Array): LinuxProcessInfo {
   const r = new Reader(bytes), pid = decodeProcessId(r.u32()), parent = r.u32(), uid = r.u32(), gid = r.u32(), columns = r.u16(), rows = r.u16();
@@ -57,7 +72,7 @@ function decodeInfo(bytes: Uint8Array): LinuxProcessInfo {
   return { pid, parentPid: parent === 0 ? null : decodeProcessId(parent), uid, gid, cwd, args, environment, terminal: columns === 0 ? null : { columns, rows } };
 }
 
-export function decodeSpawn(result: LinuxResult) {
+export function decodeSpawn(result: LinuxResult): NativeChild {
   if (result.bytes.byteLength !== 12) protocol("Invalid native child result");
   const view = new DataView(result.bytes.buffer, result.bytes.byteOffset, result.bytes.byteLength);
   const fd = (offset: number) => { const value = view.getInt32(offset, true); return value === -1 ? null : descriptor(value); };

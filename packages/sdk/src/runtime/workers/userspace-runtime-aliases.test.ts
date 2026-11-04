@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 import { instantiateRuntime } from "./userspace-runtime.js";
 
-it("rejects API145 and requires alias provenance exports under API146", async () => {
-  for (const version of [145, 146]) {
+it("rejects API146 and requires alias provenance exports under API147", async () => {
+  for (const version of [146, 147]) {
     const name = new TextEncoder().encode("oxidevm_userspace_api_version");
     const exports = [2, 6, ...new TextEncoder().encode("memory"), 2, 0, name.length, ...name, 0, 0];
     const module = new WebAssembly.Module(new Uint8Array([
@@ -13,7 +13,7 @@ it("rejects API145 and requires alias provenance exports under API146", async ()
     ]));
     await expect(instantiateRuntime(module, "alias-api.wasm", { kind: "disabled" })).rejects.toMatchObject({
       code: "CORE_LOAD_FAILED",
-      message: version === 145 ? "Userspace Wasm API is unsupported" : "Userspace JIT alias exports are missing",
+      message: version === 146 ? "Userspace Wasm API is unsupported" : "Userspace JIT alias exports are missing",
     });
   }
 });

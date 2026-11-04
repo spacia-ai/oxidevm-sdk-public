@@ -95,6 +95,11 @@ describe("network reach (engine ADR 0029)", () => {
     expect(internet.minApi).toBe(146);
   });
 
+  it("counts process.sync children as programs that follow the VM's policy, and asks API 147 for the WASI host operations", () => {
+    expect(card(["net.vm", "process.sync"]).network).toEqual({ reach: "vm", hosts: [], children: true });
+    for (const capability of ["files.at", "clock", "random", "process.sync"]) expect(card([capability]).minApi, capability).toBe(147);
+  });
+
   it("asks for consent again when a release widens its reach", () => {
     const vm = buildReleaseFiles({ host: ["net.vm", "sockets.connect"] }).manifest, internet = buildReleaseFiles({ host: ["net.internet", "sockets.connect"] }).manifest;
     expect(authorityChange(vm, internet)).toEqual({ added: ["host:net.internet"], removed: ["host:net.vm"] });

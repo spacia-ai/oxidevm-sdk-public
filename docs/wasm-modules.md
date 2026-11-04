@@ -467,12 +467,32 @@ close that one connection.
 | --- | --- | --- |
 | `files.sync` | `fs` | synchronous file operations on the VM's files |
 | `files.async` | `files` | the same operations as promises, with `AbortSignal` |
+| `files.at` | `at` | synchronous descriptor-relative operations (`openat` with openat2's `resolve`, `statAt`, `mkdirAt`, `unlinkAt`, `renameAt`, `linkAt`, `symlinkAt`, `readlinkAt`, `utimensAt`), positional `pread`/`pwrite`, status flags, raw `getdents` batches with inodes and `d_off` cookies, `fdatasync`, and `poll` with a timeout; `at.cwd` is `AT_FDCWD` (Userspace API 147) |
+| `clock` | `clock` | `now` and `resolution` of the VM's `realtime` and `monotonic` clocks, in nanoseconds as `bigint`: the clocks native programs read (Userspace API 147) |
+| `random` | `random` | `fill(bytes)` from the VM's entropy, as `getrandom` gives it to native programs (Userspace API 147) |
 | `sockets.connect` | `sockets` | raw client sockets (listening belongs to the runner); a new module pairs it with `net.vm` or `net.internet` |
 | `net.vm` | `net` | network reach: programs in this VM (Userspace API 146; see Networking) |
 | `net.internet` | `net` | network reach: also the internet through the VM's connection (Userspace API 146; see Networking) |
 | `process.info` | `process.info`, `process.cwd` | this process's id, credentials and directory |
 | `process.spawn` | `process.spawn`, `process.wait`, `process.signal` | native child processes |
+| `process.sync` | `process.infoSync`, `process.spawnSync`, `process.waitSync`, `process.signalSync`, `process.runSync` | blocking process calls for code that cannot await; `spawnSync({ owned: true })` and every `runSync` child are killed with SIGKILL when the module's process ends, and `runSync` enforces its own deadline and output limits (Userspace API 147) |
 | `process.signals` | `process.signals` | trap SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2 and the real-time signals instead of their default action, block and unblock signals, list pending ones, and raise a signal (Userspace API 145; masks and real-time signals need 146) |
+
+`host.at`, `host.clock`, `host.random` and the synchronous `host.process` calls
+travel on the module process's own Linux channel and block only its worker; Rust
+resolves every path, against the descriptor it is given, and owns the clocks and
+the entropy. `process.runSync({ command, args, cwd, env, input, timeoutMs,
+stdoutLimit, stderrLimit })` takes an absolute command with at most 63 arguments,
+at most 5 MiB of input, a timeout from 1 ms to 180 s of the VM's monotonic clock
+and limits of at most 1 MiB per output; an invalid run is `INVALID_ARGUMENT`
+before anything starts. It feeds the input and drains both outputs in one loop
+whose every wait is bounded by the deadline, so a descendant that keeps a pipe
+open cannot hold it past its deadline. A timeout is a `LinuxError` with errno 110
+(ETIMEDOUT) and an output past its limit errno 7 (E2BIG), each after the child was
+killed and reaped. Once the child has closed both outputs, `runSync` waits for its
+exit without a deadline: the wire has no non-blocking wait yet. In `testHost` the
+clocks and `random` are deterministic (`random` is test bytes, never entropy), and
+`spawnSync`, `waitSync`, `signalSync` and `runSync` are not modelled (ENOSYS).
 
 Every host also has `signal`, `options`, `artifacts`, `stdio`, `log(line)`,
 `fail(status, message)` and `kit`: tested helpers for Linux-to-Emscripten errno
@@ -482,6 +502,38 @@ with bounded output, atomic directory creation, and the network adaptation of
 `kit.emscripten.networkImports`, `kit.tls`, `kit.net.describe` and
 `kit.net.errno`). Use the kit instead of rewriting these; a module never imports
 it.
+
+### WASI programs (`kit.wasi`)
+
+`host.kit.wasi` runs a compiled `wasm32-wasip1` program (Rust, C, Zig) as the
+module's own Linux process: WASI Preview1 over the process's real descriptors and
+the VM's live files, clocks and entropy, plus the `oxidevm_bridge_v1` imports for
+process identity, native children and VM sockets that the `oxidevm-bridge` Rust
+crate (`crates/oxidevm-bridge`) calls. Every call is synchronous for the program;
+no JSPI or Asyncify is involved.
+
+```ts
+adapter: async host => {
+  const program = await host.kit.wasi.compile(await host.artifacts.bytes("tool.wasm"));
+  return { main: io => host.kit.wasi.run(host, program, io, { argv: ["tool", ...io.args] }) };
+},
+```
+
+`compile` checks the bytes (one bounded, unshared 32-bit memory, at most one
+bounded table, no start section), compiles, and checks the imports; a refused
+program throws `AdmissionError` and runs no code. `run` uses whichever members the
+manifest declared: `files.at` (preopens and every path function), `clock`,
+`random`, `process.info`, `process.sync` and a network reach; a function whose
+capability is absent returns `NOSYS`. `options.preopens` narrows the default grant
+(the whole tree under the process's own credentials) to confined directories,
+optionally read-only. `readProgram(host, path)` reads a program file from the VM
+once (at most 32 MiB). The source is `packages/sdk/src/wasm/kit/wasi/`; the user
+guide is `apps/docs` "Run Rust programs" in the engine repository, and the
+interface reference is "oxidevm_bridge_v1".
+
+The Rust crate lives in `crates/oxidevm-bridge` here, so the interface and both
+of its sides change in one pull request: run `pnpm test:bridge` (rustfmt, tests,
+clippy on `wasm32-wasip1`, rustdoc) after changing either side.
 
 ### Commands and signals
 
@@ -616,7 +668,9 @@ module process's own VM sockets:
   timeouts (10 s to connect, 300 s for the response head and between body
   reads); `WebSocket` is the standard client over RFC 6455;
 - `host.net.resolve` and `connect({ host, port, tls, alpn })`, their blocking
-  `resolveSync` and `connectSync` for interpreters that cannot await, and
+  `resolveSync` and `connectSync` for interpreters that cannot await,
+  `connectUnixSync(path)` for a Unix-domain socket in the VM (Userspace API 147;
+  Rust holds it to the module's reach as it does TCP), and
   `host.net.tls()` for a sans-IO TLS session. A blocking connection's
   `read(max, { timeoutMs })` waits at most `timeoutMs` (0 to 86,400,000) for
   bytes, then fails with `NetError` code `ETIMEDOUT` and `errno` 11 (EAGAIN, as

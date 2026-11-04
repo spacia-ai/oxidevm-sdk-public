@@ -1,4 +1,4 @@
-import type { FileDescriptor, LinuxFiles, LinuxProcesses, LinuxSockets, LinuxSyncFiles } from "../../js-process-types.js";
+import type { ClockHost, FileDescriptor, LinuxAtFiles, LinuxFiles, LinuxProcesses, LinuxSockets, LinuxSyncFiles, ProcessSync, RandomHost } from "../../js-process-types.js";
 import { VMError } from "../../runtime/errors.js";
 import type { Capability, ClientSockets, NetHost, ProcessSignals } from "../capabilities.js";
 import type { HostArtifacts } from "../define.js";
@@ -16,6 +16,11 @@ export interface LinuxParts {
   readonly filesSync: LinuxSyncFiles;
   readonly sockets: LinuxSockets;
   readonly process: LinuxProcesses;
+  /** `host.at`, `host.clock`, `host.random` and the synchronous `host.process` calls (Userspace API 147). */
+  readonly filesAt: LinuxAtFiles;
+  readonly clock: ClockHost;
+  readonly random: RandomHost;
+  readonly processSync: ProcessSync;
 }
 
 /** An adapter reached for a host member that only an undeclared capability provides. */
@@ -43,13 +48,15 @@ export interface HostInputs {
 }
 
 /** The capabilities that fill `process`. */
-const PROCESS_MEMBER: readonly Capability[] = ["process.info", "process.spawn", "process.signals"];
+const PROCESS_MEMBER: readonly Capability[] = ["process.info", "process.spawn", "process.signals", "process.sync"];
 /** Which capabilities provide each host member, and each function of `process`. */
 const MEMBER_CAPABILITIES: Readonly<Record<string, readonly Capability[]>> = {
-  fs: ["files.sync"], files: ["files.async"], sockets: ["sockets.connect"], process: PROCESS_MEMBER, net: ["net.vm", "net.internet"],
+  fs: ["files.sync"], files: ["files.async"], at: ["files.at"], clock: ["clock"], random: ["random"], sockets: ["sockets.connect"], process: PROCESS_MEMBER,
+  net: ["net.vm", "net.internet"],
 };
 const PROCESS_CAPABILITIES: Readonly<Record<string, Capability>> = {
   info: "process.info", cwd: "process.info", spawn: "process.spawn", wait: "process.spawn", signal: "process.spawn", signals: "process.signals",
+  infoSync: "process.sync", spawnSync: "process.sync", waitSync: "process.sync", signalSync: "process.sync", runSync: "process.sync",
 };
 
 /**
@@ -93,18 +100,25 @@ function clientSockets(sockets: LinuxSockets, refused: ((destination: ReachRefus
   });
 }
 
-/** The members the declared capabilities contribute. `process.info`, `process.spawn` and `process.signals` all fill `process`, so they merge. */
+/** The members the declared capabilities contribute. The `process.*` capabilities all fill `process`, so they merge. */
 function members(capabilities: readonly Capability[], linux: LinuxParts, signals: ProcessSignals, net: NetHost | undefined, refused: ((destination: ReachRefusal) => void) | undefined): Readonly<Record<string, unknown>> {
   const granted: Record<string, unknown> = {};
   if (capabilities.includes("files.sync")) granted["fs"] = linux.filesSync;
   if (capabilities.includes("files.async")) granted["files"] = linux.files;
+  if (capabilities.includes("files.at")) granted["at"] = linux.filesAt;
+  if (capabilities.includes("clock")) granted["clock"] = linux.clock;
+  if (capabilities.includes("random")) granted["random"] = linux.random;
   if (capabilities.includes("sockets.connect")) granted["sockets"] = clientSockets(linux.sockets, refused);
   if ((capabilities.includes("net.vm") || capabilities.includes("net.internet")) && net !== undefined) granted["net"] = net;
   const { process } = linux;
   const info = capabilities.includes("process.info") ? { info: process.info.bind(process), cwd: process.cwd.bind(process) } : {};
   const spawn = capabilities.includes("process.spawn") ? { spawn: process.spawn.bind(process), wait: process.wait.bind(process), signal: process.signal.bind(process) } : {};
   const caught = capabilities.includes("process.signals") ? { signals } : {};
-  if (capabilities.some(capability => PROCESS_MEMBER.includes(capability))) granted["process"] = Object.freeze({ ...info, ...spawn, ...caught });
+  const { processSync: sync } = linux;
+  const blocking = capabilities.includes("process.sync")
+    ? { infoSync: sync.infoSync.bind(sync), spawnSync: sync.spawnSync.bind(sync), waitSync: sync.waitSync.bind(sync), signalSync: sync.signalSync.bind(sync), runSync: sync.runSync.bind(sync) }
+    : {};
+  if (capabilities.some(capability => PROCESS_MEMBER.includes(capability))) granted["process"] = Object.freeze({ ...info, ...spawn, ...caught, ...blocking });
   return granted;
 }
 

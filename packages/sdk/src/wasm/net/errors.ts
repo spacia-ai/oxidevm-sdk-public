@@ -7,7 +7,7 @@ import { LinuxError } from "../../runtime/js-process/codec.js";
  */
 export type NetErrorCode =
   | "EPERM" | "EACCES" | "ECONNRESET" | "ECONNREFUSED" | "ECONNABORTED" | "ETIMEDOUT" | "ENETUNREACH" | "EHOSTUNREACH" | "EPIPE" | "EIO"
-  | "ENOTFOUND" | "EAI_AGAIN" | "ENODATA"
+  | "ENOTFOUND" | "EAI_AGAIN" | "ENODATA" | "ENOENT"
   | "UNABLE_TO_GET_ISSUER_CERT_LOCALLY" | "ERR_TLS_CERT_ALTNAME_INVALID" | "CERT_HAS_EXPIRED" | "CERT_NOT_YET_VALID" | "ERR_TLS_CERT_INVALID"
   | "ERR_TLS_HANDSHAKE" | "ERR_TLS_PROTOCOL" | "ERR_TLS_NO_TRUST_STORE" | "ERR_TLS_INVALID_TRUST"
   | "ERR_HTTP_PARSE" | "ERR_HTTP_BOUNDS" | "ERR_WS_HANDSHAKE" | "ERR_INVALID_URL" | "ERR_UNSUPPORTED_SCHEME" | "ERR_NETWORK_NOT_DECLARED";
@@ -46,6 +46,8 @@ export class NetError extends Error {
 
 const LINUX: Readonly<Record<number, { readonly code: NetErrorCode; readonly reason?: NetErrorReason; readonly text: string }>> = {
   1: { code: "EPERM", reason: "vm-local-only", text: "this VM is not connected to the internet" },
+  // A Unix socket path that names nothing (`connectUnixSync`).
+  2: { code: "ENOENT", text: "no socket exists at this path" },
   13: { code: "EACCES", reason: "module-network-reach", text: "the destination is beyond the module's declared network reach" },
   32: { code: "EPIPE", text: "the connection is closed" },
   101: { code: "ENETUNREACH", text: "the network is unreachable" },

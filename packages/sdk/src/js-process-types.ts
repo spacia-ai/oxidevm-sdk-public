@@ -134,3 +134,89 @@ export interface LinuxProcessContext {
 }
 /** Application results are decoded at the worker boundary; named void handlers are valid. */
 export type JSProcessHandler = (context: LinuxProcessContext) => unknown;
+
+/** A time for `utimensAt`: nanoseconds since the epoch, `"now"` for the current time, or `"omit"` to leave it unchanged. */
+export type LinuxNanoTime = bigint | "now" | "omit";
+/** One getdents64 record: the raw name bytes, the inode, d_type, and the d_off cookie that resumes after it (seek to it). */
+export interface LinuxDirent { readonly name: Uint8Array; readonly inode: bigint; readonly type: number; readonly next: bigint }
+/** What `poll` waits for on one descriptor: POLLIN (1), POLLOUT (4) or both. */
+export interface LinuxPollRequest { readonly fd: FileDescriptor; readonly events: 1 | 4 | 5 }
+/** A descriptor `poll` found ready, with the events Linux reported. */
+export interface LinuxPollReady { readonly fd: FileDescriptor; readonly revents: number }
+/**
+ * Descriptor-relative, positional and readiness operations, all synchronous (capability `files.at`). Rust resolves every
+ * path against the descriptor it is given, with the flags the call carries; nothing is resolved here.
+ */
+export interface LinuxAtFiles {
+  /** AT_FDCWD: the process's working directory as a directory descriptor. */
+  readonly cwd: FileDescriptor;
+  /** openat2(dir, path, { flags, mode, resolve }); `resolve` takes the RESOLVE_* bits (RESOLVE_BENEATH is 8). */
+  openat(dir: FileDescriptor, path: LinuxPath, flags: number, mode: number, resolve?: number): FileDescriptor;
+  /** newfstatat; `flags` admits AT_SYMLINK_NOFOLLOW (0x100) and AT_EMPTY_PATH (0x1000). */
+  statAt(dir: FileDescriptor, path: LinuxPath, flags?: number): LinuxFileStat;
+  mkdirAt(dir: FileDescriptor, path: LinuxPath, mode: number): void;
+  /** unlinkat; AT_REMOVEDIR (0x200) removes a directory. */
+  unlinkAt(dir: FileDescriptor, path: LinuxPath, flags?: number): void;
+  /** renameat2; RENAME_NOREPLACE (1) and RENAME_EXCHANGE (2) as Rust admits them. */
+  renameAt(fromDir: FileDescriptor, from: LinuxPath, toDir: FileDescriptor, to: LinuxPath, flags?: number): void;
+  /** linkat; AT_SYMLINK_FOLLOW (0x400) and AT_EMPTY_PATH (0x1000). */
+  linkAt(fromDir: FileDescriptor, from: LinuxPath, toDir: FileDescriptor, to: LinuxPath, flags?: number): void;
+  symlinkAt(target: LinuxPath, dir: FileDescriptor, path: LinuxPath): void;
+  /** The raw bytes the link stores (at most 4095), never decoded. */
+  readlinkAt(dir: FileDescriptor, path: LinuxPath): Uint8Array;
+  /** utimensat; an empty path with AT_EMPTY_PATH (0x1000) changes `dir` itself, AT_SYMLINK_NOFOLLOW (0x100) the link. */
+  utimensAt(dir: FileDescriptor, path: LinuxPath, access: LinuxNanoTime, modification: LinuxNanoTime, flags?: number): void;
+  pread(fd: FileDescriptor, count: number, offset: bigint): Uint8Array;
+  pwrite(fd: FileDescriptor, bytes: Uint8Array, offset: bigint): number;
+  /** fcntl(F_GETFL). */
+  statusFlags(fd: FileDescriptor): number;
+  /** fcntl(F_SETFL). */
+  setStatusFlags(fd: FileDescriptor, flags: number): void;
+  /** One getdents64 batch of at most `maxBytes` bytes, `.` and `..` included; empty at the end of the directory. */
+  getdents(fd: FileDescriptor, maxBytes: number): readonly LinuxDirent[];
+  fdatasync(fd: FileDescriptor): void;
+  /** Readiness of 1 to 16 descriptors, waiting at most `timeoutMs` (-1 waits forever, else 0 to 86,400,000); empty is a timeout. */
+  poll(entries: readonly LinuxPollRequest[], timeoutMs: number): readonly LinuxPollReady[];
+}
+
+/** A clock of the VM: wall-clock time, or time that only moves forward. */
+export type LinuxClock = "realtime" | "monotonic";
+/** The VM's clocks (capability `clock`): the clocks native programs in the VM read, in nanoseconds. */
+export interface ClockHost {
+  now(clock: LinuxClock): bigint;
+  resolution(clock: LinuxClock): bigint;
+}
+/** The VM's entropy (capability `random`), as getrandom(2) gives it to native programs; any length, in bounded chunks. */
+export interface RandomHost { fill(bytes: Uint8Array): void }
+
+/** What `spawnSync` starts: a native child, killed with SIGKILL when this process ends for any reason if `owned`. */
+export interface NativeSyncChildSpec extends NativeChildSpec { readonly owned?: boolean }
+/** What `runSync` runs to completion, with piped standard streams and its own deadline. */
+export interface NativeSyncRunSpec {
+  /** An absolute execve path; with `args`, 1 to 64 strings without NUL. */
+  readonly command: string;
+  readonly args?: readonly string[];
+  readonly cwd?: string;
+  readonly env?: Readonly<Record<string, string>>;
+  /** Standard input, at most 5 MiB; the child then reads end of file. */
+  readonly input?: Uint8Array;
+  /** 1 to 180,000 ms of the VM's monotonic clock. */
+  readonly timeoutMs: number;
+  /** The most bytes kept of each output, at most 1 MiB. */
+  readonly stdoutLimit: number;
+  readonly stderrLimit: number;
+}
+export interface NativeSyncRunResult { readonly pid: ProcessId; readonly exit: ProcessExit; readonly stdout: Uint8Array; readonly stderr: Uint8Array }
+/** Synchronous process calls (capability `process.sync`), for code that cannot await; each blocks only this worker. */
+export interface ProcessSync {
+  infoSync(): LinuxProcessInfo;
+  spawnSync(spec: NativeSyncChildSpec): NativeChild;
+  waitSync(pid: ProcessId): ProcessExit;
+  signalSync(pid: ProcessId, signal: number): void;
+  /**
+   * Runs an owned child to completion: feeds `input`, drains both outputs together, and enforces `timeoutMs` itself.
+   * A timeout is a `LinuxError` with errno 110 (ETIMEDOUT) and an output past its limit errno 7 (E2BIG), each after the
+   * child was killed and reaped; an invalid spec is `INVALID_ARGUMENT` before anything starts.
+   */
+  runSync(spec: NativeSyncRunSpec): NativeSyncRunResult;
+}
