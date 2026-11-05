@@ -3,13 +3,13 @@
 // verifies: engineReleaseId is the SHA-256 of release.json's exact bytes, which are
 // JSON.stringify(engineRelease, null, 2) followed by one newline. engineLicense identifies the
 // release's LICENSE, which release.json does not cover.
-export const engineReleaseId = "84e306573c92d102aa7ea39f134fd1a562824f7903c2984f1ceae7d6f868192d";
+export const engineReleaseId = "a8bae576d0774881bff9d01a531c2064824af0254f3db64a90570cbb9a84779d";
 export const engineRelease = {
   "schemaVersion": 4,
   "engineSource": {
-    "commit": "6fb2ff4cb6159f0d324bc50071e0ea5f95691569",
+    "commit": "45f074152ceedda9ea6ba2657f907ad493613d25",
     "dirty": false,
-    "nativeInputsSHA256": "0fc4f22cd358eddd42883337911aeee77f8da5496099cc844a9cb104b7e1daae"
+    "nativeInputsSHA256": "68ae0c407e4d2c6bc02b2490abe4cb006c137f9791ea1d057e65636981a4f7c0"
   },
   "identities": {
     "coreApi": 19,
@@ -40,8 +40,8 @@ export const engineRelease = {
     {
       "name": "oxidevm_userspace.wasm",
       "mode": "userspace",
-      "bytes": 14015518,
-      "sha256": "8ca6c82cd9f56f0fed920ff126843cc8ccc96ed26ffa8130ea564e44c784691a"
+      "bytes": 14015999,
+      "sha256": "ae20550a466427830ac8e4c4a950ceb19ce0df20f9df8a1d71ca0d46d1687cc0"
     },
     {
       "name": "oxidevm_tls.wasm",
@@ -57,11 +57,11 @@ export const engineLicense = {
 } as const;
 export const engineDownload = {
   "kind": "cdn",
-  "release": "engine-84e306573c92d102aa7ea39f134fd1a562824f7903c2984f1ceae7d6f868192d",
-  "baseUrl": "https://cdn.oxidevm.dev/engine/84e306573c92d102aa7ea39f134fd1a562824f7903c2984f1ceae7d6f868192d/"
+  "release": "engine-a8bae576d0774881bff9d01a531c2064824af0254f3db64a90570cbb9a84779d",
+  "baseUrl": "https://cdn.oxidevm.dev/engine/a8bae576d0774881bff9d01a531c2064824af0254f3db64a90570cbb9a84779d/"
 } as const;
 export const engineCompliance: unknown = {
-  "url": "https://cdn.oxidevm.dev/engine/84e306573c92d102aa7ea39f134fd1a562824f7903c2984f1ceae7d6f868192d/compliance/7a907f759f9c7cd8ed918197dc581383e9f8aeaa31776d48ce50994f9509744a/compliance.json",
+  "url": "https://cdn.oxidevm.dev/engine/a8bae576d0774881bff9d01a531c2064824af0254f3db64a90570cbb9a84779d/compliance/edb01921523a6333c207504102ea382c28fa0ea67f1dab77dd947a95f4af9530/compliance.json",
   "bytes": 746,
-  "sha256": "7a907f759f9c7cd8ed918197dc581383e9f8aeaa31776d48ce50994f9509744a"
+  "sha256": "edb01921523a6333c207504102ea382c28fa0ea67f1dab77dd947a95f4af9530"
 };

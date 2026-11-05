@@ -4,14 +4,14 @@ import {decodeShippedName} from "./runtime/managed-start.js";
 import {decodeManagedResume} from "./runtime/protocol/start-image.js";
 import { decodeImagePreparation } from "./runtime/protocol/image-preparation.js";
 import type { ImagePreparation } from "./values.js";
-import type { BootProgress, CreateVMOptions, ManagedResume, NetworkOptions, PreviewOptions, RelayConnectionOptions } from "./contracts.js";
+import type { BootProgress, CreateVMOptions, ManagedResume, NetworkOptions, PreviewOptions, RelayConnectionOptions, WorkspacePersistence } from "./contracts.js";
 import { isImageRef } from "./image.js";
 import {isShippedSnapshotRef, type ShippedSnapshotRef} from "./shipped-snapshot.js";
 import { VMError } from "./runtime/errors.js";
 import { isTrustworthyURL } from "./trustworthy-url.js";
 import { exactKeys, integer, record, string } from "./runtime/decode.js";
 import { decodeRelayOptions } from "./runtime/protocol/network.js";
-import { validateWorkspaceId } from "./runtime/workspace-path.js";
+import { newEphemeralWorkspaceId, validateWorkspaceId } from "./runtime/workspace-path.js";
 
 /** Validates relative URLs without reading browser state. */
 const REFERENCE_BASE = "https://oxidevm-reference.invalid/";
@@ -30,10 +30,16 @@ export type RuntimeSelection =
 
 const LICENSE_TOKEN = /^oxl1\.[A-Za-z0-9_-]{1,4000}\.[A-Za-z0-9_-]{86}$/u;
 
+/** Why a VM's workspace is temporary: no `workspaceId`, or `workspaceInUse: "temporary"` met one another VM holds. */
+export type EphemeralWorkspaceReason = Extract<WorkspacePersistence, { readonly kind: "ephemeral" }>["reason"];
+
 interface ValidatedCommon {
   readonly imagePreparation: ImagePreparation;
   readonly workspaceId: string;
-  readonly ephemeral: boolean;
+  /** False for the durable `workspaceId`; otherwise why this VM's workspace is temporary. */
+  readonly ephemeral: false | EphemeralWorkspaceReason;
+  /** What creating the VM does when another VM holds the durable `workspaceId`. */
+  readonly workspaceInUse: "fail" | "temporary";
   readonly memoryMiB?: number;
   readonly runtime: RuntimeSelection;
   readonly network: NetworkOptions;
@@ -45,6 +51,16 @@ export type ValidatedVMOptions = ValidatedCommon & (
   | { readonly mode: "system"; readonly shipped?: string | ShippedSnapshotRef<"system">; readonly image?: Extract<CreateVMOptions, { mode: "system" }>["image"]; readonly vcpus: 1 | 2 | 3 | 4; readonly resume: ManagedResume }
   | ({ readonly mode: "userspace"; readonly shipped?: string | ShippedSnapshotRef<"userspace">; readonly image?: Extract<CreateVMOptions, { mode: "userspace" }>["image"]; readonly limits: { readonly maxProcesses: number }; readonly acceleration: "auto" | "off"; readonly interceptors?: false | readonly CommandInterceptorRecord[]; readonly processLimitExplicit: boolean; readonly resume: ManagedResume } & Pick<Extract<CreateVMOptions, { mode: "userspace" }>, "initialUser" | "rootPersistence">)
 );
+
+/**
+ * The same VM on a new temporary workspace, because another VM holds the durable one these options
+ * name (`workspaceInUse: "temporary"`). It starts empty and saves nothing, writable system paths included.
+ */
+export function onTemporaryWorkspace(options: ValidatedVMOptions): ValidatedVMOptions {
+  const temporary = { workspaceId: newEphemeralWorkspaceId(), ephemeral: "workspace-in-use" } as const;
+  if (options.mode === "system") return { ...options, ...temporary };
+  return { ...options, ...temporary, ...(options.rootPersistence === undefined ? {} : { rootPersistence: "ephemeral" }) };
+}
 
 /** Pass the selected recommendation to the existing native descendant-process owner. */
 export function resolveProcessLimit(options: Extract<ValidatedVMOptions, { mode: "userspace" }>, recommendation?: number): number {
@@ -63,7 +79,7 @@ function decodeOptions(input: unknown): ValidatedVMOptions {
   const value = record(input, "VM options");
   const mode = value["mode"];
   if (mode !== "system" && mode !== "userspace") invalid("mode must be system or userspace");
-  exactKeys(value, ["mode"], ["workspaceId", "memoryMiB", "runtime", "network", "preview", "signal", "onProgress", "image", "shippedSnapshot", "imagePreparation", ...(mode === "system" ? ["vcpus", "restorePoint"] : ["limits", "initialUser", "rootPersistence", "restorePoint", "commandInterceptors"])]);
+  exactKeys(value, ["mode"], ["workspaceId", "workspaceInUse", "memoryMiB", "runtime", "network", "preview", "signal", "onProgress", "image", "shippedSnapshot", "imagePreparation", ...(mode === "system" ? ["vcpus", "restorePoint"] : ["limits", "initialUser", "rootPersistence", "restorePoint", "commandInterceptors"])]);
   const workspace = value["workspaceId"];
   const signal = value["signal"];
   if (signal !== undefined && !(signal instanceof AbortSignal)) invalid("signal must be an AbortSignal");
@@ -76,8 +92,9 @@ function decodeOptions(input: unknown): ValidatedVMOptions {
     : decodePreview(value["preview"]);
   const common: ValidatedCommon = {
     imagePreparation: decodeImagePreparation(value["imagePreparation"]),
-    workspaceId: workspace === undefined ? `ephemeral_${crypto.randomUUID().replaceAll("-", "")}` : validateWorkspaceId(string(workspace, "workspaceId")),
-    ephemeral: workspace === undefined,
+    workspaceId: workspace === undefined ? newEphemeralWorkspaceId() : validateWorkspaceId(string(workspace, "workspaceId")),
+    ephemeral: workspace === undefined ? "no-workspace-id" : false,
+    workspaceInUse: decodeWorkspaceInUse(value["workspaceInUse"], workspace !== undefined),
     runtime,
     network: decodeNetwork(value["network"]),
     ...(value["memoryMiB"] === undefined ? {} : { memoryMiB: integer(value["memoryMiB"], "memoryMiB", 64, 3072) }),
@@ -106,10 +123,17 @@ function decodeOptions(input: unknown): ValidatedVMOptions {
   if (acceleration === "auto" && initialUser === "root") invalid("Command acceleration requires ordinary credentials; use commandInterceptors: \"off\" with root");
   if (initialUser !== undefined && initialUser !== "user" && initialUser !== "root") invalid("initialUser must be user or root");
   if (rootPersistence !== undefined && rootPersistence !== "ephemeral" && rootPersistence !== "persistent") invalid("rootPersistence must be ephemeral or persistent");
-  if (rootPersistence === "persistent" && common.ephemeral) invalid("Persistent root storage requires workspaceId");
+  if (rootPersistence === "persistent" && common.ephemeral !== false) invalid("Persistent root storage requires workspaceId");
   return { ...common, mode, acceleration, ...(interceptors === undefined ? {} : { interceptors }), resume: decodeManagedResume(value["restorePoint"] ?? "none"), processLimitExplicit: limits["maxProcesses"] !== undefined, limits: { maxProcesses: integer(limits["maxProcesses"] ?? 32, "maxProcesses", 1, 64) }, ...(image === undefined ? {} : { image }),
     ...(shipped === undefined ? {} : {shipped}),
     ...(initialUser === undefined ? {} : { initialUser }), ...(rootPersistence === undefined ? {} : { rootPersistence }) };
+}
+
+function decodeWorkspaceInUse(value: unknown, durable: boolean): "fail" | "temporary" {
+  if (value === undefined) return "fail";
+  if (value !== "fail" && value !== "temporary") invalid('workspaceInUse must be "fail" or "temporary"');
+  if (!durable) invalid("workspaceInUse requires workspaceId");
+  return value;
 }
 
 type CommandInterceptorSettings = ReturnType<typeof decodeCommandInterceptors>;

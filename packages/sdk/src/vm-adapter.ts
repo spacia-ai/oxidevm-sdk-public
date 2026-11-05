@@ -143,7 +143,7 @@ export async function adaptVM(runtime: RuntimeVM, options: ValidatedVMOptions, i
   if (runtime.storagePersistence === undefined) throw new VMError("PROTOCOL_ERROR", "runtime has no durable storage identity");
   const backend = await runtime.storagePersistence();
   const retention = await readBrowserQuota(navigator.storage);
-  const persistence: WorkspacePersistence = options.ephemeral ? { kind: "ephemeral" } : { kind: "persistent", backend, browserRetention: retention.persisted === true ? "granted" : "best-effort" };
+  const persistence: WorkspacePersistence = options.ephemeral !== false ? { kind: "ephemeral", reason: options.ephemeral } : { kind: "persistent", backend, browserRetention: retention.persisted === true ? "granted" : "best-effort" };
   let disposal: Promise<void> | undefined;
   const lifetime=new AbortController();
   const previews = new PreviewRoutes(runtime, options.preview?.isolation ?? "per-session");

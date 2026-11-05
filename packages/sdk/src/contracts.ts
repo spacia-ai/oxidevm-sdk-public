@@ -103,6 +103,14 @@ export interface CommonVMOptions {
   /** Complete installation before execution and readiness; defaults to on-demand acquisition. */
   readonly imagePreparation?: ImagePreparation;
   readonly workspaceId?: string;
+  /**
+   * What happens when another VM, in this tab or another tab of this page's origin, holds `workspaceId`.
+   * "fail" (the default) rejects with STORAGE_ERROR and `detail.reason: "workspace-in-use"`.
+   * "temporary" runs this VM on a new temporary workspace instead: it starts empty, nothing in it is
+   * saved, and `vm.workspace.persistence` is `{ kind: "ephemeral", reason: "workspace-in-use" }`.
+   * Requires `workspaceId`.
+   */
+  readonly workspaceInUse?: "fail" | "temporary";
   readonly memoryMiB?: number;
   readonly runtime?: RuntimeOptions;
   readonly network?: NetworkOptions;
@@ -224,7 +232,14 @@ export interface WorkspaceEntry {
 }
 
 export type WorkspacePersistence =
-  | { readonly kind: "ephemeral" }
+  | {
+      readonly kind: "ephemeral";
+      /**
+       * Why nothing is saved: no `workspaceId` was given, or `workspaceInUse: "temporary"` found the
+       * requested workspace open in another tab or VM.
+       */
+      readonly reason: "no-workspace-id" | "workspace-in-use";
+    }
   | {
       readonly kind: "persistent";
       readonly backend: "opfs" | "indexeddb";

@@ -5,6 +5,9 @@ import { validateRuntimeVMOptions } from "./vm-options.js";
 import { decodeJitInstallOption } from "./jit-install-option.js";
 import { decodeJitTierOption } from "./jit-tier-option.js";
 import { VMError } from "./errors.js";
+import { ORIGIN_STORAGE } from "./storage-scope.js";
+import { openDurableOrTemporary } from "./workspace-lease.js";
+import { newEphemeralWorkspaceId } from "./workspace-path.js";
 import type { RuntimeVMOptions, RuntimeVM } from "./vm-types.js";
 export type { NetworkState, RelayConnectionOptions, RelayFailureReason, VMNetwork } from "./network-types.js";
 export { VMError } from "./errors.js";
@@ -82,6 +85,24 @@ export async function createRuntimeVM(options: RuntimeVMOptions): Promise<Runtim
   const jitInstall = decodeJitInstallOption(options);
   const jitTier = decodeJitTierOption(options);
   const validated = validateRuntimeVMOptions(options);
+  const create = (selected: RuntimeVMOptions) => createValidatedRuntimeVM(selected, profileOptions, jitInstall, jitTier);
+  if (validated.ephemeral === true || validated.workspaceInUse !== "temporary") return create(validated);
+  return openDurableOrTemporary(validated.storage ?? ORIGIN_STORAGE, validated.workspaceId, temporary => create(temporary ? onTemporaryRuntimeWorkspace(validated) : validated));
+}
+
+/** The same VM on a new temporary workspace that saves nothing, because another VM holds the durable one. */
+function onTemporaryRuntimeWorkspace(options: RuntimeVMOptions): RuntimeVMOptions {
+  const temporary = { workspaceId: newEphemeralWorkspaceId(), ephemeral: true } as const;
+  if (options.mode === "system") return { ...options, ...temporary };
+  return { ...options, ...temporary, ...(options.rootPersistence === undefined ? {} : { rootPersistence: "ephemeral" }) };
+}
+
+async function createValidatedRuntimeVM(
+  validated: RuntimeVMOptions,
+  profileOptions: ReturnType<typeof decodeUserspaceProfileOptions>,
+  jitInstall: ReturnType<typeof decodeJitInstallOption>,
+  jitTier: ReturnType<typeof decodeJitTierOption>,
+): Promise<RuntimeVM> {
   if (validated.mode === "userspace") {
     return createUserspaceRuntimeVM(validated, profileOptions, jitInstall, jitTier);
   }

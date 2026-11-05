@@ -110,6 +110,32 @@ What changed for code and scripts:
   `doctorProject`. A doctor report without the `lock` check is refused by
   `decodeDoctorReport`.
 
+## Workspaces in several tabs and sites
+
+`createVM` accepts `workspaceInUse: "fail" | "temporary"` (requires `workspaceId`).
+`"fail"`, the default, keeps the existing behavior: a workspace another VM holds,
+in this tab or another, rejects with `STORAGE_ERROR` and
+`detail.reason: "workspace-in-use"`. `"temporary"` opens the VM on a new temporary
+workspace instead, which starts empty, saves nothing and is removed with the VM.
+
+`WorkspacePersistence`'s ephemeral form carries a `reason`:
+`{ kind: "ephemeral", reason: "no-workspace-id" | "workspace-in-use" }`. Code that
+built or compared `{ kind: "ephemeral" }` adds the reason. The in-use error's
+message now names the workspace and the ways forward; match on
+`detail.reason`, never on the message.
+
+The hosted runtime frame keeps each embedding origin's storage apart: its own
+OPFS directory, IndexedDB databases, workspace locks and handoff channels, and
+`eraseLocalData` erases only that origin's data. Browsers partition the frame by
+top-level site, so before this release pages of one site (for example
+`app.example.com` and `docs.example.com`, or two `localhost` ports) shared one
+store. A page on this release no longer sees workspaces that a page saved
+through an earlier release's frame; that data stays in the browser, and older
+frames keep using it. Self-hosted pages keep their storage layout.
+
+A tab that closes without disposing its VM leaves an ephemeral workspace behind;
+the next VM of the same origin removes it in the background.
+
 ## Hosted starter development
 
 New starters select the hosted runtime frame in development and production.

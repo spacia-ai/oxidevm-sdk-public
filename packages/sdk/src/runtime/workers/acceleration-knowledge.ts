@@ -44,9 +44,10 @@ export async function writeAccelerationKnowledge(backend: AccelerationKnowledgeB
   catch (error: unknown) { await writable.abort(error); throw new VMError("STORAGE_ERROR", "Acceleration knowledge write failed", { reason: domReason(error) }); }
 }
 
-export function openAccelerationKnowledgeDatabase(): Promise<IDBDatabase> {
+/** `name` is the storage scope's `acceleration-knowledge` database (storage-scope.ts). */
+export function openAccelerationKnowledgeDatabase(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("oxidevm-acceleration-knowledge", 1);
+    const request = indexedDB.open(name, 1);
     request.onupgradeneeded = () => request.result.createObjectStore("files");
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new VMError("STORAGE_ERROR", "Acceleration knowledge IndexedDB open failed"));

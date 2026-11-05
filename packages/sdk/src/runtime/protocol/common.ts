@@ -120,7 +120,9 @@
  * whose native program carries the host helper's bridge version. */
 /** 179 adds the execution profile's `storageFailures`: image reads answered with a guest error and their storage
  * owner's typed causes (code, reason, guest path and pack chunk). */
-export const PROTOCOL_VERSION = 179;
+/** 180 adds the storage scope (storage-scope.ts) to the storage worker's `initialize`, `inspect-start-image` and
+ * `erase-local-data`: the runtime frame keeps each embedding origin's OPFS, IndexedDB and locks apart. */
+export const PROTOCOL_VERSION = 180;
 /** Combined architecture, background compilation and code-profile trace layout. */
 export const SYSTEM_TRACE_SCHEMA_VERSION = 54;
 

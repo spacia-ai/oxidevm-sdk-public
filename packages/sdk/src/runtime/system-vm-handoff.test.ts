@@ -11,6 +11,7 @@ import { bootedManagedVm, ScriptedWorker } from "./system-vm.test-support.js";
 import { WORKSPACE_HANDOFF_VERSION, requestWorkspaceHandoff, workspaceHandoffChannelName, type WorkspaceMovedAway } from "./workspace-handoff.js";
 import type { RuntimeVM } from "./vm-types.js";
 import { workspaceLockName } from "./workspace-path.js";
+import { ORIGIN_STORAGE } from "./storage-scope.js";
 
 vi.mock("./assistance-build.js", () => ({ ASSISTANCE_BUILD: "development", ASSISTANCE_ARTIFACTS: {
   version: 4, nextMemoryException: "next16.2.12-memory-observability-v2", httpParser: { sha256: "0".repeat(64), bytes: 1 }, profile: "node24-next16-v1",
@@ -31,7 +32,7 @@ async function settle(): Promise<void> {
 
 /** Another tab asking for `workspaceId`: what it heard back, after `settle()`. */
 function askFor(workspaceId: string): { readonly heard: unknown[]; readonly close: () => void } {
-  const channel = new BroadcastChannel(workspaceHandoffChannelName(workspaceId));
+  const channel = new BroadcastChannel(workspaceHandoffChannelName(ORIGIN_STORAGE, workspaceId));
   const heard: unknown[] = [];
   channel.addEventListener("message", (event: MessageEvent<unknown>) => heard.push(event.data));
   channel.postMessage({ version: WORKSPACE_HANDOFF_VERSION, type: "handoff-request", requestId: REQUEST_ID });
@@ -49,7 +50,7 @@ function allow(vm: RuntimeVM, signal = new AbortController().signal): WorkspaceM
 async function holdWorkspace(workspaceId: string): Promise<() => void> {
   const held = Promise.withResolvers<undefined>();
   const granted = Promise.withResolvers<undefined>();
-  void navigator.locks.request(workspaceLockName(workspaceId), async () => {
+  void navigator.locks.request(workspaceLockName(ORIGIN_STORAGE, workspaceId), async () => {
     granted.resolve(undefined);
     await held.promise;
   });
@@ -184,7 +185,7 @@ describe("handing a VM's workspace to another tab", () => {
       expect(moved).toEqual([]);
       expect(ScriptedWorker.named("oxidevm-control").operations).not.toContain("assistance-dispose");
       expect(ScriptedWorker.named("oxidevm-control").inputs).toContainEqual(expect.objectContaining({ type: "auto-save-configure", enabled: true }));
-      const free = await navigator.locks.request(workspaceLockName("restore"), { ifAvailable: true }, lock => lock !== null);
+      const free = await navigator.locks.request(workspaceLockName(ORIGIN_STORAGE, "restore"), { ifAvailable: true }, lock => lock !== null);
       expect(free).toBe(false);
       expect(exited).toBe(false);
       await expect(vm.workspace.writeFile("still-running.txt", new Uint8Array([1]))).resolves.toBeUndefined();

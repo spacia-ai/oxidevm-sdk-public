@@ -2,6 +2,7 @@ import {decodeSHA256} from "../../values.js";
 // Read-only pre-VM inspection. No workspace lease, recovery, activation or directory creation.
 import type { InspectStartImageRequest, PreparedStartImage } from "../protocol/start-image.js";
 import { VMError } from "../errors.js";
+import { storageDirectoryName, type StorageScope } from "../storage-scope.js";
 import { validateWorkspaceId } from "../workspace-path.js";
 import { verifyManagedImageManifest, managedImageUrl } from "../managed-image.js";
 import { readDiskHead, readGenerationRecord, managedImageStem } from "./managed-disk-head.js";
@@ -17,19 +18,20 @@ import { isNotFound } from "./snapshot-objects.js";
 type NativeSelection={source:NonNullable<Awaited<ReturnType<typeof RootfsStore.inspectCachedCheckpoint>>>;memoryMiB?:number};
 type StoredSelection=PreparedStartImage|NativeSelection|null;
 type NativeStart={manifestUrl:string;manifestSHA256:string};
-export async function inspectStartImage(request:InspectStartImageRequest,signal:AbortSignal):Promise<PreparedStartImage|null> {
+export async function inspectStartImage(request:InspectStartImageRequest,scope:StorageScope,signal:AbortSignal):Promise<PreparedStartImage|null> {
   active(signal);
   if(request.resume==="fresh-image"||request.resume==="update-image") return null;
   if(!("storage" in navigator)||typeof navigator.storage.getDirectory!=="function") return null;
-  return inspectStoredStartImage(await navigator.storage.getDirectory(),request,signal);
+  return inspectStoredStartImage(await navigator.storage.getDirectory(),scope,request,signal);
 }
-export async function inspectStoredStartImage(origin:FileSystemDirectoryHandle,request:InspectStartImageRequest,signal:AbortSignal):Promise<PreparedStartImage|null> {
+/** Reads `scope`'s retained start under the storage partition's root `origin`; another scope's saves are invisible. */
+export async function inspectStoredStartImage(origin:FileSystemDirectoryHandle,scope:StorageScope,request:InspectStartImageRequest,signal:AbortSignal):Promise<PreparedStartImage|null> {
   active(signal); validateWorkspaceId(request.workspaceId);
   if(request.resume==="fresh-image"||request.resume==="update-image") return null;
-  const retained=await retainedOrTrustChanged(()=>inspectStoredSelection(origin,request,signal))??await retainedOrTrustChanged(()=>inspectInstalledImage(origin,request,signal));
+  const retained=await retainedOrTrustChanged(()=>inspectStoredSelection(origin,scope,request,signal))??await retainedOrTrustChanged(()=>inspectInstalledImage(origin,scope,request,signal));
   const selected=retained!==null&&"source" in retained?await nativeSource(retained.source,request,signal,retained.memoryMiB):retained;
   if(selected===null||request.mode!=="userspace"||selected.image.manifestSHA256===request.manifestSHA256)return selected;
-  const root=await directory(origin,"oxidevm");
+  const root=await directory(origin,storageDirectoryName(scope));
   const requested=root===undefined?undefined:await RootfsStore.inspectCachedImage(root,request.manifestUrl,{keyId:request.trustedKeyId,publicKey:new Uint8Array(request.trustedPublicKey)},request.manifestSHA256);
   return requested===undefined||requested.id===selected.image.id&&requested.version===selected.image.version?selected:{...selected,update:{id:requested.id,version:requested.version}};
 }
@@ -47,8 +49,8 @@ async function retainedOrTrustChanged(inspect:()=>Promise<StoredSelection>):Prom
   }
 }
 
-async function inspectInstalledImage(origin:FileSystemDirectoryHandle,request:InspectStartImageRequest,signal:AbortSignal):Promise<StoredSelection> {
-  active(signal);const root=await directory(origin,"oxidevm");if(root===undefined)return null;
+async function inspectInstalledImage(origin:FileSystemDirectoryHandle,scope:StorageScope,request:InspectStartImageRequest,signal:AbortSignal):Promise<StoredSelection> {
+  active(signal);const root=await directory(origin,storageDirectoryName(scope));if(root===undefined)return null;
   if(request.mode==="system")return systemImage(root,undefined,request,signal);
   const source=await RootfsStore.inspectInstalledImage(root,request.manifestSHA256,{keyId:request.trustedKeyId,publicKey:request.trustedPublicKey.slice()});
   active(signal);return source===undefined?null:{source};
@@ -56,18 +58,18 @@ async function inspectInstalledImage(origin:FileSystemDirectoryHandle,request:In
 // Diagnostic preparation accepts the legacy signed-root formats already admitted by
 // RootfsStore. It authenticates the same retained source without projecting it as a
 // public whole-manifest image identity.
-export async function inspectStoredNativeStart(origin:FileSystemDirectoryHandle,request:InspectStartImageRequest,signal:AbortSignal):Promise<NativeStart|null> {
+export async function inspectStoredNativeStart(origin:FileSystemDirectoryHandle,scope:StorageScope,request:InspectStartImageRequest,signal:AbortSignal):Promise<NativeStart|null> {
   active(signal);validateWorkspaceId(request.workspaceId);
   if(request.mode!=="userspace")throw new VMError("PROTOCOL_ERROR","Native startup requires the Userspace runtime");
   if(request.resume==="fresh-image"||request.resume==="update-image")return null;
-  const retained=await inspectStoredSelection(origin,request,signal);
+  const retained=await inspectStoredSelection(origin,scope,request,signal);
   if(retained===null)return null;
   if(!("source" in retained))throw new VMError("PROTOCOL_ERROR","Native startup selected another runtime");
   active(signal);
   return {manifestUrl:retained.source.url.href,manifestSHA256:await sha256Hex(retained.source.bytes)};
 }
-async function inspectStoredSelection(origin:FileSystemDirectoryHandle,request:InspectStartImageRequest,signal:AbortSignal):Promise<StoredSelection> {
-  const oxidevm=await directory(origin,"oxidevm");if(oxidevm===undefined) return null;
+async function inspectStoredSelection(origin:FileSystemDirectoryHandle,scope:StorageScope,request:InspectStartImageRequest,signal:AbortSignal):Promise<StoredSelection> {
+  const oxidevm=await directory(origin,storageDirectoryName(scope));if(oxidevm===undefined) return null;
   const workspaces=await directory(oxidevm,"workspaces");if(workspaces===undefined) return null;
   const workspace=await directory(workspaces,request.workspaceId);if(workspace===undefined) return null;
   const snapshots=await directory(workspace,"snapshots-v2");

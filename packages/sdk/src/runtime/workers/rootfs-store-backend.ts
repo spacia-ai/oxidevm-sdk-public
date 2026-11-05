@@ -157,9 +157,10 @@ function key(scope: Scope, name: string): string {
   return `${scope}/${name}`;
 }
 
-export function openDatabase(): Promise<IDBDatabase> {
+/** `name` is the storage scope's `userspace-rootfs` database (storage-scope.ts). */
+export function openDatabase(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("oxidevm-userspace-rootfs", 1);
+    const request = indexedDB.open(name, 1);
     request.onupgradeneeded = () => request.result.createObjectStore("files");
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new VMError("STORAGE_ERROR", "rootfs IndexedDB open failed"));

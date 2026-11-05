@@ -37,3 +37,18 @@ it("preserves automatic acceleration and explicit opt-out across the runtime fra
     expect(() => decodeFrameOptions({ ...wire, mode: "system" }, "/engine/")).toThrow();
   }
 });
+
+it("lets only the frame decide whether a workspace is in use", () => {
+  const temporary = encodeFrameOptions(decodePublicVMOptions({ mode: "userspace", workspaceId: "notes", workspaceInUse: "temporary", runtime: { hosting: "frame" } }), "https://page.test/");
+  expect(temporary).toMatchObject({ workspaceId: "notes", workspaceInUse: "temporary" });
+  // The page never picks the temporary workspace itself: it cannot see the frame's locks.
+  expect(decodeFrameOptions(temporary, "/engine/")).toMatchObject({ workspaceId: "notes", ephemeral: false, workspaceInUse: "temporary" });
+  const durable = encodeFrameOptions(decodePublicVMOptions({ mode: "system", workspaceId: "notes", runtime: { hosting: "frame" } }), "https://page.test/");
+  expect(durable).not.toHaveProperty("workspaceInUse");
+  expect(decodeFrameOptions(durable, "/engine/")).toMatchObject({ workspaceInUse: "fail" });
+  expect(encodeFrameOptions(decodePublicVMOptions({ mode: "userspace", runtime: { hosting: "frame" } }), "https://page.test/")).not.toHaveProperty("workspaceInUse");
+  expect(() => decodeFrameOptions({ ...temporary, workspaceInUse: "share" }, "/engine/")).toThrow();
+  const { workspaceId: omitted, ...withoutWorkspace } = temporary;
+  expect(omitted).toBe("notes");
+  expect(() => decodeFrameOptions(withoutWorkspace, "/engine/")).toThrow("workspaceInUse requires workspaceId");
+});

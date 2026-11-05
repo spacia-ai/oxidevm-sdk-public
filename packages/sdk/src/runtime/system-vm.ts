@@ -11,6 +11,7 @@ import { SystemNetworkWorker } from "./system-network-worker.js";
 import { SystemListeningPorts } from "./system-listening-ports.js";
 import { decodeWatchOptions } from "./listening-ports.js";
 import { SnapshotObserver } from "./snapshot-observer.js";
+import { encodeStorageScope, ORIGIN_STORAGE, type StorageScope } from "./storage-scope.js";
 import { allowWorkspaceHandoff, type WorkspaceMovedAway } from "./workspace-handoff.js";
 import { RuntimeSnapshots } from "./snapshots.js";
 import type { RuntimeVMSnapshots } from "./snapshot-types.js";
@@ -87,6 +88,7 @@ export async function createSystemRuntimeVM(
       "initialize",
       {
         workspaceId: validated.workspaceId,
+        ...encodeStorageScope(validated.storage ?? ORIGIN_STORAGE),
         snapshotPort: snapshotChannel.port2,
         ...(validated.ephemeral === undefined ? {} : { ephemeral: validated.ephemeral }),
         machine: { memoryMiB: validated.memoryMiB, vcpus: validated.vcpus },
@@ -159,6 +161,7 @@ class BrowserRuntimeVM implements RuntimeVM {
   readonly #listening: SystemListeningPorts;
   readonly #memoryMiB: number;
   readonly #workspaceId: string;
+  readonly #storageScope: StorageScope;
   readonly #ephemeral: boolean;
   /** Aborted when disposal starts, so a disposing VM no longer hands its workspace over. */
   readonly #disposing = new AbortController();
@@ -191,6 +194,7 @@ class BrowserRuntimeVM implements RuntimeVM {
     this.#listening = new SystemListeningPorts(control);
     this.#memoryMiB = options.memoryMiB;
     this.#workspaceId = options.workspaceId;
+    this.#storageScope = options.storage ?? ORIGIN_STORAGE;
     this.#ephemeral = options.ephemeral === true;
     const observer = new SnapshotObserver(control);
     this.#managed = new ManagedSession({
@@ -678,7 +682,7 @@ class BrowserRuntimeVM implements RuntimeVM {
 
   allowWorkspaceHandoff(onMovedAway: (moved: WorkspaceMovedAway) => void, options: { readonly signal: AbortSignal }): void {
     allowWorkspaceHandoff(
-      this.#workspaceId,
+      { scope: this.#storageScope, id: this.#workspaceId },
       AbortSignal.any([this.#disposing.signal, this.#control.lifetime]),
       () => this.#handOff(),
       onMovedAway,

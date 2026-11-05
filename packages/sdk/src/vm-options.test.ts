@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defineImage } from "./image.js";
-import { decodePublicVMOptions, resolveProcessLimit } from "./vm-options.js";
+import { decodePublicVMOptions, onTemporaryWorkspace, resolveProcessLimit } from "./vm-options.js";
 
 it("keeps image preparation on-demand by default and accepts complete installation in both modes", () => {
   for (const mode of ["system", "userspace"] as const) {
@@ -44,12 +44,34 @@ describe("public VM options", () => {
   it("keeps omitted workspace IDs ephemeral and explicit IDs durable", () => {
     const a = decodePublicVMOptions({ mode: "userspace" });
     const b = decodePublicVMOptions({ mode: "userspace" });
-    expect(a.ephemeral).toBe(true);
+    expect(a.ephemeral).toBe("no-workspace-id");
+    expect(a.workspaceInUse).toBe("fail");
     expect(a.workspaceId).not.toBe(b.workspaceId);
     expect(a.workspaceId.length).toBeLessThanOrEqual(128);
     if (a.mode !== "userspace") throw new Error("expected Userspace options");
     expect(a.limits.maxProcesses).toBe(32);
     expect(decodePublicVMOptions({ mode: "system", workspaceId: "example-1" })).toMatchObject({ ephemeral: false, workspaceId: "example-1", vcpus: 1, network: { mode: "local" } });
+  });
+  it("fails on a workspace in use unless the page asks for a temporary workspace instead", () => {
+    for (const mode of ["system", "userspace"] as const) {
+      expect(decodePublicVMOptions({ mode, workspaceId: "notes" })).toMatchObject({ workspaceInUse: "fail", ephemeral: false });
+      expect(decodePublicVMOptions({ mode, workspaceId: "notes", workspaceInUse: "fail" })).toMatchObject({ workspaceInUse: "fail" });
+      expect(decodePublicVMOptions({ mode, workspaceId: "notes", workspaceInUse: "temporary" })).toMatchObject({ workspaceInUse: "temporary", workspaceId: "notes", ephemeral: false });
+      for (const input of [{ mode, workspaceInUse: "temporary" }, { mode, workspaceId: "notes", workspaceInUse: "share" }, { mode, workspaceId: "notes", workspaceInUse: true }]) {
+        expect(() => decodePublicVMOptions(input)).toThrow(expect.objectContaining({ code: "INVALID_ARGUMENT" }));
+      }
+    }
+  });
+  it("moves a VM whose workspace is in use onto a new temporary workspace that saves nothing", () => {
+    const durable = decodePublicVMOptions({ mode: "userspace", workspaceId: "notes", workspaceInUse: "temporary", rootPersistence: "persistent", restorePoint: "latest" });
+    const first = onTemporaryWorkspace(durable), second = onTemporaryWorkspace(durable);
+    expect(first).toMatchObject({ mode: "userspace", ephemeral: "workspace-in-use", rootPersistence: "ephemeral", resume: "latest" });
+    expect(first.workspaceId).toMatch(/^ephemeral_[0-9a-f]{32}$/u);
+    expect(second.workspaceId).not.toBe(first.workspaceId);
+    expect(durable).toMatchObject({ workspaceId: "notes", ephemeral: false, rootPersistence: "persistent" });
+    const system = onTemporaryWorkspace(decodePublicVMOptions({ mode: "system", workspaceId: "notes", workspaceInUse: "temporary" }));
+    expect(system).toMatchObject({ mode: "system", ephemeral: "workspace-in-use" });
+    expect(system).not.toHaveProperty("rootPersistence");
   });
   it.each([{}, { mode: "kernel" }, { mode: "system", limits: {} }, { mode: "userspace", vcpus: 1 }, { mode: "system", workspaceId: "" }, { mode: "system", workspaceId: "../escape" }, { mode: "system", workspaceId: "x".repeat(129) }, { mode: "userspace", limits: { maxProcesses: 65 } }, { mode: "system", memoryMiB: 0 }, { mode: "system", network: { mode: "relay" } }, { mode: "system", preview: { origin: "https://preview.test", isolation: "shared" } }, { mode: "system", image: { mode: "system" } }])("rejects invalid cross-field options before accessing browser state: %j", input => {
     try { decodePublicVMOptions(input); throw new Error("invalid options were admitted"); }

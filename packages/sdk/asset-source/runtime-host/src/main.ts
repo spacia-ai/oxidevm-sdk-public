@@ -3,7 +3,9 @@ import { serveFrame } from "../../../src/frame/host/server.js";
 import { FRAME_PROTOCOL_VERSION, decodeFrameConnect, frameReady, isAcceptableEmbedder } from "../../../src/frame/protocol/handshake.js";
 import { decodeFrameOptions } from "../../../src/frame/protocol/options.js";
 import { createLocalVM } from "../../../src/local-vm.js";
-import { eraseLocalData } from "../../../src/runtime/local-data.js";
+import { eraseStorageScope } from "../../../src/runtime/local-data.js";
+import { embedderStorage } from "../../../src/runtime/storage-scope.js";
+import { requestWorkspaceHandoff } from "../../../src/runtime/workspace-handoff.js";
 import { VMError, serializeUnknownError } from "../../../src/runtime/errors.js";
 import { sdkVersion } from "../../../src/sdk-version.js";
 import { bootPing, sendBootPing } from "./telemetry.js";
@@ -23,7 +25,9 @@ function reject(port: MessagePort, error: VMError): void {
   port.close();
 }
 
-window.addEventListener("message", (event: MessageEvent) => {
+window.addEventListener("message", (event: MessageEvent) => { void serveEmbedder(event); });
+
+async function serveEmbedder(event: MessageEvent): Promise<void> {
   if (event.source !== window.parent || window.parent === window) return;
   let decoded;
   try { decoded = decodeFrameConnect(event.data, event.ports); } catch { return; }
@@ -34,17 +38,23 @@ window.addEventListener("message", (event: MessageEvent) => {
   if (connect.protocol !== FRAME_PROTOCOL_VERSION) { reject(port, new VMError("FEATURE_NOT_AVAILABLE", "the runtime frame does not speak that protocol version", { reason: "browser-unsupported" })); return; }
   if (!crossOriginIsolated) { reject(port, new VMError("FEATURE_NOT_AVAILABLE", "the runtime frame is not cross-origin isolated: the page must be, and must frame it with allow=\"cross-origin-isolated\"", { reason: "browser-unsupported" })); return; }
   connected = true;
+  // Browsers give this frame one storage partition per top-level site, so every page of one site
+  // would share it; each embedding origin gets a scope of its own instead (storage-scope.ts).
+  let storage;
+  try { storage = await embedderStorage(event.origin); }
+  catch (error: unknown) { reject(port, error instanceof VMError ? error : new VMError("PROTOCOL_ERROR", "the embedding page's origin is invalid")); return; }
   port.postMessage({ v: FRAME_PROTOCOL_VERSION, type: "accepted", engineReleaseId });
   serveFrame(port, {
     embedderOrigin: event.origin,
-    // The page's erasure reaches this origin's storage partition, which it cannot open itself.
-    eraseLocalData: signal => eraseLocalData({ signal }),
+    // The page's erasure reaches its own scope of this frame's storage, which it cannot open itself.
+    eraseLocalData: signal => eraseStorageScope(storage, signal),
+    requestWorkspaceHandoff: (workspaceId, options) => requestWorkspaceHandoff(workspaceId, options, storage),
     create: async (options, signal, onProgress, previewKeeperHost) => {
       const decoded = decodeFrameOptions(options, engineBaseUrl);
       const started = performance.now();
       const report = { embedderOrigin: event.origin, sdkVersion, engineReleaseId, mode: decoded.mode };
       try {
-        const vm = await createLocalVM({ ...decoded, signal, onProgress }, engineBaseUrl, { previewKeeperHost, embedderOrigin: event.origin, moduleFrameBase: new URL("./", location.href).href });
+        const vm = await createLocalVM({ ...decoded, signal, onProgress }, engineBaseUrl, { previewKeeperHost, embedderOrigin: event.origin, storage, moduleFrameBase: new URL("./", location.href).href });
         sendBootPing(OXIDEVM_TELEMETRY_ENDPOINT, bootPing({ ...report, milliseconds: performance.now() - started, result: { vm } }));
         return vm;
       } catch (error) {
@@ -53,7 +63,7 @@ window.addEventListener("message", (event: MessageEvent) => {
       }
     },
   });
-});
+}
 
 // The shell works offline once cached. A browser that refuses Service Workers in third-party frames
 // (some privacy modes) still runs the frame online.

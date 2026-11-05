@@ -136,6 +136,9 @@ function decodeRuntimeVMOptions(value: unknown): RuntimeVMOptions {
   const memoryMiB = integer(options["memoryMiB"], "memoryMiB", 64, 3072);
   const relayPolicy = options["relayPolicy"];
   if (relayPolicy !== undefined && relayPolicy !== "personal-only") throw new VMError("INVALID_ARGUMENT", "Invalid relay policy");
+  const workspaceInUse = options["workspaceInUse"];
+  if (workspaceInUse !== undefined && workspaceInUse !== "fail" && workspaceInUse !== "temporary") throw new VMError("INVALID_ARGUMENT", "workspaceInUse must be 'fail' or 'temporary'");
+  if (workspaceInUse !== undefined && options["ephemeral"] === true) throw new VMError("INVALID_ARGUMENT", "workspaceInUse requires a durable workspace");
   const relayUrl = optionalString(options["relayUrl"], "relayUrl");
   const previewOrigin = decodePreviewOrigin(options["previewOrigin"]);
   const previewIsolation = decodePreviewIsolation(options["previewIsolation"], previewOrigin);
@@ -164,6 +167,7 @@ function decodeRuntimeVMOptions(value: unknown): RuntimeVMOptions {
     memoryMiB,
     network,
     ...(relayPolicy === undefined ? {} : { relayPolicy }),
+    ...(workspaceInUse === undefined ? {} : { workspaceInUse }),
     ...(relayUrl === undefined ? {} : { relayUrl }),
     ...(previewOrigin === undefined ? {} : { previewOrigin }),
     ...(previewIsolation === undefined ? {} : { previewIsolation }),
@@ -172,7 +176,7 @@ function decodeRuntimeVMOptions(value: unknown): RuntimeVMOptions {
     exactKeys(
       options,
       ["mode", "workspaceId", "memoryMiB", "network", "vcpus"],
-      ["relayUrl", "relayPolicy", "previewOrigin", "previewIsolation", "coreWasmUrl", "sharedCoreWasmUrl", "netstackWasmUrl", "assistance", "ephemeral"],
+      ["relayUrl", "relayPolicy", "previewOrigin", "previewIsolation", "coreWasmUrl", "sharedCoreWasmUrl", "netstackWasmUrl", "assistance", "ephemeral", "workspaceInUse"],
     );
     const coreWasmUrl = optionalString(options["coreWasmUrl"], "coreWasmUrl");
     const sharedCoreWasmUrl = optionalString(options["sharedCoreWasmUrl"], "sharedCoreWasmUrl");
@@ -191,7 +195,7 @@ function decodeRuntimeVMOptions(value: unknown): RuntimeVMOptions {
   exactKeys(
     options,
     ["mode", "workspaceId", "memoryMiB", "network"],
-    ["relayUrl", "relayPolicy", "previewOrigin", "previewIsolation", "userspaceWasmUrl", "userspaceSharedWasmUrl", "limits", "ephemeral", "initialUser", "rootPersistence", "interceptors", "nativeExecutionPort"],
+    ["relayUrl", "relayPolicy", "previewOrigin", "previewIsolation", "userspaceWasmUrl", "userspaceSharedWasmUrl", "limits", "ephemeral", "workspaceInUse", "initialUser", "rootPersistence", "interceptors", "nativeExecutionPort"],
   );
   const userspaceWasmUrl = optionalString(options["userspaceWasmUrl"], "userspaceWasmUrl");
   const userspaceSharedWasmUrl = optionalString(

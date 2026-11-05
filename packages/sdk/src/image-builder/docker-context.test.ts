@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect, it } from "vitest";
@@ -75,3 +75,17 @@ it("retains nested allowlisted inputs while excluding sibling directories", asyn
     await expect(readFile(join(input.context, ".cache/materials/secret"))).rejects.toMatchObject({ code: "ENOENT" });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+it("stages a Docker context file above 128 MiB, such as a COPY of a large CLI", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxidevm-context-large-"));
+  try {
+    await mkdir(join(root, "context")); await mkdir(join(root, "stage"));
+    await writeFile(join(root, "context/Dockerfile"), "FROM scratch\nCOPY bao /usr/local/bin/bao\n");
+    const size = 128 * 1024 ** 2 + 1;
+    const file = await open(join(root, "context/bao"), "wx");
+    try { await file.truncate(size); } finally { await file.close(); }
+    const staged = await stageDockerContext({ kind: "dockerfile", context: "context", file: "context/Dockerfile" }, join(root, "stage"),
+      { recipeDir: root, signingKeyFile: "author.pem" });
+    expect((await stat(join(staged.context, "bao"))).size).toBe(size);
+  } finally { await rm(root, { recursive: true, force: true }); }
+}, 30_000);

@@ -197,6 +197,8 @@ Expected result: `Keep this after reopening.` followed by a newline. The same ID
 
 Workspace paths such as `notes.txt` refer to `/workspace/notes.txt`. Files survive a normal persistent close/reopen; running processes do not automatically resume. Without `workspaceId`, the workspace is ephemeral. Keep one active VM per persistent workspace ID and await its disposal before opening another owner.
 
+One VM at a time holds a persistent workspace, in this tab or any other tab of your page's origin. A second `createVM` with the same ID fails with `STORAGE_ERROR` and `detail.reason: "workspace-in-use"`. Pass `workspaceInUse: "temporary"` to give that VM its own new temporary workspace instead: it starts empty, saves nothing, and reports `vm.workspace.persistence` as `{ kind: "ephemeral", reason: "workspace-in-use" }`, so tell the user that nothing in that tab is kept. Different origins never share workspaces, also through the hosted runtime frame: the frame keeps each embedding origin's workspaces, locks and erasure apart, even for pages on one site.
+
 You can read bytes with `readFile`, write bytes with `writeFile`, list a directory with `list`, and remove a file with `remove`. The default image supplies the immutable Linux runtime; your workspace holds your project changes.
 
 ## 4. Run a web app inside the browser

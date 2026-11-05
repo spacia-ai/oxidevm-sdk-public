@@ -4,11 +4,11 @@ import { VMError } from "./runtime/errors.js";
 import { decodePublicRuntime } from "./vm-options.js";
 
 /**
- * Erases all OxideVM workspaces, restore points, images and IndexedDB stores of the origin that
- * runs the runtime: this page's origin, or with `runtime: { hosting: "frame" }` the runtime frame's
- * origin, whose storage partition this page cannot reach itself. Dispose every VM first; an
- * active workspace in another tab or frame makes this fail before erasure. Applications stop
- * their own writers and clear their own preferences and caches separately.
+ * Erases all OxideVM workspaces, restore points, images and IndexedDB stores of this page's
+ * origin: in its own storage, or with `runtime: { hosting: "frame" }` its part of the runtime
+ * frame's storage, which this page cannot reach itself; other pages' data stays. Dispose every VM
+ * first; an active workspace of this origin in another tab or frame makes this fail before
+ * erasure. Applications stop their own writers and clear their own preferences and caches separately.
  */
 export async function eraseLocalData(options: { readonly signal?: AbortSignal; readonly runtime?: RuntimeOptions } = {}): Promise<void> {
   const input = record(options, "local data erasure options");

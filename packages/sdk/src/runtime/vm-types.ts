@@ -10,6 +10,7 @@ import type { InstallationProfile } from "./protocol/assistance-installation-pro
 import type { ManagedResume, ManagedStart, SnapshotInfo, StartProgress, RuntimeVMSnapshots } from "./snapshot-types.js";
 import type { SystemExecution } from "./system-execution.js";
 import type { Workspace } from "./workspace.js";
+import type { StorageScope } from "./storage-scope.js";
 import type { WorkspaceMovedAway } from "./workspace-handoff.js";
 import type { ImagePreparation } from "../values.js";
 import type { AccelerationNotice } from "./js-process/late-failure.js";
@@ -64,6 +65,18 @@ export interface ListeningPort {
 export interface CommonOptions {
   readonly ephemeral?: boolean;
   workspaceId: string;
+  /**
+   * Whose storage the VM uses. Absent, this origin's own; the runtime frame (ADR 0021) passes the
+   * scope of the page that embeds it (storage-scope.ts), so pages of one site never share workspaces.
+   */
+  readonly storage?: StorageScope;
+  /**
+   * What creating the VM does when another VM, in this tab or another, holds the durable
+   * `workspaceId`: "fail" (the default) rejects with `detail.reason: "workspace-in-use"`; "temporary"
+   * opens a new temporary workspace instead, which starts empty and saves nothing. The VM's
+   * `workspace.id` then names that temporary workspace.
+   */
+  readonly workspaceInUse?: "fail" | "temporary";
   memoryMiB: number;
   network: NetworkMode;
   relayUrl?: string;

@@ -90,8 +90,9 @@ export class RootfsStore {
     this.#requestedImage=offer;return offer;
   }
 
-  static indexedDb(network: RootfsNetworkClient): RootfsStore {
-    return new RootfsStore({ kind: "indexeddb", database: openDatabase() }, network);
+  /** The IndexedDB fallback store, in the storage scope's `database`. */
+  static indexedDb(network: RootfsNetworkClient, database: string): RootfsStore {
+    return new RootfsStore({ kind: "indexeddb", database: openDatabase(database) }, network);
   }
 
   async prepare(manifestHref: string, trusted: TrustedRootfsKey, manifestSHA256?: string,cachedOnly=false,signal?:AbortSignal,imagePreparation:ImagePreparation="on-demand"): Promise<PreparedUserspaceRootfs> {
