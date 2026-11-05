@@ -16,25 +16,37 @@ import { createSystemRuntimeVM } from "./runtime/system-vm.js";
 import type { RuntimeVM } from "./runtime/vm-types.js";
 import type { PreviewKeeperHost } from "./runtime/preview-keeper.js";
 import { VMError, withCleanupFailure } from "./runtime/errors.js";
+import { ORIGIN_STORAGE, type StorageScope } from "./runtime/storage-scope.js";
+import { openOnWorkspace } from "./workspace-selection.js";
 
 /** What the runtime frame changes about a local VM: where preview keepers live. */
 export interface LocalVMHosting {
   readonly previewKeeperHost?: PreviewKeeperHost;
   /** The page that embeds the runtime frame; a self-hosted VM is its own embedder. */
   readonly embedderOrigin?: string;
+  /** Whose storage the VM uses: the runtime frame passes its embedder's scope; absent, this origin's own. */
+  readonly storage?: StorageScope;
   /** Where `module-frame/` is served (ADR 0028): beside the engine release when self-hosted (the default), and beside
    * the runtime frame's own page, `/v/<sdk>/`, in the hosted frame, whose engine release is elsewhere. */
   readonly moduleFrameBase?: string;
 }
 
-/** Creates the VM in this page, from the engine release at `baseUrl`. The runtime frame runs this too. */
-export async function createLocalVM(options: ValidatedVMOptions, baseUrl: string, hosting: LocalVMHosting = {}): Promise<VM> {
+/**
+ * Creates the VM in this page, from the engine release at `baseUrl`, on the workspace its options
+ * select (workspace-selection.ts). The runtime frame runs this too, in its embedder's storage scope.
+ */
+export function createLocalVM(options: ValidatedVMOptions, baseUrl: string, hosting: LocalVMHosting = {}): Promise<VM> {
+  const storage = hosting.storage ?? ORIGIN_STORAGE;
+  return openOnWorkspace(options, storage, selected => openLocalVM(selected, baseUrl, hosting, storage));
+}
+
+async function openLocalVM(options: ValidatedVMOptions, baseUrl: string, hosting: LocalVMHosting, storage: StorageScope): Promise<VM> {
   abortIfRequested(options.signal);
   if (typeof Worker !== "function" || typeof globalThis.location !== "object") throw new VMError("FEATURE_NOT_AVAILABLE", "VM creation requires a browser with module workers", { reason: "browser-unsupported" });
   if (options.mode === "system" && options.vcpus !== 1) throw new VMError("FEATURE_NOT_AVAILABLE", "this SDK release qualifies one System vCPU", { reason: "release-gate-open" });
   const requestedImage = options.image ?? defaultImage(options.mode);
   const [inspection, loading] = await Promise.allSettled([
-    inspectRetainedStart(options, requestedImage, location.href),
+    inspectRetainedStart(options, requestedImage, location.href, storage),
     loadEngineAssets(options.mode, new URL(baseUrl, location.href).href, options.signal, options.onProgress),
   ]);
   if (inspection.status === "rejected") { if (loading.status === "fulfilled") loading.value.dispose(); const failure: unknown = inspection.reason; throw failure; }
@@ -62,7 +74,7 @@ export async function createLocalVM(options: ValidatedVMOptions, baseUrl: string
     if (native?.status === "absent") console.warn(NATIVE_EXECUTION_ABSENT_WARNING);
     const commandAcceleration = commandAccelerationSupport(options.mode === "system" ? "not-applicable" : options.acceleration, native);
     const common = {
-      workspaceId: options.workspaceId, ephemeral: options.ephemeral, memoryMiB: options.memoryMiB ?? verified.memoryMiB,
+      workspaceId: options.workspaceId, ephemeral: options.ephemeral !== false, storage, memoryMiB: options.memoryMiB ?? verified.memoryMiB,
       // Every boot first revokes relay access, so the runtime starts local and relay options
       // connect through the VM's own network owner below, once the VM is ready.
       network: "local" as const,

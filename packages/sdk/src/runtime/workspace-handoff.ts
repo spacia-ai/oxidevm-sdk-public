@@ -1,5 +1,6 @@
 import { exactKeys, record } from "./decode.js";
 import { decodeSerializedError, deserializeError, serializeUnknownError, type SerializedError, VMError } from "./errors.js";
+import { ORIGIN_STORAGE, storageName, type StorageScope } from "./storage-scope.js";
 import { validateWorkspaceId, workspaceLockName } from "./workspace-path.js";
 
 /** The version of the messages tabs exchange to hand a workspace over; tabs ignore other versions. */
@@ -16,9 +17,9 @@ type HandoffMessage =
   | { readonly type: "handoff-request" | "handoff-accepted"; readonly requestId: string }
   | { readonly type: "handoff-failed"; readonly requestId: string; readonly error: SerializedError };
 
-/** The channel tabs ask each other for `workspaceId` on. */
-export function workspaceHandoffChannelName(workspaceId: string): string {
-  return `oxidevm-workspace-handoff-${workspaceId}`;
+/** The channel tabs ask each other for `workspaceId` of `scope` on. */
+export function workspaceHandoffChannelName(scope: StorageScope, workspaceId: string): string {
+  return storageName(scope, `workspace-handoff-${workspaceId}`);
 }
 
 /**
@@ -31,14 +32,15 @@ export function workspaceHandoffChannelName(workspaceId: string): string {
 export async function requestWorkspaceHandoff(
   workspaceId: string,
   options: WorkspaceHandoffOptions = {},
+  scope: StorageScope = ORIGIN_STORAGE,
 ): Promise<WorkspaceHandoffResult> {
   const id = validateWorkspaceId(workspaceId);
   const timeout = validateTimeout(options.timeoutMs);
   const signal = options.signal;
   if (signal?.aborted === true) throw cancelled();
-  if (await lockIsFree(id)) return "released";
+  if (await workspaceIsFree(scope, id)) return "released";
   return new Promise<WorkspaceHandoffResult>((resolve, reject) => {
-    const channel = new BroadcastChannel(workspaceHandoffChannelName(id));
+    const channel = new BroadcastChannel(workspaceHandoffChannelName(scope, id));
     const waiting = new AbortController();
     const requestId = crypto.randomUUID();
     let settled = false;
@@ -70,7 +72,7 @@ export async function requestWorkspaceHandoff(
       if (message.type === "handoff-accepted") clearTimeout(timer);
       if (message.type === "handoff-failed") finish(() => { reject(deserializeError(message.error)); });
     });
-    navigator.locks.request(workspaceLockName(id), { mode: "exclusive", signal: waiting.signal }, () => undefined).then(
+    navigator.locks.request(workspaceLockName(scope, id), { mode: "exclusive", signal: waiting.signal }, () => undefined).then(
       () => {
         finish(() => {
           resolve("released");
@@ -87,13 +89,13 @@ export async function requestWorkspaceHandoff(
 }
 
 /**
- * Answers the first tab that asks for `workspaceId` while `signal` is not aborted: accepts its
- * request, then runs `handOff`, which saves and stops the VM, freeing the workspace. A failed
- * save is reported to the requester and leaves this listener ready for another request.
+ * Answers the first tab that asks for `workspaceId` of `scope` while `signal` is not aborted:
+ * accepts its request, then runs `handOff`, which saves and stops the VM, freeing the workspace.
+ * A failed save is reported to the requester and leaves this listener ready for another request.
  */
-export function listenForWorkspaceHandoff(workspaceId: string, handOff: () => Promise<void>, signal: AbortSignal): void {
+export function listenForWorkspaceHandoff(scope: StorageScope, workspaceId: string, handOff: () => Promise<void>, signal: AbortSignal): void {
   if (signal.aborted) return;
-  const channel = new BroadcastChannel(workspaceHandoffChannelName(validateWorkspaceId(workspaceId)));
+  const channel = new BroadcastChannel(workspaceHandoffChannelName(scope, validateWorkspaceId(workspaceId)));
   let handingOff = false;
   const stop = (): void => {
     // Revocation stops new requests; an accepted request still needs its outcome.
@@ -129,7 +131,7 @@ export function listenForWorkspaceHandoff(workspaceId: string, handOff: () => Pr
  * the VM, then `onMovedAway` hears how that went.
  */
 export function allowWorkspaceHandoff(
-  workspaceId: string,
+  workspace: { readonly scope: StorageScope; readonly id: string },
   lifetime: AbortSignal,
   handOff: () => Promise<WorkspaceMovedAway>,
   onMovedAway: (moved: WorkspaceMovedAway) => void,
@@ -137,7 +139,7 @@ export function allowWorkspaceHandoff(
 ): void {
   const signal = validateHandoffRegistration(onMovedAway, options);
   if (lifetime.aborted) throw new VMError("ABORTED", "the VM was disposed");
-  listenForWorkspaceHandoff(workspaceId, async () => {
+  listenForWorkspaceHandoff(workspace.scope, workspace.id, async () => {
     const moved = await handOff();
     queueMicrotask(() => {
       onMovedAway(moved);
@@ -158,9 +160,9 @@ export function validateHandoffRegistration(listener: unknown, options: unknown)
   throw new VMError("INVALID_ARGUMENT", "allowing workspace handoffs takes a listener and only an AbortSignal option");
 }
 
-/** Whether `workspaceId` is free, taking and dropping its lock if so. */
-async function lockIsFree(workspaceId: string): Promise<boolean> {
-  return navigator.locks.request(workspaceLockName(workspaceId), { mode: "exclusive", ifAvailable: true }, (lock) => lock !== null);
+/** Whether no VM holds `workspaceId` of `scope`, taking and dropping its lock if so. */
+export async function workspaceIsFree(scope: StorageScope, workspaceId: string): Promise<boolean> {
+  return navigator.locks.request(workspaceLockName(scope, workspaceId), { mode: "exclusive", ifAvailable: true }, (lock) => lock !== null);
 }
 
 /**

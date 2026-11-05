@@ -41,8 +41,8 @@ it("watches acceleration notices across a hosted frame until the page aborts, an
   await expect(watchAccelerationNotices(client, () => {}, { signal: new AbortController().signal })).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
 });
 
-it("decodes the hosted subscription request exactly under frame protocol 17", () => {
-  expect(FRAME_PROTOCOL_VERSION).toBe(17);
+it("decodes the hosted subscription request exactly under frame protocol 18", () => {
+  expect(FRAME_PROTOCOL_VERSION).toBe(18);
   expect(decodeFrameMessage(frameRequest(1, { type: "acceleration-notices" }))).toEqual({ id: 1, type: "acceleration-notices" });
   expect(() => decodeFrameMessage({ ...frameRequest(1, { type: "acceleration-notices" }), pid: 1 })).toThrow();
   expect(() => decodeFrameMessage({ ...frameRequest(1, { type: "acceleration-notices" }), v: 15 })).toThrow();

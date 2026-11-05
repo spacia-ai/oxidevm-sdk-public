@@ -1,15 +1,20 @@
 import { VMError } from "../errors.js";
-import { WORKSPACE_LOCK_PREFIX } from "../workspace-path.js";
+import { inStorageScope, storageDirectoryName, type StorageScope } from "../storage-scope.js";
+import { workspaceLockPrefix } from "../workspace-path.js";
 import { acquireLocalDataLock } from "../local-data-lock.js";
 export { acquireLocalDataLock } from "../local-data-lock.js";
 
-/** Runs only in a fresh storage worker. No handles or databases from a VM survive into it. */
-export async function eraseLocalDataStorage(signal: AbortSignal): Promise<void> {
-  const release = await acquireLocalDataLock("exclusive");
+/**
+ * Erases everything `scope` stores. Runs only in a fresh storage worker: no handles or databases
+ * from a VM survive into it. Another scope's data, workspaces and leases are left alone.
+ */
+export async function eraseLocalDataStorage(signal: AbortSignal, scope: StorageScope): Promise<void> {
+  const release = await acquireLocalDataLock("exclusive", scope);
   try {
     // Older SDK tabs hold workspace locks but predate the shared origin lease.
     const { held } = await navigator.locks.query();
-    if (held?.some(lock => lock.name?.startsWith(WORKSPACE_LOCK_PREFIX) === true) === true) {
+    const workspaces = workspaceLockPrefix(scope);
+    if (held?.some(lock => lock.name?.startsWith(workspaces) === true) === true) {
       throw new VMError("STORAGE_ERROR", "Close other OxideVM tabs, then retry cleanup", { reason: "local-data-in-use" });
     }
     // Enumerate before modifying anything: an incomplete database listing must fail closed.
@@ -19,21 +24,22 @@ export async function eraseLocalDataStorage(signal: AbortSignal): Promise<void> 
     const databases = await indexedDB.databases();
     for (const database of databases) {
       signal.throwIfAborted();
-      if (database.name?.startsWith("oxidevm-") === true) await deleteDatabase(database.name);
+      if (database.name !== undefined && inStorageScope(scope, database.name)) await deleteDatabase(database.name);
     }
     signal.throwIfAborted();
-    if (typeof navigator.storage.getDirectory === "function") await eraseOpfsLocalData(navigator.storage);
+    if (typeof navigator.storage.getDirectory === "function") await eraseOpfsLocalData(navigator.storage, scope);
     signal.throwIfAborted();
   } finally { await release(); }
 }
 
-export async function eraseOpfsLocalData(storage: Pick<StorageManager, "getDirectory">): Promise<void> {
+export async function eraseOpfsLocalData(storage: Pick<StorageManager, "getDirectory">, scope: StorageScope): Promise<void> {
+  const name = storageDirectoryName(scope);
   try {
     const root = await storage.getDirectory();
-    await root.removeEntry("oxidevm", { recursive: true });
+    await root.removeEntry(name, { recursive: true });
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === "NotFoundError") return;
-    throw erasureError(error, "OPFS /oxidevm");
+    throw erasureError(error, `OPFS /${name}`);
   }
 }
 

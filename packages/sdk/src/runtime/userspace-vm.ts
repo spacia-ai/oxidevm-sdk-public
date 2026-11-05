@@ -26,6 +26,7 @@ import {
 import { RuntimeSnapshots } from "./snapshots.js";
 import { WorkerClient } from "./worker-client.js";
 import { BrowserWorkspace, type Workspace } from "./workspace.js";
+import { encodeStorageScope, ORIGIN_STORAGE, type StorageScope } from "./storage-scope.js";
 import { allowWorkspaceHandoff, type WorkspaceMovedAway } from "./workspace-handoff.js";
 import { exactKeys, integer, record, string } from "./decode.js";
 import type { ExecutionTimingMode } from "./protocol/common.js";
@@ -85,6 +86,7 @@ export async function createUserspaceRuntimeVM(
       "initialize",
       {
         workspaceId: options.workspaceId,
+        ...encodeStorageScope(options.storage ?? ORIGIN_STORAGE),
         machine: { mode: "userspace", memoryMiB: options.memoryMiB, vcpus: 1 },
         ...(options.ephemeral === undefined ? {} : { ephemeral: options.ephemeral }),
         snapshotPort: snapshot.port1,
@@ -152,6 +154,7 @@ class BrowserUserspaceVM implements RuntimeVM {
   /** Aborted when disposal starts, so a disposing VM no longer hands its workspace over. */
   readonly #disposing = new AbortController();
   readonly #workspaceId: string;
+  readonly #storageScope: StorageScope;
 
   get imageIdentity() { return this.#managed.rootfs?.identity; }
 
@@ -165,6 +168,7 @@ class BrowserUserspaceVM implements RuntimeVM {
     this.#network = network;
     this.network = new NetworkClient(() => network, {origin: typeof location === "undefined" ? "null" : location.origin, workspaceId: options.workspaceId, serverAllowed: options.relayPolicy !== "personal-only"}, undefined, () => backend.revokeNetwork());
     this.#workspaceId = options.workspaceId;
+    this.#storageScope = options.storage ?? ORIGIN_STORAGE;
     this.#backend = backend;
     this.#previewOrigin = options.previewOrigin === undefined ? undefined : new URL(options.previewOrigin);
     this.#previewIsolation = options.previewIsolation ?? "per-session";
@@ -386,7 +390,7 @@ class BrowserUserspaceVM implements RuntimeVM {
 
   allowWorkspaceHandoff(onMovedAway: (moved: WorkspaceMovedAway) => void, options: { readonly signal: AbortSignal }): void {
     allowWorkspaceHandoff(
-      this.#workspaceId,
+      { scope: this.#storageScope, id: this.#workspaceId },
       AbortSignal.any([this.#disposing.signal, this.#storage.lifetime]),
       () => this.#handOff(),
       onMovedAway,

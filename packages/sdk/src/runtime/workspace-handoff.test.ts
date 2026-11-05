@@ -8,6 +8,7 @@ import {
 } from "./workspace-handoff.js";
 import { VMError } from "./errors.js";
 import { workspaceLockName } from "./workspace-path.js";
+import { embedderStorage, ORIGIN_STORAGE, type StorageScope } from "./storage-scope.js";
 
 let sequence = 0;
 
@@ -18,13 +19,13 @@ function workspace(): string {
 }
 
 /** Holds the workspace's lock, as a VM's storage worker does, until the returned release. */
-async function hold(workspaceId: string): Promise<() => void> {
+async function hold(workspaceId: string, scope: StorageScope = ORIGIN_STORAGE): Promise<() => void> {
   let release = (): void => undefined;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
   await new Promise<void>((granted) => {
-    void navigator.locks.request(workspaceLockName(workspaceId), { mode: "exclusive" }, async () => {
+    void navigator.locks.request(workspaceLockName(scope, workspaceId), { mode: "exclusive" }, async () => {
       granted();
       await held;
     });
@@ -58,11 +59,35 @@ describe("workspace handoff between tabs", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps the workspaces of pages of one site apart in the runtime frame", async () => {
+    const id = workspace();
+    const docs = await embedderStorage("https://docs.example.com");
+    const app = await embedderStorage("https://app.example.com");
+    // app.example.com's VM holds `id` and lets other tabs ask for it.
+    const release = await hold(id, app);
+    const handOff = vi.fn(() => Promise.resolve());
+    const listening = new AbortController();
+    listenForWorkspaceHandoff(app, id, handOff, listening.signal);
+    try {
+      // docs.example.com's `id` is its own workspace: free at once, and app's VM never hears the request.
+      await expect(requestWorkspaceHandoff(id, {}, docs)).resolves.toBe("released");
+      // This origin's own `id` is a third, separate workspace.
+      await expect(requestWorkspaceHandoff(id, {})).resolves.toBe("released");
+      await deliver();
+      expect(handOff).not.toHaveBeenCalled();
+      expect(workspaceHandoffChannelName(docs, id)).not.toBe(workspaceHandoffChannelName(app, id));
+      expect(workspaceLockName(docs, id)).not.toBe(workspaceLockName(app, id));
+    } finally {
+      listening.abort();
+      release();
+    }
+  });
+
   it("releases a free workspace at once, without asking other tabs", async () => {
     const id = workspace();
     const handOff = vi.fn(() => Promise.resolve());
     const listening = new AbortController();
-    listenForWorkspaceHandoff(id, handOff, listening.signal);
+    listenForWorkspaceHandoff(ORIGIN_STORAGE, id, handOff, listening.signal);
 
     await expect(requestWorkspaceHandoff(id)).resolves.toBe("released");
     await deliver();
@@ -78,7 +103,7 @@ describe("workspace handoff between tabs", () => {
       release();
       return Promise.resolve();
     });
-    listenForWorkspaceHandoff(id, handOff, new AbortController().signal);
+    listenForWorkspaceHandoff(ORIGIN_STORAGE, id, handOff, new AbortController().signal);
 
     await expect(requestWorkspaceHandoff(id)).resolves.toBe("released");
 
@@ -90,7 +115,7 @@ describe("workspace handoff between tabs", () => {
     const id = workspace();
     const release = await hold(id);
     const signals = lockRequestSignals();
-    const holder = new BroadcastChannel(workspaceHandoffChannelName(id));
+    const holder = new BroadcastChannel(workspaceHandoffChannelName(ORIGIN_STORAGE, id));
     holder.addEventListener("message", (event: MessageEvent<unknown>) => {
       if (typeof event.data !== "object" || event.data === null || !("requestId" in event.data)) return;
       holder.postMessage({ version: WORKSPACE_HANDOFF_VERSION, type: "handoff-failed", requestId: event.data.requestId,
@@ -118,10 +143,10 @@ describe("workspace handoff between tabs", () => {
       release();
       return Promise.resolve();
     });
-    listenForWorkspaceHandoff(id, handOff, listening.signal);
+    listenForWorkspaceHandoff(ORIGIN_STORAGE, id, handOff, listening.signal);
     try {
       await expect(requestWorkspaceHandoff(id)).rejects.toMatchObject({ code: "STORAGE_ERROR" });
-      const free = await navigator.locks.request(workspaceLockName(id), { ifAvailable: true }, (lock) => lock !== null);
+      const free = await navigator.locks.request(workspaceLockName(ORIGIN_STORAGE, id), { ifAvailable: true }, (lock) => lock !== null);
       expect(free).toBe(false);
       await expect(requestWorkspaceHandoff(id)).resolves.toBe("released");
       expect(handOff).toHaveBeenCalledTimes(2);
@@ -139,7 +164,7 @@ describe("workspace handoff between tabs", () => {
     const requesting = new AbortController();
     const saving = Promise.withResolvers<undefined>();
     const handOff = vi.fn(() => saving.promise);
-    listenForWorkspaceHandoff(id, handOff, listening.signal);
+    listenForWorkspaceHandoff(ORIGIN_STORAGE, id, handOff, listening.signal);
     let failure: unknown;
     const outcome = requestWorkspaceHandoff(id, { signal: requesting.signal }).catch((error: unknown) => { failure = error; });
     try {
@@ -150,7 +175,7 @@ describe("workspace handoff between tabs", () => {
       await deliver();
       expect(failure).toMatchObject({ code: "STORAGE_ERROR", message: "save failed" });
       expect(signals.map((signal) => signal.aborted)).toEqual([true]);
-      const free = await navigator.locks.request(workspaceLockName(id), { ifAvailable: true }, (lock) => lock !== null);
+      const free = await navigator.locks.request(workspaceLockName(ORIGIN_STORAGE, id), { ifAvailable: true }, (lock) => lock !== null);
       expect(free).toBe(false);
     } finally {
       requesting.abort();
@@ -165,8 +190,8 @@ describe("workspace handoff between tabs", () => {
     const listening = new AbortController();
     const saving = Promise.withResolvers<undefined>();
     const handOff = vi.fn(() => saving.promise);
-    listenForWorkspaceHandoff(id, handOff, listening.signal);
-    const requester = new BroadcastChannel(workspaceHandoffChannelName(id));
+    listenForWorkspaceHandoff(ORIGIN_STORAGE, id, handOff, listening.signal);
+    const requester = new BroadcastChannel(workspaceHandoffChannelName(ORIGIN_STORAGE, id));
     requester.postMessage({ version: WORKSPACE_HANDOFF_VERSION, type: "handoff-request", requestId: "123e4567-e89b-42d3-a456-426614174000" });
     requester.postMessage({ version: WORKSPACE_HANDOFF_VERSION, type: "handoff-request", requestId: "123e4567-e89b-42d3-a456-426614174001" });
     await deliver();
@@ -180,7 +205,7 @@ describe("workspace handoff between tabs", () => {
   it("ignores invalid or mismatched failures and accepts the validated failure", async () => {
     const id = workspace();
     const release = await hold(id);
-    const holder = new BroadcastChannel(workspaceHandoffChannelName(id));
+    const holder = new BroadcastChannel(workspaceHandoffChannelName(ORIGIN_STORAGE, id));
     let requestId: unknown;
     holder.addEventListener("message", (event: MessageEvent<unknown>) => {
       if (typeof event.data === "object" && event.data !== null && "requestId" in event.data) requestId = event.data.requestId;
@@ -239,7 +264,7 @@ describe("workspace handoff between tabs", () => {
         resolve();
       };
     }));
-    listenForWorkspaceHandoff(id, handOff, new AbortController().signal);
+    listenForWorkspaceHandoff(ORIGIN_STORAGE, id, handOff, new AbortController().signal);
 
     const result = requestWorkspaceHandoff(id, { timeoutMs: 1_000 });
     await deliver();
@@ -269,8 +294,8 @@ describe("workspace handoff between tabs", () => {
     const id = workspace();
     const release = await hold(id);
     const handOff = vi.fn(() => Promise.resolve());
-    listenForWorkspaceHandoff(id, handOff, new AbortController().signal);
-    const otherTab = new BroadcastChannel(workspaceHandoffChannelName(id));
+    listenForWorkspaceHandoff(ORIGIN_STORAGE, id, handOff, new AbortController().signal);
+    const otherTab = new BroadcastChannel(workspaceHandoffChannelName(ORIGIN_STORAGE, id));
     const requestId = "123e4567-e89b-42d3-a456-426614174000";
 
     for (const message of [
@@ -295,7 +320,7 @@ describe("workspace handoff between tabs", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const id = workspace();
     const release = await hold(id);
-    const otherTab = new BroadcastChannel(workspaceHandoffChannelName(id));
+    const otherTab = new BroadcastChannel(workspaceHandoffChannelName(ORIGIN_STORAGE, id));
     otherTab.addEventListener("message", () => {
       otherTab.postMessage({
         version: WORKSPACE_HANDOFF_VERSION,
@@ -319,7 +344,7 @@ describe("workspace handoff between tabs", () => {
     const release = await hold(id);
     const handOff = vi.fn(() => Promise.resolve());
     const allowing = new AbortController();
-    listenForWorkspaceHandoff(id, handOff, allowing.signal);
+    listenForWorkspaceHandoff(ORIGIN_STORAGE, id, handOff, allowing.signal);
     allowing.abort();
 
     const result = requestWorkspaceHandoff(id);

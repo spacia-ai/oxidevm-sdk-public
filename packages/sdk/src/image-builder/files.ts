@@ -33,6 +33,10 @@ export interface SourceFileMetadata { readonly mode: number; readonly ownership:
 
 export function hash(bytes: Uint8Array | string): string { return createHash("sha256").update(bytes).digest("hex"); }
 /** Read and identify a bounded regular file through one descriptor; never follow a replaced link. */
+/** The largest regular file the builder admits into a rootfs. The builder holds one such file in memory while it hashes
+ * and packs it; the runtime reads larger host files in ranges, so this bounds builder memory, not guest delivery. */
+export const MAX_ROOTFS_FILE_BYTES = 1024 ** 3;
+
 export async function readSourceFile(path: string, maximum: number, signal?: AbortSignal): Promise<{ readonly bytes: Uint8Array<ArrayBuffer>; readonly mode: number; readonly dev: number; readonly ino: number }> {
   abortIfRequested(signal);
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => { throw new VMError("INVALID_ARGUMENT", "source must be a readable regular file"); });
@@ -178,8 +182,8 @@ export async function collectRootfs(root: string, bundle: string | undefined, si
       const inode = `${metadata.dev}:${metadata.ino}`; const preceding = inodes.get(inode);
       if (metadata.nlink > 1 && preceding !== undefined) { entries.push({ ...common, type: "hardlink", target: preceding }); continue; }
       inodes.set(inode, path);
-      if (metadata.size > 128 * 1024 ** 2) throw new VMError("INVALID_ARGUMENT", "rootfs file exceeds the admitted artifact bound", { path });
-      const read = await readSourceFile(join(root, path), 128 * 1024 ** 2, signal);
+      if (metadata.size > MAX_ROOTFS_FILE_BYTES) throw new VMError("INVALID_ARGUMENT", "rootfs file exceeds the admitted artifact bound", { path });
+      const read = await readSourceFile(join(root, path), MAX_ROOTFS_FILE_BYTES, signal);
       if (read.dev !== metadata.dev || read.ino !== metadata.ino || read.mode !== (metadata.mode & 0o7777)) throw new VMError("PROTOCOL_ERROR", "rootfs entry changed while collecting metadata");
       const bytes = read.bytes;
       assertNoBuildSecrets(bytes, forbidden);

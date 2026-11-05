@@ -1,12 +1,14 @@
 import { VMError } from "./errors.js";
+import { storageName, type StorageScope } from "./storage-scope.js";
 
-const LOCAL_DATA_LOCK = "oxidevm-local-data";
-
-/** VM storage workers and application writers share this lease; erasure is exclusive. */
-export async function acquireLocalDataLock(mode: LockMode): Promise<() => Promise<void>> {
+/**
+ * VM storage workers and application writers of `scope` share this lease; erasure of the scope is
+ * exclusive. Another scope's storage, and its erasure, never wait on it.
+ */
+export async function acquireLocalDataLock(mode: LockMode, scope: StorageScope): Promise<() => Promise<void>> {
   const held = Promise.withResolvers<undefined>();
   const acquired = Promise.withResolvers<undefined>();
-  const completed = navigator.locks.request(LOCAL_DATA_LOCK, { mode, ifAvailable: true }, async lock => {
+  const completed = navigator.locks.request(storageName(scope, "local-data"), { mode, ifAvailable: true }, async lock => {
     if (lock === null) {
       acquired.reject(new VMError("STORAGE_ERROR", "Close other OxideVM tabs, then retry cleanup", { reason: "local-data-in-use" }));
       return;

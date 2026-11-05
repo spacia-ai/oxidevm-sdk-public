@@ -1,5 +1,6 @@
 import {expect,it,vi} from "vitest";
 import {inspectStoredStartImage} from "./startup-image.js";
+import {ORIGIN_STORAGE} from "../storage-scope.js";
 import {MemoryDirectory} from "./opfs-double.test-support.js";
 import {canonicalManagedImageBytes,decodeManagedImageManifest,managedImageIdentityBytes} from "../managed-image.js";
 import {managedBaseMarker} from "../managed-disk-state.js";
@@ -35,14 +36,14 @@ async function signedRetainedSystemImage() {
 it("reads a retained signed system image and sparse packed base entirely offline",async()=>{
   const f=await signedRetainedSystemImage(),fetcher=vi.spyOn(globalThis,"fetch").mockRejectedValue(new TypeError("offline"));
   try {
-    const result=await inspectStoredStartImage(f.origin,{workspaceId:"ws",mode:"system",resume:"latest",manifestUrl:"https://new.test/manifest.json",manifestSHA256:"b".repeat(64),trustedKeyId:f.trusted.keyId,trustedPublicKey:f.trusted.publicKey},new AbortController().signal);
+    const result=await inspectStoredStartImage(f.origin,ORIGIN_STORAGE,{workspaceId:"ws",mode:"system",resume:"latest",manifestUrl:"https://new.test/manifest.json",manifestSHA256:"b".repeat(64),trustedKeyId:f.trusted.keyId,trustedPublicKey:f.trusted.publicKey},new AbortController().signal);
     expect(result).toMatchObject({image:{id:"kept",version:"old",mode:"system",cpuProfile:"x86-64-v2",manifestSHA256:await sha256Hex(new TextEncoder().encode(f.text)),signatureVerified:true},memoryMiB:256,vcpus:1});
     expect(fetcher).not.toHaveBeenCalled();
     const prepared=await prepareManagedDisk({oxidevm:f.oxidevm,workspace:f.workspace,workspaceId:"ws",bases:new ManagedBases()},f.url.href,f.trusted,"live",()=>{}, {manifestSHA256:await sha256Hex(new TextEncoder().encode(f.text)),cachedOnly:true});
     expect(prepared.image.identity).toEqual(result?.image);
     expect(await currentSystemImage(f.images,prepared.disk.image,f.trusted,{id:"requested",version:"new"})).toEqual({id:"kept",version:"old",identity:result?.image,runtimes:{kind:"custom",versions:{python:"3.13"}},workspaceBaseSha256:"c".repeat(64),update:{id:"requested",version:"new"}});expect(fetcher).not.toHaveBeenCalled();prepared.disk.close();
     await writeOpfsFile(f.images,`${f.stem}.pack`,new Uint8Array(4096));
-    await expect(inspectStoredStartImage(f.origin,{workspaceId:"ws",mode:"system",resume:"none",manifestUrl:f.url.href,manifestSHA256:"b".repeat(64),trustedKeyId:f.trusted.keyId,trustedPublicKey:f.trusted.publicKey},new AbortController().signal)).resolves.toBeNull();
+    await expect(inspectStoredStartImage(f.origin,ORIGIN_STORAGE,{workspaceId:"ws",mode:"system",resume:"none",manifestUrl:f.url.href,manifestSHA256:"b".repeat(64),trustedKeyId:f.trusted.keyId,trustedPublicKey:f.trusted.publicKey},new AbortController().signal)).resolves.toBeNull();
   } finally {fetcher.mockRestore();}
 });
 
@@ -50,7 +51,7 @@ it("does not scan a retained system base at startup and verifies each used chunk
   const f=await signedRetainedSystemImage();
   const reading=vi.spyOn(Blob.prototype,"arrayBuffer"),fetcher=vi.spyOn(globalThis,"fetch").mockRejectedValue(new TypeError("offline"));
   try {
-    await inspectStoredStartImage(f.origin,{workspaceId:"ws",mode:"system",resume:"latest",manifestUrl:f.url.href,manifestSHA256:await sha256Hex(new TextEncoder().encode(f.text)),trustedKeyId:f.trusted.keyId,trustedPublicKey:f.trusted.publicKey},new AbortController().signal);
+    await inspectStoredStartImage(f.origin,ORIGIN_STORAGE,{workspaceId:"ws",mode:"system",resume:"latest",manifestUrl:f.url.href,manifestSHA256:await sha256Hex(new TextEncoder().encode(f.text)),trustedKeyId:f.trusted.keyId,trustedPublicKey:f.trusted.publicKey},new AbortController().signal);
     const storage={oxidevm:f.oxidevm,workspace:f.workspace,workspaceId:"ws",bases:new ManagedBases()};
     const prepared=await prepareManagedDisk(storage,f.url.href,f.trusted,"live",()=>{}, {cachedOnly:true,manifestSHA256:await sha256Hex(new TextEncoder().encode(f.text))});
     try {
@@ -68,7 +69,7 @@ it("does not scan a retained system base at startup and verifies each used chunk
 it("selects the exact installed system image for a new workspace entirely offline",async()=>{
   const f=await signedRetainedSystemImage(),fetcher=vi.spyOn(globalThis,"fetch").mockRejectedValue(new TypeError("offline"));
   try {
-    expect(await inspectStoredStartImage(f.origin,{workspaceId:"new-workspace",mode:"system",resume:"none",manifestUrl:f.url.href,
+    expect(await inspectStoredStartImage(f.origin,ORIGIN_STORAGE,{workspaceId:"new-workspace",mode:"system",resume:"none",manifestUrl:f.url.href,
       manifestSHA256:await sha256Hex(new TextEncoder().encode(f.text)),trustedKeyId:f.trusted.keyId,trustedPublicKey:f.trusted.publicKey},new AbortController().signal))
       .toMatchObject({image:{id:"kept",version:"old",signatureVerified:true},manifestUrl:f.url.href});
     const workspace=await (await f.oxidevm.getDirectoryHandle("workspaces")).getDirectoryHandle("new-workspace",{create:true});

@@ -26,7 +26,9 @@ function code(run: () => unknown): string {
 }
 
 it("rejects the previous frame protocol before it can drop trace requests", () => {
-  expect(FRAME_PROTOCOL_VERSION).toBe(17);
+  expect(FRAME_PROTOCOL_VERSION).toBe(18);
+  // Protocol 18 carries workspaceInUse; a protocol 17 frame would refuse the option and share one store across a site's pages.
+  expect(code(() => negotiateFrameProtocol({ kind: "oxidevm-runtime-ready", protocol: { min: 17, max: 17 } }))).toBe("FEATURE_NOT_AVAILABLE");
   // Protocol 17 adds module operations (ADR 0028); a protocol 16 frame would refuse them.
   expect(code(() => negotiateFrameProtocol({ kind: "oxidevm-runtime-ready", protocol: { min: 16, max: 16 } }))).toBe("FEATURE_NOT_AVAILABLE");
   expect(code(() => negotiateFrameProtocol({ kind: "oxidevm-runtime-ready", protocol: { min: 11, max: 11 } }))).toBe("FEATURE_NOT_AVAILABLE");
@@ -62,7 +64,7 @@ describe("frame handshake", () => {
     // A frame of the previous release, which speaks only protocol 1, is refused before connecting.
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 1, max: 1 } }))).toBe("FEATURE_NOT_AVAILABLE");
     // Protocol 6 preserves byte progress and distinguishes checkpoint downloads.
-    expect(FRAME_PROTOCOL_VERSION).toBe(17);
+    expect(FRAME_PROTOCOL_VERSION).toBe(18);
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 9, max: 9 } }))).toBe("FEATURE_NOT_AVAILABLE");
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 8, max: 8 } }))).toBe("FEATURE_NOT_AVAILABLE");
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 7, max: 7 } }))).toBe("FEATURE_NOT_AVAILABLE");
@@ -170,6 +172,13 @@ describe("process port messages", () => {
 describe("frame values", () => {
   it("decodes a VM description and refuses a mismatched or incomplete one", () => {
     expect(decodeVMDescription(description)).toMatchObject({ mode: "userspace", workspace: { id: "ws" } });
+    // An ephemeral workspace says why nothing is saved; a temporary one exists because another VM held the requested one.
+    for (const reason of ["no-workspace-id", "workspace-in-use"] as const) {
+      expect(decodeVMDescription({ ...description, workspace: { id: "ephemeral_0", persistence: { kind: "ephemeral", reason } } }).workspace.persistence).toEqual({ kind: "ephemeral", reason });
+    }
+    for (const persistence of [{ kind: "ephemeral" }, { kind: "ephemeral", reason: "shared" }, { kind: "ephemeral", reason: "workspace-in-use", backend: "opfs" }]) {
+      expect(code(() => decodeVMDescription({ ...description, workspace: { id: "ephemeral_0", persistence } }))).toBe("PROTOCOL_ERROR");
+    }
     expect(code(() => decodeVMDescription({ ...description, mode: "system" }))).toBe("PROTOCOL_ERROR");
     expect(code(() => decodeVMDescription({ ...description, image: { ...image, signatureVerified: false } }))).toBe("PROTOCOL_ERROR");
     expect(code(() => decodeVMDescription({ ...description, start: { kind: "started", reason: "first-start" } }))).toBe("PROTOCOL_ERROR");

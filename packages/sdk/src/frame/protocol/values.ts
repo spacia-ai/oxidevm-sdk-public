@@ -221,7 +221,12 @@ function decodeTerminal(value: unknown): TerminalWire {
 
 function decodePersistence(value: unknown): WorkspacePersistence {
   const persistence = record(value, "workspace persistence");
-  if (persistence["kind"] === "ephemeral") { exactKeys(persistence, ["kind"]); return { kind: "ephemeral" }; }
+  if (persistence["kind"] === "ephemeral") {
+    exactKeys(persistence, ["kind", "reason"]);
+    const reason = persistence["reason"];
+    if (reason !== "no-workspace-id" && reason !== "workspace-in-use") throw protocol("workspace persistence is invalid");
+    return { kind: "ephemeral", reason };
+  }
   if (persistence["kind"] !== "persistent") throw protocol("workspace persistence is invalid");
   exactKeys(persistence, ["kind", "backend", "browserRetention"]);
   const backend = persistence["backend"];

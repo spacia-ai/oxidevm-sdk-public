@@ -4,6 +4,7 @@ import { decodeImagePreparation } from "./image-preparation.js";
 import {decodeInspectStartImageFields,type InspectStartImageRequest} from "./start-image.js";
 import { boolean, exactKeys, record, string } from "../decode.js";
 import { VMError } from "../errors.js";
+import { decodeStorageScope, type StorageScope } from "../storage-scope.js";
 import { validateWorkspaceId } from "../workspace-path.js";
 import { decodeBytes } from "./decoders.js";
 import { decodeCancel, decodeRequestBase, decodeMessagePort, decodeDiskBridge, type RequestBase, type CancelRequest } from "./request-base.js";
@@ -21,8 +22,8 @@ export type StorageRequest =
   | (RequestBase & {readonly type:"abort-userspace-files";readonly sourceId:string})
   | (RequestBase & {readonly type:"current-userspace-image"|"current-userspace-rootfs"|"current-system-image"})
   | (RequestBase & {readonly type:"select-userspace-files";readonly boot:ManagedBoot;readonly rootTreeSha256:string;readonly rootPersistence:"ephemeral"|"persistent"})
-  | (RequestBase & InspectStartImageRequest & {readonly type:"inspect-start-image"})
-  | (RequestBase & { readonly type: "erase-local-data" })
+  | (RequestBase & InspectStartImageRequest & {readonly type:"inspect-start-image";readonly storage:StorageScope})
+  | (RequestBase & { readonly type: "erase-local-data"; readonly storage: StorageScope })
   | (RequestBase & { readonly type: "check-userspace-update"; readonly manifestUrl:string; readonly manifestSHA256?:string; readonly trustedKeyId:string; readonly trustedPublicKey:Uint8Array })
   | (RequestBase & { readonly type: "commit-workspace-streams"; readonly publication: WorkspacePublication })
   | (RequestBase & SnapshotCatalogRequest)
@@ -30,6 +31,8 @@ export type StorageRequest =
   | (RequestBase & {
       readonly type: "initialize";
       readonly workspaceId: string;
+      /** Whose storage the VM uses: this origin's own, or one embedding page's share of the runtime frame's. */
+      readonly storage: StorageScope;
       readonly ephemeral?: boolean;
       readonly snapshotPort: InstanceType<typeof MessagePort>;
       readonly rootfsNetworkPort?: InstanceType<typeof MessagePort>;
@@ -124,17 +127,18 @@ export function decodeStorageIncoming(value: unknown): StorageIncoming {
       return {...base,type,boot:decodeManagedBoot(message["boot"]),rootTreeSha256:decodeSHA256(message["rootTreeSha256"],"native root identity"),rootPersistence};
     }
     case "inspect-start-image":
-      exactKeys(message,["id","version","type","workspaceId","mode","resume","manifestUrl","manifestSHA256","trustedKeyId","trustedPublicKey"]);
-      return {...base,type,...decodeInspectStartImageFields(message),workspaceId:validateWorkspaceId(string(message["workspaceId"],"workspaceId"))};
+      exactKeys(message,["id","version","type","workspaceId","mode","resume","manifestUrl","manifestSHA256","trustedKeyId","trustedPublicKey"],["storage"]);
+      return {...base,type,...decodeInspectStartImageFields(message),workspaceId:validateWorkspaceId(string(message["workspaceId"],"workspaceId")),storage:decodeStorageScope(message["storage"])};
     case "initialize":
       exactKeys(
         message,
         ["id", "version", "type", "workspaceId", "snapshotPort"],
-        ["diskBridge", "diskPort", "rootfsNetworkPort", "userspaceStoragePort", "machine", "ephemeral"],
+        ["diskBridge", "diskPort", "rootfsNetworkPort", "userspaceStoragePort", "machine", "ephemeral", "storage"],
       );
       return {
         ...base,
         type,
+        storage: decodeStorageScope(message["storage"]),
         ...(message["ephemeral"] === undefined ? {} : { ephemeral: boolean(message["ephemeral"], "ephemeral workspace") }),
         workspaceId: validateWorkspaceId(
           string(message["workspaceId"], "workspaceId"),
@@ -258,6 +262,8 @@ export function decodeStorageIncoming(value: unknown): StorageIncoming {
       return { ...base, type, workspaceBaseSha256 };
     }
     case "erase-local-data":
+      exactKeys(message, ["id", "version", "type"], ["storage"]);
+      return { ...base, type, storage: decodeStorageScope(message["storage"]) };
     case "dispose":
     case "workspace-persistence":
       exactKeys(message, ["id", "version", "type"]);

@@ -303,11 +303,13 @@ export interface StorageOperations {
   readonly "current-userspace-image":Operation<undefined,PreparedImageIdentity>;
   readonly "abort-userspace-files":Operation<{readonly sourceId:string},undefined>;
   readonly "select-userspace-files":Operation<{readonly boot:ManagedBoot;readonly rootTreeSha256:string;readonly rootPersistence:"ephemeral"|"persistent"},SelectedNativeFiles>;
-  readonly "inspect-start-image":Operation<InspectStartImageRequest,PreparedStartImage|null>;
-  readonly "erase-local-data": Operation<undefined, undefined>;
+  /** `storage` is an embedder scope's ID (storage-scope.ts); absent, the origin's own storage. */
+  readonly "inspect-start-image":Operation<InspectStartImageRequest&{readonly storage?:string},PreparedStartImage|null>;
+  readonly "erase-local-data": Operation<{ readonly storage?: string }, undefined>;
   readonly initialize: Operation<
     {
       readonly workspaceId: string;
+      readonly storage?: string;
       readonly snapshotPort: InstanceType<typeof MessagePort>;
       readonly ephemeral?: boolean;
       readonly rootfsNetworkPort?: InstanceType<typeof MessagePort>;

@@ -16,7 +16,8 @@ export async function developmentAsset(root: string, request: string): Promise<s
     if (metadata === undefined || metadata.isSymbolicLink()) return undefined;
   }
   const metadata = await lstat(target);
-  return metadata.isFile() && metadata.size <= 128 * 1024 ** 2 ? target : undefined;
+  // The image builder admits rootfs files up to 1 GiB (MAX_ROOTFS_FILE_BYTES), so their loose blobs are served too.
+  return metadata.isFile() && metadata.size <= 1024 ** 3 ? target : undefined;
 }
 
 /** Development binaries stay outside public/, so Vite cannot copy them into production output. */

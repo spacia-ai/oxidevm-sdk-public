@@ -22,7 +22,7 @@ export interface FrameImageLocation {
   readonly trust: { readonly algorithm: "Ed25519"; readonly keyId: string; readonly publicKey: string };
 }
 
-const COMMON_KEYS = ["workspaceId", "memoryMiB", "network", "preview", "image", "license", "shippedSnapshot", "imagePreparation"] as const;
+const COMMON_KEYS = ["workspaceId", "workspaceInUse", "memoryMiB", "network", "preview", "image", "license", "shippedSnapshot", "imagePreparation"] as const;
 
 /** The wire form of validated options, in the public option names. An ephemeral workspace keeps no ID: the frame picks one. */
 export function encodeFrameOptions(options: ValidatedVMOptions, page: string): Readonly<Record<string, unknown>> {
@@ -32,7 +32,8 @@ export function encodeFrameOptions(options: ValidatedVMOptions, page: string): R
     restorePoint: options.resume,
     imagePreparation: options.imagePreparation,
     ...(options.shipped===undefined?{}:{shippedSnapshot:typeof options.shipped === "string" ? options.shipped : serializeShippedSnapshot(options.shipped,page)}),
-    ...(options.ephemeral ? {} : { workspaceId: options.workspaceId }),
+    // The frame decides whether the workspace is in use: only it can see its own storage's locks.
+    ...(options.ephemeral !== false ? {} : { workspaceId: options.workspaceId, ...(options.workspaceInUse === "fail" ? {} : { workspaceInUse: options.workspaceInUse }) }),
     ...(options.memoryMiB === undefined ? {} : { memoryMiB: options.memoryMiB }),
     network: encodeNetwork(options.network, page),
     ...(options.preview === undefined ? {} : { preview: { ...options.preview } }),

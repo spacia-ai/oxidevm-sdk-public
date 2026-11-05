@@ -22,9 +22,12 @@ import {
 import {
   normalizeWorkspacePath,
   validateWorkspaceId,
+  workspaceInUseError,
   workspaceLockName,
 } from "../workspace-path.js";
+import { sameStorageScope, storageDirectoryName, storageName, type StorageScope } from "../storage-scope.js";
 import { ManagedBases } from "./managed-base.js";
+import { removeOpfsWorkspace, sweepEphemeralWorkspaces } from "./ephemeral-workspaces.js";
 import { acquireLocalDataLock, eraseLocalDataStorage } from "./local-data.js";
 import type { ManagedDisk } from "./managed-disk.js";
 import { DISK_RESERVE_BYTES, SpaceReserve } from "./managed-disk-reserve.js";
@@ -109,6 +112,10 @@ let initialStart: InitialStart | undefined;
 let workspaceReserve: SpaceReserve | undefined;
 const workspacePublications = new WorkspacePublications();
 let releaseWorkspaceLock: (() => void) | undefined;
+/** Whose storage this worker's VM uses, fixed by its first `initialize`. */
+let storageScope: StorageScope | undefined;
+/** The removal of ephemeral workspaces that closed tabs left in this scope, while it runs. */
+let ephemeralSweep: { readonly controller: AbortController; readonly done: Promise<void> } | undefined;
 let ephemeralWorkspaceId: string | undefined;
 let releaseLocalDataLock: (() => Promise<void>) | undefined;
 let userspaceStorage: ReturnType<typeof serveUserspaceStorage> | undefined;
@@ -205,12 +212,12 @@ async function handle(request: StorageRequest): Promise<unknown> {
       await initialStart?.retire();return undefined;
     case "inspect-start-image":
       if (storage.kind !== "uninitialized") throw new VMError("INVALID_ARGUMENT", "Startup image inspection requires a fresh storage worker");
-      return inspectStartImage(request, active.get(request.id)?.controller.signal ?? AbortSignal.abort());
+      return inspectStartImage(request, request.storage, active.get(request.id)?.controller.signal ?? AbortSignal.abort());
     case "erase-local-data":
       if (storage.kind !== "uninitialized" || releaseLocalDataLock !== undefined) {
         throw new VMError("INVALID_ARGUMENT", "Local data erasure requires a fresh storage worker");
       }
-      await eraseLocalDataStorage(active.get(request.id)?.controller.signal ?? AbortSignal.abort());
+      await eraseLocalDataStorage(active.get(request.id)?.controller.signal ?? AbortSignal.abort(), request.storage);
       return undefined;
     case "initialize":
       await initialize(request);
@@ -348,7 +355,7 @@ async function handle(request: StorageRequest): Promise<unknown> {
     case "prepare-userspace-rootfs": {
       const store = rootfsStore;
       if (store === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "managed Userspace rootfs requires OPFS and a network worker");
-      const selection=request.cachedOnly===true||storage.kind!=="opfs"||request.boot==="fresh-image"||request.boot==="update-image"?null:await inspectStoredNativeStart(await navigator.storage.getDirectory(),{
+      const selection=request.cachedOnly===true||storage.kind!=="opfs"||request.boot==="fresh-image"||request.boot==="update-image"?null:await inspectStoredNativeStart(await navigator.storage.getDirectory(),activeScope(),{
         workspaceId:storage.workspaceId,mode:"userspace",resume:request.boot==="pre-resume"?"pre-resume":"latest",
         manifestUrl:request.manifestUrl,manifestSHA256:request.manifestSHA256??"0".repeat(64),trustedKeyId:request.trustedKeyId,trustedPublicKey:request.trustedPublicKey,
       },active.get(request.id)?.controller.signal??AbortSignal.abort());
@@ -414,6 +421,7 @@ async function handle(request: StorageRequest): Promise<unknown> {
       return store.readDelta(request.workspaceBaseSha256, active.get(request.id)?.controller.signal);
     }
     case "dispose":
+      await stopEphemeralSweep();
       await closeSnapshotChannel();
       await closeUserspaceStorageChannel();
       if (storage.kind === "indexeddb-fallback") {
@@ -427,7 +435,7 @@ async function handle(request: StorageRequest): Promise<unknown> {
         // OPFS forbids removing a directory while its disk SyncAccessHandle is
         // open. Retire the bridge after draining its channels, before deletion.
         closeDiskBridge();
-        if (ephemeralWorkspaceId !== undefined) await removeEphemeralWorkspace(ephemeralWorkspaceId, storage);
+        if (ephemeralWorkspaceId !== undefined) await removeEphemeralWorkspace(activeScope(), ephemeralWorkspaceId, storage);
       } finally {
         ephemeralWorkspaceId = undefined;
         releaseWorkspaceLock?.();
@@ -450,12 +458,17 @@ async function initialize(request: Extract<StorageRequest, { readonly type: "ini
     diskPort: bridgePort,
   } = request;
   validateWorkspaceId(workspaceId);
-  releaseLocalDataLock ??= await acquireLocalDataLock("shared");
+  if (storageScope !== undefined && !sameStorageScope(storageScope, request.storage)) {
+    throw new VMError("PROTOCOL_ERROR", "a storage worker serves one storage scope");
+  }
+  storageScope = request.storage;
+  releaseLocalDataLock ??= await acquireLocalDataLock("shared", request.storage);
+  await stopEphemeralSweep();
   await closeSnapshotChannel();
   await closeUserspaceStorageChannel();
   releaseWorkspaceLock?.();
   releaseWorkspaceLock = undefined;
-  await acquireWorkspaceLock(workspaceId);
+  await acquireWorkspaceLock(request.storage, workspaceId);
   ephemeralWorkspaceId = request.ephemeral === true ? workspaceId : undefined;
   closeDiskBridge();
   rootfsStore?.close();
@@ -467,7 +480,7 @@ async function initialize(request: Extract<StorageRequest, { readonly type: "ini
   storage = { kind: "uninitialized" };
   try {
     const origin = await navigator.storage.getDirectory();
-    const oxidevm = await origin.getDirectoryHandle("oxidevm", { create: true });
+    const oxidevm = await origin.getDirectoryHandle(storageDirectoryName(request.storage), { create: true });
     const workspaces = await oxidevm.getDirectoryHandle("workspaces", {
       create: true,
     });
@@ -484,10 +497,10 @@ async function initialize(request: Extract<StorageRequest, { readonly type: "ini
   } catch (error) {
     if (error instanceof TypeError) {
       bridgePort?.close();
-      const overlayDatabase = openWorkspaceOverlayDatabase(workspaceId);
+      const overlayDatabase = openWorkspaceOverlayDatabase(request.storage, workspaceId);
       storage = {
         kind: "indexeddb-fallback",
-        database: openWorkspaceDatabase(workspaceId),
+        database: openWorkspaceDatabase(request.storage, workspaceId),
         overlayDatabase,
       };
       workspaceSelections = new WorkspaceSelections(indexedDbWorkspaceStoreBackend(overlayDatabase));
@@ -495,7 +508,7 @@ async function initialize(request: Extract<StorageRequest, { readonly type: "ini
       workspaceStore = new WorkspaceStore(backend);
       userspaceRootStorage = new UserspaceRootStorage(backend);
       if (rootfsNetworkPort !== undefined) {
-        rootfsStore = RootfsStore.indexedDb(new RootfsNetworkClient(rootfsNetworkPort));
+        rootfsStore = RootfsStore.indexedDb(new RootfsNetworkClient(rootfsNetworkPort), storageName(request.storage, "userspace-rootfs"));
       }
       // No restore points without OPFS, but a Userspace cold start needs only the workspace selections and the image.
       if (nextUserspaceStoragePort !== undefined && rootfsStore !== undefined) {
@@ -535,6 +548,7 @@ async function initialize(request: Extract<StorageRequest, { readonly type: "ini
     } }),
   });
   scheduleSnapshotMaintenance(snapshotStore);
+  startEphemeralSweep(storage.oxidevm, request.storage);
   // A staged backup lives until the next export or session.
   await clearStagedExports(await stagedExports());
   openSnapshotChannel(nextSnapshotPort);
@@ -548,14 +562,30 @@ async function initialize(request: Extract<StorageRequest, { readonly type: "ini
   }
 }
 
-async function removeEphemeralWorkspace(id: string, current: StorageState): Promise<void> {
+/**
+ * Removes, in the background, the ephemeral workspaces of `scope` that tabs closed without disposing
+ * their VM left behind (ephemeral-workspaces.ts). Best effort: a failure leaves them for the next VM.
+ * The IndexedDB fallback keeps its leftovers until the scope's data is erased.
+ */
+function startEphemeralSweep(oxidevm: FileSystemDirectoryHandle, scope: StorageScope): void {
+  const controller = new AbortController();
+  const done = sweepEphemeralWorkspaces(oxidevm, scope, controller.signal).then(() => undefined, () => undefined);
+  ephemeralSweep = { controller, done };
+}
+
+/** Disposal waits for the sweep, so nothing of this worker deletes after it lets go of its leases. */
+async function stopEphemeralSweep(): Promise<void> {
+  const sweep = ephemeralSweep;
+  ephemeralSweep = undefined;
+  sweep?.controller.abort();
+  await sweep?.done;
+}
+
+async function removeEphemeralWorkspace(scope: StorageScope, id: string, current: StorageState): Promise<void> {
   if (current.kind === "opfs") {
-    for (const directory of ["workspaces", "workspace-overlays"]) {
-      const parent = await current.oxidevm.getDirectoryHandle(directory);
-      await parent.removeEntry(id, { recursive: true });
-    }
+    await removeOpfsWorkspace(current.oxidevm, id);
   } else if (current.kind === "indexeddb-fallback") {
-    for (const name of [`oxidevm-workspace-${id}`, `oxidevm-workspace-overlay-${id}`]) {
+    for (const name of [workspaceDatabaseName(scope, id), workspaceOverlayDatabaseName(scope, id)]) {
       await new Promise<void>((resolve, reject) => {
         const request = indexedDB.deleteDatabase(name);
         request.onsuccess = () => resolve();
@@ -566,12 +596,12 @@ async function removeEphemeralWorkspace(id: string, current: StorageState): Prom
   }
 }
 
-async function acquireWorkspaceLock(workspaceId: string): Promise<void> {
+async function acquireWorkspaceLock(scope: StorageScope, workspaceId: string): Promise<void> {
   let release: (() => void) | undefined;
   const held = new Promise<void>((resolve) => { release = resolve; });
   const acquired = new Promise<boolean>((resolve, reject) => {
     void navigator.locks.request(
-      workspaceLockName(workspaceId),
+      workspaceLockName(scope, workspaceId),
       { ifAvailable: true, mode: "exclusive" },
       async (lock) => {
         resolve(lock !== null);
@@ -579,11 +609,7 @@ async function acquireWorkspaceLock(workspaceId: string): Promise<void> {
       },
     ).catch(reject);
   });
-  if (!await acquired) {
-    throw new VMError("STORAGE_ERROR", "workspace is already active in another runtime", {
-      reason: "workspace-in-use",
-    });
-  }
+  if (!await acquired) throw workspaceInUseError(workspaceId);
   releaseWorkspaceLock = release;
 }
 
@@ -652,10 +678,10 @@ async function handleUserspaceStorage(request: UserspaceStorageRequest, signal: 
 }
 
 let knowledgeDatabase: Promise<IDBDatabase> | undefined;
-/** OPFS `/oxidevm` or the IndexedDB fallback; both are removed by local-data cleanup. */
+/** The scope's OPFS directory or its IndexedDB fallback; local-data cleanup of the scope removes both. */
 function knowledgeBackend(): AccelerationKnowledgeBackend | undefined {
   if (storage.kind === "opfs") return { kind: "opfs", root: storage.oxidevm };
-  if (storage.kind === "indexeddb-fallback") return { kind: "indexeddb", database: knowledgeDatabase ??= openAccelerationKnowledgeDatabase() };
+  if (storage.kind === "indexeddb-fallback") return { kind: "indexeddb", database: knowledgeDatabase ??= openAccelerationKnowledgeDatabase(storageName(activeScope(), "acceleration-knowledge")) };
   return undefined;
 }
 
@@ -981,18 +1007,32 @@ function key(segments: string[]): string {
   return segments.join("/");
 }
 
-function openWorkspaceDatabase(workspaceId: string): Promise<IDBDatabase> {
+/** The storage scope of the VM this worker initialized; nothing that needs one runs before that. */
+function activeScope(): StorageScope {
+  if (storageScope === undefined) throw new VMError("PROTOCOL_ERROR", "storage worker has no storage scope before initialize");
+  return storageScope;
+}
+
+function workspaceDatabaseName(scope: StorageScope, workspaceId: string): string {
+  return storageName(scope, `workspace-${workspaceId}`);
+}
+
+function workspaceOverlayDatabaseName(scope: StorageScope, workspaceId: string): string {
+  return storageName(scope, `workspace-overlay-${workspaceId}`);
+}
+
+function openWorkspaceDatabase(scope: StorageScope, workspaceId: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(`oxidevm-workspace-${workspaceId}`, 1);
+    const request = indexedDB.open(workspaceDatabaseName(scope, workspaceId), 1);
     request.onupgradeneeded = () => request.result.createObjectStore("files");
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new VMError("STORAGE_ERROR", "workspace IndexedDB open failed"));
   });
 }
 
-function openWorkspaceOverlayDatabase(workspaceId: string): Promise<IDBDatabase> {
+function openWorkspaceOverlayDatabase(scope: StorageScope, workspaceId: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(`oxidevm-workspace-overlay-${workspaceId}`, 1);
+    const request = indexedDB.open(workspaceOverlayDatabaseName(scope, workspaceId), 1);
     request.onupgradeneeded = () => request.result.createObjectStore("files");
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new VMError("STORAGE_ERROR", "workspace overlay IndexedDB open failed"));

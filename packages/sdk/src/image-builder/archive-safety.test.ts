@@ -1,12 +1,12 @@
 import { Header } from "tar";
 import { watch } from "node:fs";
-import { mkdtemp, mkdir, readFile, readlink, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readlink, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, it } from "vitest";
 import { materializeSource } from "./sources.js";
-import { hash } from "./files.js";
+import { hash, MAX_ROOTFS_FILE_BYTES } from "./files.js";
 import { unpackSourceArchive } from "./archive.js";
 
 function entry(path: string, text = "", type: "File" | "Link" | "SymbolicLink" = "File", linkpath?: string): Buffer {
@@ -55,3 +55,29 @@ it("closes real extraction files before a mid-write cancellation settles", async
     expect(paths.filter(path => path.startsWith(`${output}/`))).toEqual([]);
   } finally { observer.close(); await rm(root, { recursive: true, force: true }); }
 }, 20_000);
+
+it("unpacks an archive entry above 128 MiB within the rootfs file bound", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxidevm-archive-large-"));
+  try {
+    const output = join(root, "output"); await mkdir(output);
+    const block = Buffer.alloc(512); const size = 128 * 1024 ** 2 + 1;
+    new Header({ path: "bao", type: "File", mode: 0o755, uid: 0, gid: 0, size }).encode(block);
+    const input = join(root, "input.tgz");
+    // Stored, not deflated: zeros would trip tar's 1000:1 decompression-ratio guard, which real binaries never reach.
+    await writeFile(input, gzipSync(Buffer.concat([block, Buffer.alloc(size + (512 - size % 512) % 512), Buffer.alloc(1024)]), { level: 0 }));
+    await expect(unpackSourceArchive(input, output)).resolves.toBeDefined();
+    expect((await stat(join(output, "bao"))).size).toBe(size);
+  } finally { await rm(root, { recursive: true, force: true }); }
+}, 30_000);
+
+it("rejects an archive entry above the rootfs file bound from its header", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxidevm-archive-limit-"));
+  try {
+    const output = join(root, "output"); await mkdir(output);
+    const block = Buffer.alloc(512);
+    new Header({ path: "huge", type: "File", mode: 0o644, uid: 0, gid: 0, size: MAX_ROOTFS_FILE_BYTES + 1 }).encode(block);
+    const input = join(root, "input.tar"); await writeFile(input, Buffer.concat([block, Buffer.alloc(1024)]));
+    await expect(unpackSourceArchive(input, output)).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    await expect(stat(join(output, "huge"))).rejects.toMatchObject({ code: "ENOENT" });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

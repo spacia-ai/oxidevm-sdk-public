@@ -3,6 +3,7 @@ import { isAbsolute, join } from "node:path";
 import { Parser } from "tar";
 import { VMError } from "../runtime/errors.js";
 import { integer } from "../runtime/decode.js";
+import { MAX_ROOTFS_FILE_BYTES } from "./files.js";
 import type { SourceFileMetadata } from "./files.js";
 import { abortIfRequested } from "./tools.js";
 import { readTarFile } from "./tar-reader.js";
@@ -40,7 +41,7 @@ export async function unpackSourceArchive(archive: string, root: string, signal?
       if (path === "" || kinds.has(path)) return invalid("empty or duplicate normalized path");
       const type = entry.type;
       if (type !== "File" && type !== "Directory" && type !== "Link" && type !== "SymbolicLink") return invalid("unsupported entry type");
-      bytes += integer(entry.size, "entry bytes", 0, 128 * 1024 ** 2);
+      bytes += integer(entry.size, "entry bytes", 0, MAX_ROOTFS_FILE_BYTES);
       if (bytes > 8 * 1024 ** 3 || kinds.size >= 262_144) return invalid("expanded filesystem exceeds its byte or entry bound");
       kinds.set(path, entry.type);
       staged.set(path, { type, bytes: entry.size, ...(type === "Link" || type === "SymbolicLink" ? { linkpath: entry.linkpath ?? "" } : {}) });

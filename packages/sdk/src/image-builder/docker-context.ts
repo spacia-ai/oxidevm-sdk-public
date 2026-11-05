@@ -3,7 +3,7 @@ import { chmod, mkdir, lstat, readlink, readdir, rename, symlink, utimes, writeF
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { VMError } from "../runtime/errors.js";
 import type { BuildImageOptions, RootfsSource } from "./contracts.js";
-import { assertNoBuildSecrets, hash, readSourceFile } from "./files.js";
+import { assertNoBuildSecrets, hash, MAX_ROOTFS_FILE_BYTES, readSourceFile } from "./files.js";
 import { abortIfRequested } from "./tools.js";
 import { loadBuildSecrets } from "./build-secrets.js";
 import type { LoadedBuildSecrets } from "./build-secrets.js";
@@ -58,7 +58,7 @@ export async function stageDockerContext(source: Extract<RootfsSource, { readonl
       const target = join(context, path); const mode = metadata.mode & 0o7777;
       if (isDirectory) { await mkdir(target, { recursive: true, mode: 0o700 }); collected.push([path, "directory", mode, ""]); await walk(path, depth + 1); await chmod(target, mode); await utimes(target, epoch, epoch); }
       else if (metadata.isFile()) {
-        const read = await readSourceFile(absolute, 128 * 1024 ** 2, options.signal);
+        const read = await readSourceFile(absolute, MAX_ROOTFS_FILE_BYTES, options.signal);
         assertNoBuildSecrets(read.bytes, forbidden);
         if (read.dev !== metadata.dev || read.ino !== metadata.ino) throw new VMError("PROTOCOL_ERROR", "Docker context entry changed while staging");
         if (/-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/u.test(Buffer.from(read.bytes).toString("latin1"))) throw new VMError("INVALID_ARGUMENT", "Docker context contains a private key", { path });
