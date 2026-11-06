@@ -106,6 +106,7 @@
     "packages/sdk/tsconfig.worker-test.json",
     "packages/sdk/tsconfig.worker.build.json",
     "packages/sdk/tsconfig.worker.json",
+    "packages/sdk/vite.doctor-frame.config.ts",
     "packages/sdk/vite.doctor.config.ts",
     "packages/sdk/vite.qualification.config.ts",
     "packages/sdk/vite.snapshot.config.ts",

@@ -7,6 +7,44 @@ import type { OperationDecoders } from "./operations.js";
 export type RelayOptions =
   | { readonly kind: "personal"; readonly workspaceName?: string }
   | { readonly kind: "server"; readonly url: string; readonly sessionUrl?: string; readonly headers?: Readonly<Record<string, string>> };
+/**
+ * Whose relay connections a VM's network owner makes (spec/relay/v2.md identity). Relays see `origin`, this document's
+ * own. Inside the runtime frame (ADR 0021) that is the frame's origin for every page that embeds it, so
+ * `embedderOrigin` names that page, as the frame verified it from the page's message.
+ */
+export interface RelayScope {
+  readonly origin: string;
+  readonly workspaceId: string;
+  readonly embedderOrigin?: string;
+  readonly workspaceName?: string;
+  readonly serverAllowed?: boolean;
+}
+/** The network worker's `connect-network-control` message: the VM's relay control port and its relay scope. */
+export interface NetworkControlConnection { readonly port: InstanceType<typeof MessagePort>; readonly pageUrl: string; readonly scope: RelayScope }
+export function decodeNetworkControlConnection(message: Readonly<Record<string, unknown>>): NetworkControlConnection {
+  exactKeys(message, ["version", "type", "port", "origin", "workspaceId", "pageUrl", "serverAllowed"], ["workspaceName", "embedderOrigin"]);
+  const port = message["port"];
+  if (!(port instanceof MessagePort)) throw new TypeError("invalid network control port");
+  const origin = boundedText(message["origin"], "application origin", 4096);
+  const pageUrl = boundedText(message["pageUrl"], "application URL", 4096);
+  if (new URL(pageUrl).origin !== origin || origin === "null") throw new TypeError("invalid application origin");
+  if (typeof message["serverAllowed"] !== "boolean") throw new TypeError("Invalid relay policy");
+  const embedderOrigin = message["embedderOrigin"] === undefined ? undefined : decodeEmbedderOrigin(message["embedderOrigin"], origin);
+  return { port, pageUrl, scope: {
+    serverAllowed: message["serverAllowed"], origin, workspaceId: boundedText(message["workspaceId"], "workspace ID", 256),
+    ...(embedderOrigin === undefined ? {} : { embedderOrigin }),
+    ...(message["workspaceName"] === undefined ? {} : { workspaceName: boundedText(message["workspaceName"], "workspace name", 100) }),
+  } };
+}
+/** A serialized, non-opaque origin other than the document's own: the frame never embeds itself. */
+function decodeEmbedderOrigin(value: unknown, origin: string): string {
+  const text = boundedText(value, "embedder origin", 4096);
+  let serialized: string;
+  try { serialized = new URL(text).origin; }
+  catch { throw new VMError("PROTOCOL_ERROR", "Invalid embedder origin"); }
+  if (serialized !== text || text === "null" || text === origin) throw new VMError("PROTOCOL_ERROR", "Invalid embedder origin");
+  return text;
+}
 export interface NetworkView { readonly revision: number; readonly state: NetworkState }
 export interface NetworkOperations {
   "network-connect": { request: { readonly options: RelayOptions }; response: NetworkView };

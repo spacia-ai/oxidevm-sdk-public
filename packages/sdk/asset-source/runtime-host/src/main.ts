@@ -1,5 +1,6 @@
 import { engineReleaseId } from "../../../src/engine.generated.js";
 import { serveFrame } from "../../../src/frame/host/server.js";
+import { runtimeFrameEngineUrl } from "../../../src/frame/location.js";
 import { FRAME_PROTOCOL_VERSION, decodeFrameConnect, frameReady, isAcceptableEmbedder } from "../../../src/frame/protocol/handshake.js";
 import { decodeFrameOptions } from "../../../src/frame/protocol/options.js";
 import { createLocalVM } from "../../../src/local-vm.js";
@@ -17,7 +18,7 @@ declare const OXIDEVM_TELEMETRY_ENDPOINT: string;
 // from that page, and runs the SDK's local VM for it with this release's engine, served next to
 // this page as /engine/<release-id>/. Nothing else happens here: the page decides everything else.
 
-const engineBaseUrl = new URL(`../../engine/${engineReleaseId}/`, location.href).href;
+const engineBaseUrl = runtimeFrameEngineUrl(location.href, engineReleaseId);
 let connected = false;
 
 function reject(port: MessagePort, error: VMError): void {

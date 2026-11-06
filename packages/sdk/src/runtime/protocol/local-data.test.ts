@@ -13,7 +13,7 @@ describe("local data erasure protocol", () => {
     expect(decodeStorageIncoming(request)).toEqual({ ...request, storage: ORIGIN_STORAGE });
     const embedder = "0123456789abcdef0123456789abcdef";
     expect(decodeStorageIncoming({ ...request, storage: embedder })).toEqual({ ...request, storage: { kind: "embedder", id: embedder } });
-    expect(PROTOCOL_VERSION).toBe(180);
+    expect(PROTOCOL_VERSION).toBe(181);
     storageResponseDecoders["erase-local-data"](undefined);
     for (const invalid of [
       { ...request, version: PROTOCOL_VERSION - 1 }, { ...request, version: PROTOCOL_VERSION + 1 },

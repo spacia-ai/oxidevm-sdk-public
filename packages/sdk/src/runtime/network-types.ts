@@ -1,10 +1,15 @@
 import type { RelayFailureReason } from "./workers/relay-generated.js";
 export type { RelayFailureReason } from "./workers/relay-generated.js";
-/** Relay access is scoped to this VM's origin, workspace, and browser session. */
+/**
+ * Relay access is scoped to the origin the relay sees, the workspace and the browser session. Inside the runtime frame
+ * (`hosting: "frame"`) relays see the frame's origin for every page that embeds it, so the workspace names the page:
+ * `<page origin> <workspaceId>`. There a server relay's session request carries no cookies; authenticate it with `headers`.
+ */
 export type RelayConnectionOptions =
   | { readonly kind: "personal"; readonly workspaceName?: string; readonly url?: never; readonly sessionUrl?: never; readonly headers?: never }
   | { readonly kind: "server"; readonly url: string | URL; readonly sessionUrl?: string | URL; readonly headers?: Readonly<Record<string, string>> };
 
+/** `awaiting-approval` carries what the personal relay shows the user: the code, the origin it sees, the workspace ID and name. */
 export type NetworkState =
   | { readonly kind: "off" }
   | { readonly kind: "discovering" }

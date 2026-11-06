@@ -23,7 +23,7 @@ export type { InstallAssetsOptions, InstallAssetsResult } from "./assets.js";
 export { doctorProject } from "./doctor.js";
 export type { DoctorOptions } from "./doctor.js";
 export { decodeDoctorReport } from "../contracts/doctor.js";
-export type { DoctorCheck, DoctorReport } from "../contracts/doctor.js";
+export type { DoctorCheck, DoctorHosting, DoctorReport } from "../contracts/doctor.js";
 export { generateImageKey, readImageTrust } from "./keys.js";
 export { decodeImageDistribution, decodeImageInspection, decodeImageTestReport } from "./reports.js";
 export { decodeSerializedError as decodeBuilderError } from "../runtime/errors.js";

@@ -1,5 +1,6 @@
 import { VMError } from "../../runtime/errors.js";
 import { sdkVersion } from "../../sdk-version.js";
+import { runtimeFrameUrl } from "../location.js";
 import { connectRejection, decodeFrameConnectReply, decodeFrameReady, frameConnect, negotiateFrameProtocol } from "../protocol/handshake.js";
 
 /** How long the page waits for the frame to load and answer before it gives up. */
@@ -10,11 +11,6 @@ export interface MountedRuntimeFrame {
   readonly engineReleaseId: string;
   /** Removes the frame; its runtime and storage handles go with it. */
   remove(): void;
-}
-
-/** The address of this SDK release's runtime frame on `origin`. */
-export function runtimeFrameUrl(origin: string): string {
-  return new URL(`/v/${encodeURIComponent(sdkVersion)}/`, origin).href;
 }
 
 /**

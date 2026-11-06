@@ -57,6 +57,10 @@ can be cross-origin isolated only inside an isolated page. Without them
 - Images and relays the page passes are fetched by the frame, from another
   origin than the page, so they need CORS (`Access-Control-Allow-Origin`) and
   `Cross-Origin-Resource-Policy: cross-origin`. Images must be supplied explicitly in this release.
+- Relays see the frame's origin for every page that embeds it, so the frame names
+  the page in the relay's workspace ID, `<page origin> <workspaceId>`, and sends a
+  server relay's session request without cookies: authenticate that route with
+  `headers` (see [the API reference](api.md#networking-and-previews)).
 - Storage is partitioned by the top-level site: each application keeps its own
   workspaces and restore points in the frame.
 - Previews: with Spacia's frame, `preview` defaults to
@@ -202,6 +206,21 @@ the deployed site. It checks served responses and browser execution rather than
 inferring success from local configuration. Preserve its one structured report,
 exact asset descriptor and browser version. Then exercise commands, persistence,
 HTTP, websocket updates and separate sessions through the production host.
+
+The report's `hosting` names the runtime the doctor checked. An application
+that serves the SDK's doctor probe at its asset base (`<meta name="oxidevm-assets">`
+or `/oxidevm/`) is checked as self-hosted: the headers, MIME types, bytes,
+workers, Content-Security-Policy and storage of its own runtime assets. Any
+other application can run only the hosted runtime frame, so the doctor checks
+that instead: the page's secure context, cross-origin isolation and browser
+features; whether this SDK release's frame at
+`https://run.oxidevm.dev/v/<sdk-version>/` is served, is admitted by the page's
+Content-Security-Policy and accepts the page; and whether the frame's engine
+files match the SDK's pins and are served as `application/wasm`. Workers and
+storage run inside the frame, so `worker-load` and `storage` are
+`not-applicable` there. `--hosting frame` or `--hosting self-hosted` chooses
+the runtime explicitly, and `--frame-origin` checks another frame origin, such
+as a private qualification frame.
 
 ## Starter runtime selection
 

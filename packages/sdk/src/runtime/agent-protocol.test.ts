@@ -28,7 +28,7 @@ describe("guest agent binary protocol", () => {
   });
   it("uses the v7 dialect and preserves exact metadata integers", () => {
     expect(AGENT_PROTOCOL_VERSION).toBe(7);
-    expect(PROTOCOL_VERSION).toBe(180);
+    expect(PROTOCOL_VERSION).toBe(181);
     const payload = new AgentPayloadWriter()
       .u64(0xffff_ffff_ffff_fffen)
       .i64(-1n)

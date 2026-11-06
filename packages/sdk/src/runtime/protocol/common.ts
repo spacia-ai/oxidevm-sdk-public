@@ -122,7 +122,9 @@
  * owner's typed causes (code, reason, guest path and pack chunk). */
 /** 180 adds the storage scope (storage-scope.ts) to the storage worker's `initialize`, `inspect-start-image` and
  * `erase-local-data`: the runtime frame keeps each embedding origin's OPFS, IndexedDB and locks apart. */
-export const PROTOCOL_VERSION = 180;
+/** 181 adds `embedderOrigin` to the network worker's `connect-network-control`: inside the runtime frame, the page that
+ * embeds it, which the relay owner names in the workspace it presents to relays (protocol/network.ts `RelayScope`). */
+export const PROTOCOL_VERSION = 181;
 /** Combined architecture, background compilation and code-profile trace layout. */
 export const SYSTEM_TRACE_SCHEMA_VERSION = 54;
 

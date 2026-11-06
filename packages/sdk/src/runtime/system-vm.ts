@@ -1,4 +1,4 @@
-import { NetworkClient } from "./network-client.js";
+import { NetworkClient, vmRelayScope } from "./network-client.js";
 import { rejectingTimeout } from "./disposal.js";
 import { SystemWorkspaceFiles } from "./system-workspace-files.js";
 import { VMError, serializeUnknownError, withCleanupFailure } from "./errors.js";
@@ -190,7 +190,7 @@ class BrowserRuntimeVM implements RuntimeVM {
     this.#control = control;
     this.#storage = storage;
     this.#network = network;
-    this.network = new NetworkClient(() => network.start(), {origin: typeof location === "undefined" ? "null" : location.origin, workspaceId: options.workspaceId, serverAllowed: options.relayPolicy !== "personal-only"}, () => network.connectLink());
+    this.network = new NetworkClient(() => network.start(), vmRelayScope(options), () => network.connectLink());
     this.#listening = new SystemListeningPorts(control);
     this.#memoryMiB = options.memoryMiB;
     this.#workspaceId = options.workspaceId;

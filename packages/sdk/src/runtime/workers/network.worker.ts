@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import { VMError } from "../errors.js";
-import { boundedText } from "../protocol/network.js";
+import { decodeNetworkControlConnection } from "../protocol/network.js";
 import { RelayConnectionOwner } from "./network-connection.js";
 import { serveNetworkControl } from "./network-control.js";
 import type { UserspaceNetworkServer } from "./userspace-network-channel.js";
@@ -72,14 +72,9 @@ self.addEventListener("message", (event: MessageEvent<unknown>) => {
     return;
   }
   if (message["type"] === "connect-network-control") {
-    exactKeys(message, ["version", "type", "port", "origin", "workspaceId", "pageUrl", "serverAllowed"], ["workspaceName"]);
-    if (!(message["port"] instanceof MessagePort) || internet !== undefined) throw new TypeError("invalid network control port");
-    const origin = boundedText(message["origin"], "application origin", 4096);
-    const pageUrl = boundedText(message["pageUrl"], "application URL", 4096);
-    if (new URL(pageUrl).origin !== origin || origin === "null") throw new TypeError("invalid application origin");
-    if (typeof message["serverAllowed"] !== "boolean") throw new TypeError("Invalid relay policy");
-    const scope = {serverAllowed: message["serverAllowed"], origin, workspaceId: boundedText(message["workspaceId"], "workspace ID", 256), ...(message["workspaceName"] === undefined ? {} : {workspaceName: boundedText(message["workspaceName"], "workspace name", 100)})};
-    internet = new RelayConnectionOwner(scope, {setRelay: async (connection, generation) => {
+    const control = decodeNetworkControlConnection(message);
+    if (internet !== undefined) throw new TypeError("invalid network control port");
+    internet = new RelayConnectionOwner(control.scope, {setRelay: async (connection, generation) => {
       if (linuxNetwork !== undefined) await linuxNetwork.setRelay(connection, generation);
       else {
         const router = netstack ?? await netstackStarting;
@@ -87,7 +82,7 @@ self.addEventListener("message", (event: MessageEvent<unknown>) => {
         else if (connection !== undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "System network link is unavailable");
       }
     }});
-    serveNetworkControl(message["port"], internet, pageUrl);
+    serveNetworkControl(control.port, internet, control.pageUrl);
     return;
   }
   if (message["type"] === "expose-preview-port") {

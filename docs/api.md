@@ -171,6 +171,17 @@ options accept no URL or headers. Invalid options reject with `INVALID_ARGUMENT`
 failed connection rejects with `RELAY_ERROR`, `PERMISSION_DENIED`, `QUOTA_EXCEEDED` or
 `PROTOCOL_ERROR`, and `detail.reason` names the exact `RelayFailureReason`.
 
+In the hosted runtime frame (`runtime: { hosting: "frame" }`), relays see the frame's
+origin, `https://run.oxidevm.dev`, for every page that embeds it. The frame therefore
+names your page in the workspace it presents to relays: the relay's workspace ID is
+`<page origin> <workspaceId>`, for example `https://app.example default`. The personal
+relay shows it when it asks the user to approve, and `awaiting-approval` reports it
+beside the frame's `origin`. Your page's origin and `workspaceId` together must fit
+the relay's 256 characters, or `connect` rejects with `INVALID_ARGUMENT`. The frame
+sends a server relay's session request and revocation without cookies, because it
+makes them for whichever page embeds it: authenticate the session route with
+`headers`. Its body carries the frame's `origin` and the page-named `workspaceId`.
+
 With `network: { mode: "relay", connection }`, creation connects exactly once through
 the same `vm.network.connect` after the VM is ready; a failure or cancellation disposes
 the VM and rejects with that error. Creation cannot show the personal pairing code, so
@@ -258,7 +269,7 @@ host. The digest and key stay pinned whatever the address.
 | `testImage` | Real browser readiness, files, command, terminal, persistence and applicable preview/evidence checks |
 | `inspectImage` | Read-only integrity inspection; authentication stays unverified without external trust |
 | `installProjectAssets`, `cacheImageBundle` | Stage the pinned engine release (from `engineDir`, `OXIDEVM_ENGINE_DIR`, the engine cache or the verified CDN release), authenticated image assets and generated references; `updateLock` rewrites `oxidevm.lock.json` for this release after staging, and the result's `lock` reports the change |
-| `doctorProject` | Inspect actual served headers, MIME, bytes, worker execution, storage and preview configuration, and with `project` the project's lock against this SDK |
+| `doctorProject` | Inspect actual served headers, MIME, bytes, worker execution, storage and preview configuration, and with `project` the project's lock against this SDK; for an application on the hosted runtime frame (`hosting`, `frameOrigin`), its page and this release's frame and engine files instead |
 | `createProjectLock`, `validateProjectLock` | Bind the exact SDK/CLI, engine, image and chosen staging layout |
 
 Dockerfile, OCI, directory and archive rootfs sources work in both modes.
