@@ -95,12 +95,17 @@ export class RootfsStore {
     return new RootfsStore({ kind: "indexeddb", database: openDatabase(database) }, network);
   }
 
-  async prepare(manifestHref: string, trusted: TrustedRootfsKey, manifestSHA256?: string,cachedOnly=false,signal?:AbortSignal,imagePreparation:ImagePreparation="on-demand"): Promise<PreparedUserspaceRootfs> {
+  /**
+   * `manifestBytes` are the pinned manifest's bytes when another owner already fetched them (the runtime page does on a
+   * cold start). They replace the download and pass exactly its checks: the pin, then the trusted key's signature.
+   */
+  async prepare(manifestHref: string, trusted: TrustedRootfsKey, manifestSHA256?: string,cachedOnly=false,signal?:AbortSignal,imagePreparation:ImagePreparation="on-demand",manifestBytes?:Uint8Array<ArrayBuffer>): Promise<PreparedUserspaceRootfs> {
     this.#imagePreparation = imagePreparation;
     this.#checkpoints.beginPreparation();
     try {
       const manifestUrl = managedImageUrl(manifestHref);
-      const bytes = await this.#fetchOrCachedManifest(manifestUrl,manifestSHA256,cachedOnly,signal);
+      if (manifestBytes !== undefined && (manifestSHA256 === undefined || cachedOnly)) throw new VMError("PROTOCOL_ERROR", "Handed Userspace manifest bytes need their pin and a start that may download");
+      const bytes = manifestBytes ?? await this.#fetchOrCachedManifest(manifestUrl,manifestSHA256,cachedOnly,signal);
       const manifestDigest=await sha256(bytes);
       if (manifestSHA256 !== undefined && manifestDigest !== manifestSHA256) throw new VMError("PROTOCOL_ERROR", "Userspace manifest digest differs from its pin");
       let decoded: unknown;
@@ -112,15 +117,17 @@ export class RootfsStore {
       const manifest = decodeUserspaceRootfsManifest(decoded, manifestUrl);
       await verifyUserspaceRootfsManifest(manifest, trusted);
       const evidence = manifest.provenance;
-      for (const blob of [
+      // The image activates only with its evidence retained. The four files are retained at once; once all have
+      // settled, the first failure in this order is the one reported.
+      const retained = await Promise.allSettled([
         evidence.sbom,
         evidence.notices,
         evidence.correspondingSources,
         evidence.reproducibility,
-      ]) {
+      ].map(async blob => {
         try {
           const packed=await this.#checkpoints.packs.openFile(manifest,manifestDigest,blob,signal??new AbortController().signal,()=>{});
-          if(packed!==undefined){await packed.retire();continue;}
+          if(packed!==undefined){await packed.retire();return;}
         } catch { signal?.throwIfAborted(); /* An unavailable packed cache may still have a valid loose representation. */ }
         if (!await verifiedFile(this.#backend, "blobs", blob.sha256, blob.bytes, blob.sha256)) {
           if(cachedOnly && imagePreparation !== "before-ready") throw new VMError("STORAGE_ERROR","retained rootfs evidence is not cached",{reason:"image-not-cached"});
@@ -130,7 +137,9 @@ export class RootfsStore {
             throw new VMError("STORAGE_ERROR", "persisted rootfs blob failed verification");
           }
         }
-      }
+      }));
+      const failed = retained.find((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
+      if (failed !== undefined) { const failure: unknown = failed.reason; throw failure; }
       signal?.throwIfAborted();
       await activate(this.#backend, manifestUrl, manifest, bytes);
       this.#activeSource = { manifest, bytes, url: manifestUrl, digest:manifestDigest };

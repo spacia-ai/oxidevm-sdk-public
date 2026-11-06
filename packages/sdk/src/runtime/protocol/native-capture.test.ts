@@ -215,13 +215,13 @@ it("admits tagged fixed-buffer native64 headers and rejects unknown future heade
 
 
 it("preserves native94 combined resource records with the current worker", () => {
-  expect(PROTOCOL_VERSION).toBe(181);
+  expect(PROTOCOL_VERSION).toBe(182);
   expect(decodeNativeGraphVersion(graph(94))).toBe(94);
   expect(() => decodeNativeGraphVersion(graph(NATIVE_LOGICAL_CHECKPOINT_VERSION + 1))).toThrow(/header is invalid/u);
 });
 
 it("admits retained TCP urgent marks in native95 and rejects newer socket graphs", () => {
-  expect(PROTOCOL_VERSION).toBe(181);
+  expect(PROTOCOL_VERSION).toBe(182);
   expect(decodeNativeGraphVersion(graph(95))).toBe(95);
   expect(decodeNativeGraphVersion(graph(94))).toBe(94);
   expect(() => decodeNativeGraphVersion(graph(NATIVE_LOGICAL_CHECKPOINT_VERSION + 1))).toThrow(/header is invalid/u);
@@ -229,14 +229,14 @@ it("admits retained TCP urgent marks in native95 and rejects newer socket graphs
 
 it("admits captured urgent notifications in native96 and rejects newer graphs", () => {
   expect(USERSPACE_API_VERSION).toBe(147);
-  expect(PROTOCOL_VERSION).toBe(181);
+  expect(PROTOCOL_VERSION).toBe(182);
   expect(decodeNativeGraphVersion(graph(96))).toBe(96);
   expect(() => decodeNativeGraphVersion(graph(NATIVE_LOGICAL_CHECKPOINT_VERSION + 1))).toThrow(/header is invalid/u);
 });
 
 it("pairs retained urgent-pointer announcements with native97 and rejects future peers", () => {
   expect(USERSPACE_API_VERSION).toBe(147);
-  expect(PROTOCOL_VERSION).toBe(181);
+  expect(PROTOCOL_VERSION).toBe(182);
   expect(NATIVE_LOGICAL_CHECKPOINT_VERSION).toBe(100);
   expect(decodeNativeGraphVersion(graph(97))).toBe(97);
   expect(decodeNativeGraphVersion(graph(96))).toBe(96);

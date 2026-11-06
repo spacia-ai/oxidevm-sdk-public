@@ -30,6 +30,24 @@ describe("recipe boundary", () => {
   });
 });
 
+describe("Userspace pack order", () => {
+  it("keeps a Userspace recipe's start files in their order and leaves an absent list to path order", () => {
+    const packFirst = ["usr/bin/python3.12", "lib/ld-musl-x86_64.so.1", "usr/lib/libpython3.12.so.1.0"];
+    expect(decodeImageRecipe({ ...base, packFirst })).toMatchObject({ packFirst });
+    expect(decodeImageRecipe(base)).not.toHaveProperty("packFirst");
+  });
+  it.each([
+    "usr/bin/python3", ["/usr/bin/python3"], ["usr//bin"], ["usr/./bin"], ["../etc/passwd"], ["usr/bin/"], [""], [7], ["a\0b"],
+  ])("rejects a malformed list: %j", packFirst => {
+    expect(thrown(() => decodeImageRecipe({ ...base, packFirst }))).toMatchObject({ code: "INVALID_ARGUMENT" });
+  });
+  it("refuses a pack order on a System recipe, whose disk is delivered in fixed chunks", () => {
+    const artifact = { path: "file", sha256: "a".repeat(64) };
+    const source = { kind: "boot-files", kernel: artifact, disk: artifact, commandLine: "console=hvc0" };
+    expect(thrown(() => decodeImageRecipe({ ...base, mode: "system", source, packFirst: ["bin/sh"] }))).toMatchObject({ code: "INVALID_ARGUMENT" });
+  });
+});
+
 describe("Userspace workspace ownership", () => {
   it("decodes an explicit owner across the full ID range and leaves an absent one to the builder default", () => {
     expect(decodeImageRecipe({ ...base, workspace: { ownership: { uid: 0, gid: 4_294_967_294 } } })).toMatchObject({ workspace: { ownership: { uid: 0, gid: 4_294_967_294 } } });

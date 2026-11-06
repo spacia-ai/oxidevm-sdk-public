@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { decodeStorageIncoming, PROTOCOL_VERSION, storageResponseDecoders } from "./protocol.js";
 import { ORIGIN_STORAGE } from "./storage-scope.js";
+import { MAX_ROOTFS_METADATA_BYTES } from "./userspace-rootfs.js";
 
 it("decodes storage backend evidence and ephemeral creation with a pinned manifest", () => {
   expect(storageResponseDecoders["workspace-persistence"]("indexeddb")).toBe("indexeddb");
@@ -10,6 +11,18 @@ it("decodes storage backend evidence and ephemeral creation with a pinned manife
   expect(decodeStorageIncoming({ id: 2, version: PROTOCOL_VERSION, type: "prepare-userspace-rootfs", manifestUrl: "https://image.test/manifest.json", trustedKeyId: "author", trustedPublicKey: new Uint8Array(32), manifestSHA256: "a".repeat(64) })).toMatchObject({ manifestSHA256: "a".repeat(64) });
   expect(() => decodeStorageIncoming({ id: 3, version: PROTOCOL_VERSION, type: "prepare-managed-image", manifestUrl: "https://image.test/manifest.json", manifestSHA256: "bad" })).toThrow();
   channel.port1.close(); channel.port2.close();
+});
+
+it("takes a Userspace start's handed manifest as its own copy within the manifest bound", () => {
+  const request = { id: 1, version: PROTOCOL_VERSION, type: "prepare-userspace-rootfs", manifestUrl: "https://image.test/manifest.json",
+    trustedKeyId: "author", trustedPublicKey: new Uint8Array(32), manifestSHA256: "a".repeat(64) };
+  const shared = new Uint8Array(new SharedArrayBuffer(4));
+  shared.set([1, 2, 3, 4]);
+  const decoded = decodeStorageIncoming({ ...request, manifestBytes: shared });
+  shared[0] = 9;
+  expect(decoded).toMatchObject({ manifestBytes: new Uint8Array([1, 2, 3, 4]) });
+  expect(() => decodeStorageIncoming({ ...request, manifestBytes: "manifest" })).toThrow();
+  expect(() => decodeStorageIncoming({ ...request, manifestBytes: new Uint8Array(MAX_ROOTFS_METADATA_BYTES + 1) })).toThrow(/exceed their bound/u);
 });
 
 it("opens storage in the origin's own scope unless the runtime frame names its embedder's", () => {

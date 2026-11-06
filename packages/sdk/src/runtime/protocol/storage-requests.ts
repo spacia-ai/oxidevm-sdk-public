@@ -7,6 +7,7 @@ import { VMError } from "../errors.js";
 import { decodeStorageScope, type StorageScope } from "../storage-scope.js";
 import { validateWorkspaceId } from "../workspace-path.js";
 import { decodeBytes } from "./decoders.js";
+import { MAX_ROOTFS_METADATA_BYTES } from "../userspace-rootfs.js";
 import { decodeCancel, decodeRequestBase, decodeMessagePort, decodeDiskBridge, type RequestBase, type CancelRequest } from "./request-base.js";
 import { decodeSnapshotId, decodeSnapshotCatalogRequest, isSnapshotCatalogType, decodeSnapshotMachine, type SnapshotCatalogRequest, type SnapshotMachine } from "./snapshots.js";
 import { decodeSnapshotArchiveRequest, isSnapshotArchiveType, type SnapshotArchiveRequest } from "./snapshot-archive.js";
@@ -58,6 +59,8 @@ export type StorageRequest =
       readonly cachedOnly?: boolean;
       readonly manifestUrl: string;
       readonly manifestSHA256?: string;
+      /** The pinned manifest's bytes the page already fetched; the storage owner authenticates them like a download. */
+      readonly manifestBytes?: Uint8Array<ArrayBuffer>;
       readonly trustedKeyId: string;
       readonly trustedPublicKey: Uint8Array;
     })
@@ -192,11 +195,12 @@ export function decodeStorageIncoming(value: unknown): StorageIncoming {
       return {...base,type,manifestUrl:string(message["manifestUrl"],"manifestUrl"),trustedKeyId:string(message["trustedKeyId"],"trustedKeyId"),trustedPublicKey:decodeBytes(message["trustedPublicKey"]),
         ...(message["manifestSHA256"]===undefined?{}:{manifestSHA256:decodeManifestPin(message["manifestSHA256"])})};
     case "prepare-userspace-rootfs":
-      exactKeys(message, ["id", "version", "type", "manifestUrl", "trustedKeyId", "trustedPublicKey"], ["manifestSHA256", "cachedOnly","boot","imagePreparation"]);
+      exactKeys(message, ["id", "version", "type", "manifestUrl", "trustedKeyId", "trustedPublicKey"], ["manifestSHA256", "manifestBytes", "cachedOnly","boot","imagePreparation"]);
       return {
         ...base,
         type,
         manifestUrl: string(message["manifestUrl"], "manifestUrl"),
+        ...(message["manifestBytes"] === undefined ? {} : { manifestBytes: decodeManifestBytes(message["manifestBytes"]) }),
         ...(message["imagePreparation"] === undefined ? {} : { imagePreparation: decodeImagePreparation(message["imagePreparation"]) }),
         ...(message["cachedOnly"]===undefined?{}:{cachedOnly:boolean(message["cachedOnly"],"cachedOnly")}),
         ...(message["boot"]===undefined?{}:{boot:decodeManagedBoot(message["boot"])}),
@@ -280,4 +284,11 @@ function decodeManifestPin(value: unknown): string {
   const digest = string(value, "manifest SHA256");
   if (!/^[0-9a-f]{64}$/u.test(digest)) throw new VMError("PROTOCOL_ERROR", "manifest SHA256 must be lowercase SHA256");
   return digest;
+}
+
+/** An owned copy within the manifest bound: the storage owner hashes and parses bytes that no other realm can change. */
+function decodeManifestBytes(value: unknown): Uint8Array<ArrayBuffer> {
+  const bytes = decodeBytes(value);
+  if (bytes.byteLength > MAX_ROOTFS_METADATA_BYTES) throw new VMError("PROTOCOL_ERROR", "Userspace manifest bytes exceed their bound");
+  return new Uint8Array(bytes);
 }

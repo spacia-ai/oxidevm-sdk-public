@@ -2,7 +2,18 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { VMError } from "./errors.js";
 import { ROOTFS_PACK_BYTES, type RootfsBlobIdentity, type RootfsPackIndex } from "./userspace-rootfs-packs.js";
 
-/** One bounded packing algorithm shared by the Node builder and browser cache accelerator. */
+/**
+ * References sorted by digest: the layout browsers compact blob-only images into, which transport sidecars keep so a
+ * compacted cache already holds their packs.
+ */
+export function inDigestOrder<T extends RootfsBlobIdentity>(references: readonly T[]): T[] {
+  return [...references].sort((a, b) => a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0);
+}
+
+/**
+ * One bounded packing algorithm shared by the Node builder and browser cache accelerator. References are packed in the
+ * order given, a repeated digest once where it first appears, so the caller decides which files share a pack.
+ */
 export async function packRootfsContents(
   references: readonly RootfsBlobIdentity[],
   read: (blob: RootfsBlobIdentity) => AsyncIterable<Uint8Array>,
@@ -20,7 +31,7 @@ export async function packRootfsContents(
     if (!chunks.has(hash)) { await emit(chunk, bytes); chunks.set(hash, chunk); }
     identities.push(hash); buffer = new Uint8Array(ROOTFS_PACK_BYTES); used = 0;
   };
-  const distinct = [...new Map(references.map(blob => [blob.sha256, blob])).values()].sort((a,b) => a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0);
+  const distinct = [...new Map(references.map(blob => [blob.sha256, blob])).values()];
   for (const blob of distinct) {
     active(); const hash = sha256.create(), extents: typeof blobs[number]["extents"] = [];
     let received = 0;

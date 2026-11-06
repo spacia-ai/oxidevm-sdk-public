@@ -120,7 +120,7 @@ async function buildImageOnce(input: ImageRecipe, options: BuildImageOptions, re
           ...identity, resources: { memoryMiB: recipe.resources?.memoryMiB ?? 1024, ...(recipe.resources?.maxProcesses === undefined ? {} : { maxProcesses: recipe.resources.maxProcesses }) }, fileCount: tree.entries.length, totalBytes: tree.blobs.reduce((sum, blob) => sum + blob.bytes, 0),
           blobs: tree.blobs.map(blob => ({ bytes: blob.bytes, sha256: blob.sha256, url: `./blobs/${blob.sha256}` })), entries: tree.entries,
           runtimes: { ...(muslLoader === undefined ? {} : { muslLoader }), ...(glibcLoader === undefined ? {} : { glibcLoader }), supportingFiles: [] }, provenance };
-        const packs = await buildRootfsPacks(bundle, manifest, url, options.signal);
+        const packs = await buildRootfsPacks(bundle, manifest, url, options.signal, { kind: "locality", first: recipe.packFirst ?? [] });
         manifest = { ...record(manifest, "rootfs authoring manifest"), schemaVersion: 8, packs };
         canonical = canonicalUserspaceRootfsBytes(decodeUserspaceRootfsManifest(manifest, url));
       } else {

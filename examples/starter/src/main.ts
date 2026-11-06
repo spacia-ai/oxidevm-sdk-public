@@ -1,5 +1,5 @@
 import { createVM, VMError } from "@oxidevm/sdk";
-import type { ImageRef, VM } from "@oxidevm/sdk";
+import type { ImageRef, UserspaceOptions, VM } from "@oxidevm/sdk";
 import image from "./image.js";
 import productionImage from "./production-image.js";
 import runtime from "./runtime.js";
@@ -10,6 +10,7 @@ import { PythonSession, verifyPython } from "./python.js";
 import { pythonEditor } from "./editor.js";
 import { TerminalView } from "./terminal.js";
 import { mountAgentSkills } from "./agent-skills.js";
+import { savedWithAnotherImageKey } from "./workspace.js";
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 
@@ -117,7 +118,11 @@ async function uploadCSV(selected: File): Promise<void> {
 async function open(): Promise<void> {
   try {
     const selected = requiredImage(import.meta.env.DEV ? image : productionImage);
-    vm = await createVM({ mode: "userspace", image: selected, runtime, memoryMiB: 1536, workspaceId: "oxidevm-pandas-starter-v1", commandInterceptors: "off", network: { mode: "local" }, signal: lifetime.signal, onProgress: update => { progress.textContent = update.phase === "download" ? `Downloading ${update.asset}…` : "Opening Linux Python…"; } });
+    const options: UserspaceOptions = { mode: "userspace", image: selected, runtime, memoryMiB: 1536, workspaceId: "oxidevm-pandas-starter-v1", commandInterceptors: "off", network: { mode: "local" }, signal: lifetime.signal, onProgress: update => { progress.textContent = update.phase === "download" ? `Downloading ${update.asset}…` : "Opening Linux Python…"; } };
+    vm = await createVM(options).catch((value: unknown) => {
+      if (!savedWithAnotherImageKey(value)) throw value;
+      return createVM({ ...options, restorePoint: "update-image" });
+    });
     const binary = await vm.exec({ command: "/bin/head", args: ["-c", "64", "/usr/bin/python3"], maxOutputBytes: 4096, signal: lifetime.signal }); verifyPython(binary.stdout);
     element("binary", HTMLElement).textContent = "Real Linux executable · x86-64";
     await mkdir("/workspace/_oxidevm"); await mkdir("/workspace/uploads");

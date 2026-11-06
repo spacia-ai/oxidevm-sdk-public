@@ -14,7 +14,7 @@ describe("network control connection", () => {
     expect(decoded.port).toBeInstanceOf(MessagePort);
   });
   it("decodes the page that embeds the runtime frame", () => {
-    expect(PROTOCOL_VERSION).toBe(181);
+    expect(PROTOCOL_VERSION).toBe(182);
     expect(decodeNetworkControlConnection(message({ embedderOrigin: "https://one.example", workspaceName: "My project", serverAllowed: false })).scope)
       .toEqual({ origin: "https://run.oxidevm.dev", workspaceId: "default", embedderOrigin: "https://one.example", workspaceName: "My project", serverAllowed: false });
   });

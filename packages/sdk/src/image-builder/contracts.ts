@@ -64,6 +64,11 @@ export interface UserspaceImageRecipe extends CommonImageRecipe {
   /** Owner recorded for `/workspace` and every entry below it, whatever the source recorded.
    * Absent, it is the runtime's default user, uid/gid 1000. IDs range from 0 to 4294967294. */
   readonly workspace?: { readonly ownership: { readonly uid: number; readonly gid: number } };
+  /**
+   * Image paths packed first, in this order: list the files the image's first command reads, so a cold start
+   * downloads the fewest packs. Every other file follows by path. A path may cross symlinks but must end at a file.
+   */
+  readonly packFirst?: readonly string[];
   readonly boot?: never;
   readonly disk?: never;
 }
