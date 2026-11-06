@@ -21,6 +21,8 @@ export class ScriptedWorker extends EventTarget {
   readonly inputs: Record<string, unknown>[] = [];
   /** Each message without a reply, such as the network worker's connections, in order. */
   readonly messages: Record<string, unknown>[] = [];
+  /** Whether its owner ended it. */
+  terminated = false;
   readonly #ports: MessagePort[] = [];
   #booted = false;
   #session: { readonly id: number; readonly port: MessagePort } | undefined;
@@ -81,6 +83,7 @@ export class ScriptedWorker extends EventTarget {
   }
 
   terminate(): void {
+    this.terminated = true;
     for (const port of this.#ports) port.close();
   }
 

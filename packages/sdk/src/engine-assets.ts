@@ -5,6 +5,7 @@ import { VMError } from "./runtime/errors.js";
 import { abortIfRequested, fetchPinnedBytes } from "./pinned-assets.js";
 import { pinnedEngineCompliance } from "./engine-compliance.js";
 import { retainEngineCompliance } from "./engine-assets-compliance.js";
+import { engineLoad, inOrder } from "./engine-load.js";
 export { abortIfRequested, fetchPinnedBytes } from "./pinned-assets.js";
 
 export interface LoadedEngineAssets {
@@ -24,22 +25,24 @@ export interface LoadedEngineAssets {
  */
 export const LAZY_ENGINE_ARTIFACTS: ReadonlySet<string> = new Set(["oxidevm_tls.wasm"]);
 /**
- * Fetches the pinned engine release's modules for `mode` from `base` (the application's
- * `runtime.baseUrl`). Every module is verified against its pinned size and SHA-256 before any
- * Blob URL exists, so a failed load leaves nothing a worker could execute.
+ * Fetches the pinned engine release's modules for `mode` from `base` (the application's `runtime.baseUrl`), together
+ * with its pinned compliance materials (`retainEngineCompliance`): every file downloads at once and is verified
+ * against its pinned size and SHA-256 before any Blob URL exists, so a failed load leaves nothing a worker could
+ * execute. A failure is reported in a fixed order, the compliance materials first and then the modules in release
+ * order, and stops the downloads still running.
  */
 export async function loadEngineAssets(mode: RuntimeMode, base: string, signal?: AbortSignal, progress?: (progress: BootProgress) => void): Promise<LoadedEngineAssets> {
   abortIfRequested(signal);
-  await retainEngineCompliance(base, pinnedEngineCompliance(), engineReleaseId, signal, progress);
-  const verified: { readonly name: string; readonly bytes: Uint8Array<ArrayBuffer> }[] = [];
-  for (const artifact of engineRelease.artifacts) {
-    if (artifact.mode !== mode || LAZY_ENGINE_ARTIFACTS.has(artifact.name)) continue;
-    try { verified.push({ name: artifact.name, bytes: await fetchPinnedBytes(new URL(artifact.name, base), artifact.sha256, "engine", signal, progress, artifact.bytes) }); }
-    catch (error: unknown) {
-      if (!(error instanceof VMError) || error.code === "ABORTED") throw error;
-      throw new VMError(error.code, `${error.message}: ${artifact.name} of engine release ${engineReleaseId}`, { ...error.detail, asset: artifact.name, engineRelease: engineReleaseId });
-    }
-  }
+  const compliance = pinnedEngineCompliance(), load = engineLoad(signal, progress);
+  // The compliance manifest goes first: it is small and names four more files, and a server may answer requests of one
+  // priority in the order they arrive, so behind the modules it would wait for all of them.
+  const retained = retainEngineCompliance(base, compliance, engineReleaseId, load);
+  const modules = engineRelease.artifacts.filter(artifact => artifact.mode === mode && !LAZY_ENGINE_ARTIFACTS.has(artifact.name)).map(artifact =>
+    load.fetch(new URL(artifact.name, base), artifact.sha256, artifact.bytes).then(bytes => ({ name: artifact.name, bytes }), (error: unknown) => { throw ofArtifact(error, artifact.name); }));
+  load.seal();
+  try { await inOrder<unknown>([retained, ...modules]); }
+  catch (error: unknown) { await load.cancel(); throw error; }
+  const verified = await Promise.all(modules);
   const urls = new Map(verified.map(({ name, bytes }) => [name, URL.createObjectURL(new Blob([bytes], { type: "application/wasm" }))]));
   const compiled = new Map<string, Promise<WebAssembly.Module>>(), lazy = new Map<string, Promise<Uint8Array<ArrayBuffer>>>();
   const fetchLazy = (name: string, signal: AbortSignal | undefined): Promise<Uint8Array<ArrayBuffer>> => {
@@ -63,6 +66,12 @@ export async function loadEngineAssets(mode: RuntimeMode, base: string, signal?:
     }
     return module;
   }, dispose: () => { for (const url of urls.values()) URL.revokeObjectURL(url); urls.clear(); compiled.clear(); lazy.clear(); verified.length = 0; } };
+}
+
+/** A module's failure names the module and its engine release; a cancellation stays as it is. */
+function ofArtifact(error: unknown, name: string): unknown {
+  if (!(error instanceof VMError) || error.code === "ABORTED") return error;
+  return new VMError(error.code, `${error.message}: ${name} of engine release ${engineReleaseId}`, { ...error.detail, asset: name, engineRelease: engineReleaseId });
 }
 
 export function requireEngineUrl(assets: LoadedEngineAssets, name: string): string {

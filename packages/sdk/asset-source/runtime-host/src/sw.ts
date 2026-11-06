@@ -1,10 +1,11 @@
 /// <reference lib="webworker" />
 
 // The runtime frame's offline shell (ADR 0021). Registered with the frame's versioned path as its
-// scope, it precaches every file of this build (listed in shell-manifest.json) and serves them
-// cache-first: the path names the SDK version, so a cached file never goes stale. Engine releases
-// and images live outside the scope and keep the SDK's content-addressed caches. The page is
-// network-first so a redeployed shell takes effect; offline it comes from the cache.
+// scope once the frame's VM is ready (main.ts), it precaches every file of this build (listed in
+// shell-manifest.json) and serves them cache-first: the path names the SDK version, so a cached file
+// never goes stale. Engine releases and images live outside the scope and keep the SDK's
+// content-addressed caches. The page is network-first so a redeployed shell takes effect; offline it
+// comes from the cache.
 
 import { handledByShell } from "./sw-scope.ts";
 
