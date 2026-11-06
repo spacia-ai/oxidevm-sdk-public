@@ -82,7 +82,8 @@ export async function createUserspaceRuntimeVM(
   );
   let backend: UserspaceProcessBackend | undefined;
   try {
-    await storage.request(
+    // The backend's workers load their scripts while storage initializes; its Userspace worker initializes after.
+    const initialized = storage.request(
       "initialize",
       {
         workspaceId: options.workspaceId,
@@ -113,7 +114,7 @@ export async function createUserspaceRuntimeVM(
         ...(options.nativeExecutionPort === undefined ? {} : { nativeExecutionPort: options.nativeExecutionPort }),
         ...(options.initialUser === undefined ? {} : { initialUser: options.initialUser }),
         ...(options.rootPersistence === undefined ? {} : { rootPersistence: options.rootPersistence }),
-      }, snapshot.port2,
+      }, snapshot.port2, initialized,
     );
     const vm = new BrowserUserspaceVM(options, storage, network, backend);
     if (options.network === "relay" && options.relayUrl !== undefined) {

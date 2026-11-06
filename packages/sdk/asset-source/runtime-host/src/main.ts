@@ -57,6 +57,7 @@ async function serveEmbedder(event: MessageEvent): Promise<void> {
       try {
         const vm = await createLocalVM({ ...decoded, signal, onProgress }, engineBaseUrl, { previewKeeperHost, embedderOrigin: event.origin, storage, moduleFrameBase: new URL("./", location.href).href });
         sendBootPing(OXIDEVM_TELEMETRY_ENDPOINT, bootPing({ ...report, milliseconds: performance.now() - started, result: { vm } }));
+        registerOfflineShell();
         return vm;
       } catch (error) {
         sendBootPing(OXIDEVM_TELEMETRY_ENDPOINT, bootPing({ ...report, milliseconds: performance.now() - started, result: { error } }));
@@ -66,10 +67,18 @@ async function serveEmbedder(event: MessageEvent): Promise<void> {
   });
 }
 
-// The shell works offline once cached. A browser that refuses Service Workers in third-party frames
-// (some privacy modes) still runs the frame online.
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(new URL("./sw.js", location.href), { scope: "./" }).catch(() => undefined);
+/**
+ * The shell works offline once cached (sw.ts). Installing it precaches every file of this build at once, so the frame
+ * registers it only when its VM is ready: registered at load, the precache shared the link with the cold start's engine
+ * and image downloads and fetched files no start needs, such as tsc.worker and the SDK's licenses. By then the page
+ * has fetched every file a start needs, and the precache reads those from the HTTP cache where the browser keeps the
+ * frame and its Service Worker in one partition. A browser that refuses Service Workers in third-party frames (some
+ * privacy modes) still runs the frame online: registering never fails the VM.
+ */
+function registerOfflineShell(): void {
+  try {
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register(new URL("./sw.js", location.href), { scope: "./" }).catch(() => undefined);
+  } catch { /* refused here: the frame runs online only */ }
 }
 
 if (window.parent === window) {

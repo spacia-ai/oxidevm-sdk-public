@@ -1,4 +1,5 @@
 import { VMError } from "./errors.js";
+import { inOrder } from "../engine-load.js";
 import { rejectingTimeout } from "./disposal.js";
 import { GuestProcessTransport } from "./guest-process.js";
 import {
@@ -42,9 +43,16 @@ export class UserspaceProcessBackend {
     this.#control = control;
   }
 
+  /**
+   * Starts the control worker, which starts the Userspace worker as soon as its script has loaded, so both scripts load
+   * while `after` (the storage owner's initialize) settles. The Userspace worker receives `options`, with its storage
+   * and network ports, only once `after` has succeeded. A failure of `after` is reported first, as soon as it happens,
+   * and any failure ends both workers.
+   */
   static async create(
     options: UserspaceOperations["initialize"]["request"],
     snapshotPort?: MessagePort,
+    after: Promise<unknown> = Promise.resolve(),
   ): Promise<UserspaceProcessBackend> {
     const { storagePort, networkPort, nativeExecutionPort } = options;
     const control = new WorkerClient<ControlOperations>(
@@ -57,8 +65,8 @@ export class UserspaceProcessBackend {
     const channel = new MessageChannel();
     const client = workerClientForPort(channel.port1, userspaceResponseDecoders);
     try {
-      await control.request("attach-userspace", { port: channel.port2, ...(snapshotPort === undefined ? {} : { snapshotPort }) },
-        { transfer: [channel.port2, ...(snapshotPort === undefined ? [] : [snapshotPort])] });
+      await inOrder<unknown>([after, control.request("attach-userspace", { port: channel.port2, ...(snapshotPort === undefined ? {} : { snapshotPort }) },
+        { transfer: [channel.port2, ...(snapshotPort === undefined ? [] : [snapshotPort])] })]);
       await client.request(
         "initialize",
         options,
