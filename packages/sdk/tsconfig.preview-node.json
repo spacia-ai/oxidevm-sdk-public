@@ -13,6 +13,7 @@
     "asset-source/preview/classic-entries.ts",
     "asset-source/runtime-host/vite.config.ts",
     "asset-source/runtime-host/headers.ts",
-    "vite.doctor.config.ts"
+    "vite.doctor.config.ts",
+    "vite.doctor-frame.config.ts"
   ]
 }

@@ -75,6 +75,7 @@ async function openLocalVM(options: ValidatedVMOptions, baseUrl: string, hosting
     const commandAcceleration = commandAccelerationSupport(options.mode === "system" ? "not-applicable" : options.acceleration, native);
     const common = {
       workspaceId: options.workspaceId, ephemeral: options.ephemeral !== false, storage, memoryMiB: options.memoryMiB ?? verified.memoryMiB,
+      ...(hosting.embedderOrigin === undefined ? {} : { embedderOrigin: hosting.embedderOrigin }),
       // Every boot first revokes relay access, so the runtime starts local and relay options
       // connect through the VM's own network owner below, once the VM is ready.
       network: "local" as const,

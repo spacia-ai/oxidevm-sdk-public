@@ -1,4 +1,5 @@
 {
   "extends": "./tsconfig.browser-tools.json",
-  "compilerOptions": { "noEmit": false, "rootDir": "src", "outDir": "dist", "declaration": true, "sourceMap": false }
+  "compilerOptions": { "noEmit": false, "rootDir": "src", "outDir": "dist", "declaration": true, "sourceMap": false },
+  "exclude": ["src/**/*.test.ts"]
 }

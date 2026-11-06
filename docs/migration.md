@@ -136,6 +136,27 @@ frames keep using it. Self-hosted pages keep their storage layout.
 A tab that closes without disposing its VM leaves an ephemeral workspace behind;
 the next VM of the same origin removes it in the background.
 
+## Relay identity in the hosted frame
+
+Relays see the runtime frame's origin, `https://run.oxidevm.dev`, for every page
+that embeds the frame. Before this release the personal relay therefore asked the
+user to approve `https://run.oxidevm.dev` with whatever workspace ID the page chose,
+whichever site asked, and a server relay's session route could not tell its own
+page from any other page that embeds the frame.
+
+A VM in the hosted frame now presents the workspace `<page origin> <workspaceId>`
+to relays. The personal relay's approval and session list name the page,
+`vm.network.state`'s `awaiting-approval` reports that workspace ID (its `origin`
+stays the frame's), and a server relay's session route receives it as
+`workspaceId`. The page's origin and `workspaceId` together must fit 256
+characters, or `connect` rejects with `INVALID_ARGUMENT`.
+
+The frame also sends a server relay's session request and revocation without
+cookies. A session route that authorized frame-hosted pages by cookie, which
+needed `SameSite=None` cookies, credentialed CORS for the frame's origin and a
+browser that sends third-party cookies, authenticates them with `headers`
+instead. Self-hosted pages keep their relay identity and cookies.
+
 ## Hosted starter development
 
 New starters select the hosted runtime frame in development and production.
@@ -147,6 +168,31 @@ Existing applications can select frame hosting in `src/runtime.ts`. The pinned
 hosted runtime must exist. Missing hosted assets fail without a local fallback.
 This changes the storage origin. Existing local runtime workspaces remain at
 their original origin and do not migrate automatically.
+
+## Doctor for frame-hosted applications
+
+`oxidevm doctor` checks applications on the hosted runtime frame. Earlier
+releases reported every browser check of such an application as failed
+("deployed browser probe did not load or finish") because it serves no
+`/oxidevm/` assets.
+
+- `DoctorReport` has a new required member, `hosting` (type `DoctorHosting`):
+  `{ kind: "self-hosted", assets }` with the asset base the doctor probed, or
+  `{ kind: "frame", frame }` with this SDK release's runtime frame URL.
+  `decodeDoctorReport`, and the CLI's `decodeCliReport` for `doctor`, refuse a
+  report without it. Scripts that compare a report's keys add `hosting`.
+- A check has a new status, `not-applicable`, only for `worker-load` and
+  `storage` and only in a frame-hosted report: they run inside the runtime
+  frame. Every other check is still `passed` or `failed`, and a self-hosted
+  report keeps all eight browser checks.
+- `DoctorOptions` has `hosting` (`"frame"` or `"self-hosted"`) and
+  `frameOrigin`, and the CLI has `--hosting` and `--frame-origin`. Without a
+  hosting the doctor checks a self-hosted runtime when the application serves
+  the SDK's doctor probe at its asset base, and the hosted frame otherwise. A
+  self-hosted application is checked as before; pass `--hosting self-hosted`
+  to check one that serves no assets yet.
+- The CLI's `DoctorCheck` and `DoctorReport` types are now the SDK's, and the
+  CLI exports `DoctorHosting` too.
 
 ## Module commands
 

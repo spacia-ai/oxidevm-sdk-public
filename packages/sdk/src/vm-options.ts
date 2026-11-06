@@ -12,14 +12,13 @@ import { isTrustworthyURL } from "./trustworthy-url.js";
 import { exactKeys, integer, record, string } from "./runtime/decode.js";
 import { decodeRelayOptions } from "./runtime/protocol/network.js";
 import { newEphemeralWorkspaceId, validateWorkspaceId } from "./runtime/workspace-path.js";
+import { DEFAULT_FRAME_ORIGIN } from "./frame/location.js";
 
 /** Validates relative URLs without reading browser state. */
 const REFERENCE_BASE = "https://oxidevm-reference.invalid/";
 
 /** Where a self-hosted page serves the engine release by default. */
 export const DEFAULT_SELF_HOSTED_BASE_URL = "/oxidevm/runtime/";
-/** Spacia's hosted runtime frame (ADR 0021). */
-export const DEFAULT_FRAME_ORIGIN = "https://run.oxidevm.dev";
 /** Where previews of VMs in Spacia's frame live: one https://<session>.oxvm.dev origin each. */
 export const DEFAULT_FRAME_PREVIEW_ORIGIN = "https://oxvm.dev";
 

@@ -7,9 +7,12 @@ import { legacyImageLocations } from "../default-images.test-support.js";
 import { doctorLockCheck, doctorProject } from "./doctor.js";
 import { createProjectLock, validateProjectLock } from "./project.js";
 
+const SELF_HOSTED = { kind: "self-hosted", assets: "http://localhost:5173/oxidevm/" };
+const FRAME = { kind: "frame", frame: "https://run.oxidevm.dev/v/0.0.15/" };
+
 it("requires every actual deployment check and rejects contradictory or omitted checks", () => {
   const checks = ["secure-context", "cross-origin-isolation", "wasm-features", "worker-load", "asset-integrity", "wasm-mime", "content-security-policy", "storage"].map(check => ({ check, status: "passed" }));
-  const complete = { result: "passed", url: "http://localhost:5173/", checks: [...checks, { check: "preview-origin", status: "not-configured" }, { check: "lock", status: "passed" }] };
+  const complete = { result: "passed", url: "http://localhost:5173/", hosting: SELF_HOSTED, checks: [...checks, { check: "preview-origin", status: "not-configured" }, { check: "lock", status: "passed" }] };
   expect(decodeDoctorReport(complete).result).toBe("passed");
   expect(decodeDoctorReport({ ...complete, checks: [...checks, { check: "preview-origin", status: "not-configured" }, { check: "lock", status: "not-configured" }] }).checks).toContainEqual({ check: "lock", status: "not-configured" });
   expect(() => decodeDoctorReport({ ...complete, checks })).toThrow();
@@ -20,6 +23,27 @@ it("requires every actual deployment check and rejects contradictory or omitted 
   expect(() => decodeDoctorReport({ ...complete, result: "failed" })).toThrow();
   expect(() => decodeDoctorReport({ ...complete, checks: [...checks, { check: "storage", status: "passed" }] })).toThrow();
 });
+
+it("names the runtime it checked and leaves only what runs inside the runtime frame to that frame", () => {
+  const owned = new Set(["worker-load", "storage"]);
+  const checks = ["secure-context", "cross-origin-isolation", "wasm-features", "worker-load", "asset-integrity", "wasm-mime", "content-security-policy", "storage"].map(check => owned.has(check) ? { check, status: "not-applicable" } : { check, status: "passed" });
+  const frame = { result: "passed", url: "https://app.example/", hosting: FRAME, checks: [...checks, { check: "preview-origin", status: "not-configured" }, { check: "lock", status: "not-configured" }] };
+  expect(decodeDoctorReport(frame)).toEqual(frame);
+  expect(decodeDoctorReport({ ...frame, hosting: SELF_HOSTED, checks: frame.checks.map(check => owned.has(check.check) ? { check: check.check, status: "passed" } : check) }).hosting).toEqual(SELF_HOSTED);
+  // A self-hosted application serves its own workers and storage, and no other check may go unchecked.
+  for (const refused of [{ ...frame, hosting: SELF_HOSTED }, { ...frame, checks: frame.checks.map(check => check.check === "wasm-mime" ? { check: "wasm-mime", status: "not-applicable" } : check) }]) {
+    expect(code(() => decodeDoctorReport(refused))).toBe("PROTOCOL_ERROR");
+  }
+  const unnamed = { result: frame.result, url: frame.url, checks: frame.checks };
+  for (const hosting of [undefined, { kind: "cdn", frame: FRAME.frame }, { kind: "frame" }, { kind: "frame", frame: FRAME.frame, extra: 1 }, { kind: "frame", frame: "ftp://run.example/v/1/" }, { kind: "self-hosted", assets: "https://user:secret@app.example/oxidevm/" }, { kind: "self-hosted", assets: "not a URL" }]) {
+    expect(code(() => decodeDoctorReport(hosting === undefined ? unnamed : { ...frame, hosting }))).toBe("PROTOCOL_ERROR");
+  }
+});
+
+function code(work: () => unknown): unknown {
+  const error = failure(work);
+  return typeof error === "object" && error !== null && "code" in error ? error.code : error;
+}
 
 function failure(work: () => unknown): unknown {
   try { work(); } catch (error: unknown) { return error; }
@@ -57,4 +81,21 @@ it.each(["http://preview.localhost:4278", "http://0123456789abcdef.preview.local
 
 it("rejects a remote insecure preview origin before launching any browser", async () => {
   await expect(doctorProject("http://localhost:4173/", { browser: "chromium", previewOrigin: "http://preview.example.com", signal: AbortSignal.abort() })).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+});
+
+it.each([undefined, "frame" as const])("admits a secure or localhost runtime frame origin with hosting %s before cancellation", async hosting => {
+  for (const frameOrigin of ["https://run.example.net", "http://run.localhost:4179"]) {
+    await expect(doctorProject("http://localhost:4173/", { browser: "chromium", ...(hosting === undefined ? {} : { hosting }), frameOrigin, signal: AbortSignal.abort() })).rejects.toMatchObject({ code: "ABORTED" });
+  }
+});
+
+it("rejects an unknown hosting and a frame origin that is not a secure origin, before launching any browser", async () => {
+  const signal = AbortSignal.abort();
+  const refused: readonly unknown[] = [
+    { hosting: "cdn" }, { hosting: "self-hosted", frameOrigin: "https://run.example.net" },
+    { frameOrigin: "http://run.example.net" }, { frameOrigin: "https://run.example.net/v/0.0.15/" }, { frameOrigin: "run.example.net" },
+  ];
+  for (const options of refused) {
+    await expect(doctorProject("http://localhost:4173/", { browser: "chromium", signal, ...(typeof options === "object" && options !== null ? options : {}) })).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  }
 });

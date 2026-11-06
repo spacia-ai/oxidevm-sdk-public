@@ -1,4 +1,4 @@
-import { NetworkClient } from "./network-client.js";
+import { NetworkClient, vmRelayScope } from "./network-client.js";
 import { rejectingTimeout } from "./disposal.js";
 import { openPreviewSession } from "./preview-session.js";
 import type { PreviewKeeperHost } from "./preview-keeper.js";
@@ -166,7 +166,7 @@ class BrowserUserspaceVM implements RuntimeVM {
   ) {
     this.#storage = storage;
     this.#network = network;
-    this.network = new NetworkClient(() => network, {origin: typeof location === "undefined" ? "null" : location.origin, workspaceId: options.workspaceId, serverAllowed: options.relayPolicy !== "personal-only"}, undefined, () => backend.revokeNetwork());
+    this.network = new NetworkClient(() => network, vmRelayScope(options), undefined, () => backend.revokeNetwork());
     this.#workspaceId = options.workspaceId;
     this.#storageScope = options.storage ?? ORIGIN_STORAGE;
     this.#backend = backend;

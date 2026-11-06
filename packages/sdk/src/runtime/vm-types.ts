@@ -71,6 +71,12 @@ export interface CommonOptions {
    */
   readonly storage?: StorageScope;
   /**
+   * The page that embeds the runtime frame (ADR 0021), as the frame verified it; absent, the VM runs in its own page.
+   * Relays see the frame's origin for every page that embeds it, so the VM names this page in the workspace it
+   * presents to relays and sends their session routes no cookies.
+   */
+  readonly embedderOrigin?: string;
+  /**
    * What creating the VM does when another VM, in this tab or another, holds the durable
    * `workspaceId`: "fail" (the default) rejects with `detail.reason: "workspace-in-use"`; "temporary"
    * opens a new temporary workspace instead, which starts empty and saves nothing. The VM's

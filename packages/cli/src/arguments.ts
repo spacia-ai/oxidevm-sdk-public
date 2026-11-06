@@ -22,7 +22,7 @@ export type CLIInvocation = Common & (
   | {readonly command:"wasm test";readonly project:string;readonly module?:string;readonly image?:{readonly bundle:string;readonly trust:string};readonly args:readonly string[];readonly options:Readonly<Record<string,unknown>>;readonly browser:"chromium"|"firefox"|"webkit";readonly engineDir?:string;readonly timeoutMs?:number}
   | { readonly command: "init"; readonly directory: string; readonly mode: RuntimeMode; readonly skipAssets: boolean; readonly start: boolean; readonly packageManager: "npm" | "bun"; readonly archives?: { readonly sdk: string; readonly cli: string }; readonly engineDir?: string; readonly image?: { readonly bundle: string; readonly trust: string } }
   | { readonly command: "assets install"; readonly config: string; readonly image?: string;readonly snapshot?:string;readonly trust?:string; readonly reference?: string; readonly engineDir?: string; readonly updateLock: boolean }
-  | { readonly command: "doctor"; readonly url: string; readonly browser: "chromium" | "firefox" | "webkit"; readonly previewOrigin?: string; readonly config?: string }
+  | { readonly command: "doctor"; readonly url: string; readonly browser: "chromium" | "firefox" | "webkit"; readonly hosting?: "frame" | "self-hosted"; readonly frameOrigin?: string; readonly previewOrigin?: string; readonly config?: string }
   | { readonly command: "image init"; readonly directory: string; readonly mode: RuntimeMode }
   | { readonly command: "image keygen"; readonly out: string }
   | { readonly command: "image build"; readonly recipe: string; readonly signingKey: string; readonly out?: string; readonly baseUrl?: string; readonly distribution: boolean; readonly secrets: readonly { readonly id: string; readonly file: string }[] }
@@ -46,12 +46,16 @@ function moduleOptions(entries: readonly string[]): Readonly<Record<string, unkn
   }
   return options;
 }
+function doctorHosting(value: string | undefined): "frame" | "self-hosted" | undefined {
+  if (value === undefined || value === "frame" || value === "self-hosted") return value;
+  return invalid("--hosting must be frame or self-hosted");
+}
 function nonempty(value: unknown, label: string): string {
   if (typeof value !== "string" || value.length === 0 || value.length > 8192 || value.includes("\0")) return invalid(`${label} is required and must be bounded text`);
   return value;
 }
 const allowed: Readonly<Record<CliCommand, readonly string[]>> = {
-  init: ["mode", "skip-assets", "engine-dir", "image", "image-trust", "start", "use-bun", "sdk-archive", "cli-archive"], "assets install": ["config", "image", "snapshot", "trust", "reference", "engine-dir", "update-lock"], doctor: ["browser", "preview-origin", "config"],
+  init: ["mode", "skip-assets", "engine-dir", "image", "image-trust", "start", "use-bun", "sdk-archive", "cli-archive"], "assets install": ["config", "image", "snapshot", "trust", "reference", "engine-dir", "update-lock"], doctor: ["browser", "hosting", "frame-origin", "preview-origin", "config"],
   "image init": ["mode"], "image keygen": ["out"], "image build": ["signing-key", "out", "base-url", "distribution", "secret"], "image test": ["trust", "browser", "distribution", "engine-dir"], "image inspect": ["trust"], "image pack": ["trust"],
   "snapshot pack":["recipe","signing-key","image-trust","out","base-url","browser","timeout-ms","engine-dir"],"snapshot test":["trust","verify","browser","timeout-ms","engine-dir"],"snapshot inspect":["trust"],
   "snapshot init":["name","mode","image","image-trust"],"snapshot build":["signing-key","image-trust","out","base-url","browser","timeout-ms","engine-dir"],
@@ -67,7 +71,7 @@ export function parseArguments(arguments_: readonly string[], environment: Reado
     parsed = parseArgs({ args: [...arguments_], allowPositionals: true, strict: true, tokens: true, options: {
       json: { type: "boolean" }, help: { type: "boolean" }, version: { type: "boolean" }, mode: { type: "string" },
       "skip-assets": { type: "boolean" }, config: { type: "string" }, image: { type: "string" }, reference: { type: "string" },
-      browser: { type: "string" }, "preview-origin": { type: "string" }, out: { type: "string" }, "signing-key": { type: "string" }, "base-url": { type: "string" },
+      browser: { type: "string" }, hosting: { type: "string" }, "frame-origin": { type: "string" }, "preview-origin": { type: "string" }, out: { type: "string" }, "signing-key": { type: "string" }, "base-url": { type: "string" },
       distribution: { type: "boolean" }, trust: { type: "string" }, secret: { type: "string", multiple: true }, "engine-dir": { type: "string" },
       recipe:{type:"string"},"image-trust":{type:"string"},verify:{type:"string"},"timeout-ms":{type:"string"},
       name:{type:"string"},
@@ -179,7 +183,11 @@ export function parseArguments(arguments_: readonly string[], environment: Reado
       const snapshot=parsed.values.snapshot===undefined?{}:{snapshot:nonempty(parsed.values.snapshot,"--snapshot"),trust:nonempty(parsed.values.trust??environment["OXIDEVM_SNAPSHOT_TRUST_FILE"],"snapshot author trust")};
       return { ...common, command, config: parsed.values.config ?? "oxidevm.config.ts", ...(parsed.values.image === undefined ? {} : { image: nonempty(parsed.values.image, "--image") }), ...(parsed.values.trust === undefined ? {} : { trust: nonempty(parsed.values.trust, "--trust") }), ...snapshot, ...(parsed.values.reference === undefined ? {} : { reference: nonempty(parsed.values.reference, "--reference") }), ...engineDir, updateLock: parsed.values["update-lock"] === true };
     }
-    case "doctor": return { ...common, command, url: positional[0] ?? "http://localhost:5173/", browser: browser(), ...(parsed.values["preview-origin"] === undefined ? {} : { previewOrigin: nonempty(parsed.values["preview-origin"], "--preview-origin") }), ...(parsed.values.config === undefined ? {} : { config: nonempty(parsed.values.config, "--config") }) };
+    case "doctor": {
+      const hosting = doctorHosting(parsed.values.hosting);
+      if (hosting === "self-hosted" && parsed.values["frame-origin"] !== undefined) return invalid("--frame-origin applies only to --hosting frame");
+      return { ...common, command, url: positional[0] ?? "http://localhost:5173/", browser: browser(), ...(hosting === undefined ? {} : { hosting }), ...(parsed.values["frame-origin"] === undefined ? {} : { frameOrigin: nonempty(parsed.values["frame-origin"], "--frame-origin") }), ...(parsed.values["preview-origin"] === undefined ? {} : { previewOrigin: nonempty(parsed.values["preview-origin"], "--preview-origin") }), ...(parsed.values.config === undefined ? {} : { config: nonempty(parsed.values.config, "--config") }) };
+    }
     case "image init": return { ...common, command, directory: argument(), mode: mode() };
     case "image keygen": return { ...common, command, out: nonempty(parsed.values.out, "--out") };
     case "image build": {

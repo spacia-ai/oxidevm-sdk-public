@@ -390,7 +390,7 @@ export async function openNetworkedProject(connection: RelayConnectionOptions): 
 }
 ```
 
-Pass `{ kind: "server", url, sessionUrl }` for your application's authenticated relay. `sessionUrl` is your backend route that authorizes the signed-in user and this workspace; a relative path resolves against your page. Pass `{ kind: "personal", workspaceName: "My project" }` to pair with the relay the user runs on their own computer. `createVM` connects through `vm.network` once the VM is ready and before it resolves. A refused or failed connection disposes the VM and rejects with the relay's typed error, whose `detail.reason` names the failure.
+Pass `{ kind: "server", url, sessionUrl }` for your application's authenticated relay. `sessionUrl` is your backend route that authorizes the signed-in user and this workspace; a relative path resolves against your page. In the hosted runtime frame the request carries no cookies, so pass the user's credential in `headers`, and the workspace ID it names is `<page origin> <workspaceId>`. Pass `{ kind: "personal", workspaceName: "My project" }` to pair with the relay the user runs on their own computer. `createVM` connects through `vm.network` once the VM is ready and before it resolves. A refused or failed connection disposes the VM and rejects with the relay's typed error, whose `detail.reason` names the failure.
 
 To show the six-digit pairing code while the user approves a personal relay, create the VM with `network: { mode: "local" }`, follow `vm.network.watch(...)` and call `vm.network.connect(...)` yourself. `vm.network.disconnect()` revokes internet access while files, processes and previews keep working.
 

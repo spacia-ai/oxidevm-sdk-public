@@ -2,11 +2,13 @@ import { exactKeys, integer, record, string } from "../decode.js";
 import { VMError } from "../errors.js";
 import type { NetworkState, RelayFailureReason } from "../network-types.js";
 import { decodeRelayFailure, relayError, relayFailure } from "../relay-errors.js";
-import { boundedText, decodeRelayOptions, type RelayOptions, type NetworkView } from "../protocol/network.js";
+import { boundedText, decodeRelayOptions, type RelayOptions, type RelayScope, type NetworkView } from "../protocol/network.js";
 import { RelayConnection } from "./relay-protocol.js";
 import { decodeRelayTicket, type RelayIdentity, type RelayTicket } from "./relay-wire.js";
 
 const PERSONAL = new URL("http://127.0.0.1:7337/");
+/** spec/relay/v2.md: a workspace identity is 1–256 printable characters. */
+const WORKSPACE_IDENTITY_LIMIT = 256;
 /** Both real runtime adapters implement the same enable/revoke boundary. */
 export interface RelayRuntimeAdapter { setRelay(connection: RelayConnection | undefined, generation: number): Promise<void> }
 interface Session {
@@ -16,7 +18,12 @@ interface Session {
 }
 
 export class RelayConnectionOwner {
-  readonly #scope: {readonly origin:string;readonly workspaceId:string;readonly workspaceName?:string;readonly serverAllowed?:boolean};
+  readonly #scope: RelayScope;
+  /**
+   * The runtime frame makes its requests for whichever page embeds it, so it never attaches that browser's cookies: a
+   * server relay's session route sees the frame's origin either way and can tell its own page only by `headers`.
+   */
+  readonly #credentials: RequestCredentials;
   readonly #adapter: RelayRuntimeAdapter;
   #state: NetworkState = {kind:"off"};
   #revision = 0;
@@ -28,7 +35,7 @@ export class RelayConnectionOwner {
   #releasing: Promise<void> | undefined;
   #adapterChanges = Promise.resolve();
   readonly #watchers = new Set<{after:number;resolve(view:NetworkView):void;reject(error:unknown):void}>();
-  constructor(scope: {readonly origin:string;readonly workspaceId:string;readonly workspaceName?:string;readonly serverAllowed?:boolean}, adapter: RelayRuntimeAdapter) { this.#scope=scope; this.#adapter=adapter; }
+  constructor(scope: RelayScope, adapter: RelayRuntimeAdapter) { this.#scope=scope; this.#credentials=scope.embedderOrigin === undefined ? "include" : "omit"; this.#adapter=adapter; }
   get state(): NetworkState { return this.#state; }
   get view(): NetworkView { return {revision:this.#revision,state:this.#state}; }
   get connection(): RelayConnection | undefined { return this.#session?.connection; }
@@ -37,8 +44,10 @@ export class RelayConnectionOwner {
     if (this.#attempt !== undefined || this.#disconnecting !== undefined || this.#releasing !== undefined || this.#session !== undefined) return Promise.reject(new VMError("INVALID_ARGUMENT","Disconnect before changing relay"));
     const options = decodeRelayOptions(input, this.#scope.origin);
     if (options.kind === "server" && this.#scope.serverAllowed === false) return Promise.reject(new VMError("FEATURE_NOT_AVAILABLE", "Server relay is disabled by this application"));
+    const workspaceId = relayWorkspaceId(this.#scope);
+    if (workspaceId === undefined) return Promise.reject(new VMError("INVALID_ARGUMENT", `This page's origin and workspace ID together exceed the ${WORKSPACE_IDENTITY_LIMIT} characters a relay accepts as a workspace`));
     const controller = new AbortController(); this.#abort = controller;
-    const pending = this.#connect(options, AbortSignal.any([signal,controller.signal])); this.#attempt = pending;
+    const pending = this.#connect(options, workspaceId, AbortSignal.any([signal,controller.signal])); this.#attempt = pending;
     return pending.finally(() => { if (this.#attempt === pending) {this.#attempt=undefined;this.#abort=undefined;} });
   }
   disconnect(): Promise<void> {
@@ -59,8 +68,8 @@ export class RelayConnectionOwner {
       this.#watchers.add(watcher); signal.addEventListener("abort",abort,{once:true});
     });
   }
-  async #connect(options: RelayOptions, signal: AbortSignal): Promise<void> {
-    const identity = {workspaceId:this.#scope.workspaceId,browserSessionId:randomSessionId()};
+  async #connect(options: RelayOptions, workspaceId: string, signal: AbortSignal): Promise<void> {
+    const identity = {workspaceId,browserSessionId:randomSessionId()};
     const endpoint = options.kind === "personal" ? PERSONAL : new URL(options.url);
     const generation = ++this.#generation;
     try {
@@ -68,7 +77,7 @@ export class RelayConnectionOwner {
       if (options.kind === "personal") {
         this.#update({kind:"discovering"});
         await discover(signal);
-        const name = options.workspaceName ?? this.#scope.workspaceName ?? identity.workspaceId;
+        const name = options.workspaceName ?? this.#scope.workspaceName ?? this.#scope.workspaceId;
         const response = await jsonRequest(new URL("v2/pairings",endpoint),{method:"POST",body:JSON.stringify({version:2,...identity,workspaceName:boundedText(name,"workspace name",100)}),headers:{"content-type":"application/json"}},signal);
         const pending = record(response,"pairing");
         exactKeys(pending,["version","id","poll","code","origin","workspaceId","workspaceName","expiresAt"]);
@@ -83,7 +92,7 @@ export class RelayConnectionOwner {
         this.#update({kind:"connecting",relay:"server"});
         this.#session = {identity,endpoint,generation,pairing:undefined,connection:undefined};
         const authUrl = options.sessionUrl === undefined ? new URL("v2/sessions",endpoint) : new URL(options.sessionUrl);
-        const response = await jsonRequest(authUrl,{method:"POST",credentials:"include",headers:{...options.headers,"content-type":"application/json"},body:JSON.stringify({version:2,...identity,origin:this.#scope.origin})},signal,options.sessionUrl !== undefined);
+        const response = await jsonRequest(authUrl,{method:"POST",credentials:this.#credentials,headers:{...options.headers,"content-type":"application/json"},body:JSON.stringify({version:2,...identity,origin:this.#scope.origin})},signal,options.sessionUrl !== undefined);
         ticket = decodeRelayTicket(response,endpoint);
       }
       this.#update({kind:"connecting",relay:options.kind});
@@ -124,7 +133,7 @@ export class RelayConnectionOwner {
     finally { if (session !== undefined) {
       try {
         const url = session.pairing === undefined ? new URL("v2/revoke",session.endpoint) : new URL(`v2/pairings/${session.pairing.id}`,session.endpoint);
-        await fetch(url,{method:session.pairing === undefined ? "POST" : "DELETE",credentials:session.pairing === undefined ? "include" : "omit",headers:session.pairing === undefined ? {"content-type":"application/json"} : {authorization:`Bearer ${session.pairing.poll}`},...(session.pairing === undefined ? {body:JSON.stringify(session.identity)} : {}),signal:AbortSignal.timeout(5000),redirect:"error",cache:"no-store"});
+        await fetch(url,{method:session.pairing === undefined ? "POST" : "DELETE",credentials:session.pairing === undefined ? this.#credentials : "omit",headers:session.pairing === undefined ? {"content-type":"application/json"} : {authorization:`Bearer ${session.pairing.poll}`},...(session.pairing === undefined ? {body:JSON.stringify(session.identity)} : {}),signal:AbortSignal.timeout(5000),redirect:"error",cache:"no-store"});
       } catch { /* Closing the authenticated WebSocket also revokes its native session. */ }
     } }
   }
@@ -133,6 +142,16 @@ export class RelayConnectionOwner {
     this.#state=Object.freeze(state); this.#revision++;
     for (const watcher of this.#watchers) { if (watcher.after < this.#revision) {this.#watchers.delete(watcher);watcher.resolve(this.view);} }
   }
+}
+/**
+ * The workspace a relay sees, and shows when it asks the user to approve a pairing. Relays see the runtime frame's
+ * origin for every page that embeds it, so a frame-hosted VM puts that page's origin before its own workspace ID: the
+ * relay then names the page, and two sites' workspaces with one ID stay two workspaces to it. Undefined when the
+ * result is longer than a relay accepts.
+ */
+function relayWorkspaceId(scope: RelayScope): string | undefined {
+  const workspaceId = scope.embedderOrigin === undefined ? scope.workspaceId : `${scope.embedderOrigin} ${scope.workspaceId}`;
+  return workspaceId.length <= WORKSPACE_IDENTITY_LIMIT ? workspaceId : undefined;
 }
 async function discover(signal: AbortSignal): Promise<void> {
   let value: unknown;

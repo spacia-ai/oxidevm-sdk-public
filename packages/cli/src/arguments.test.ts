@@ -67,6 +67,18 @@ it("accepts --engine-dir only where the pinned engine release is staged or serve
   }
 });
 
+it("selects the doctor's runtime with --hosting and the runtime frame with --frame-origin", () => {
+  expect(parseArguments(["doctor", "https://app.example/"], {})).not.toHaveProperty("hosting");
+  expect(parseArguments(["doctor", "https://app.example/", "--hosting", "frame", "--frame-origin", "https://run.example.net"], {})).toMatchObject({ command: "doctor", hosting: "frame", frameOrigin: "https://run.example.net" });
+  expect(parseArguments(["doctor", "--hosting", "self-hosted"], {})).toMatchObject({ command: "doctor", hosting: "self-hosted" });
+  expect(parseArguments(["doctor", "--frame-origin", "http://run.localhost:4179"], {})).toMatchObject({ command: "doctor", frameOrigin: "http://run.localhost:4179" });
+  for (const command of [["doctor", "--hosting", "cdn"], ["doctor", "--hosting", "self-hosted", "--frame-origin", "https://run.example.net"], ["doctor", "--frame-origin", ""], ["doctor", "--hosting", "frame", "--hosting", "frame"], ["image", "test", "x", "--hosting", "frame"]]) {
+    let failure: unknown;
+    try { parseArguments(command, {}); } catch (error: unknown) { failure = error; }
+    expect(failure).toMatchObject({ code: "INVALID_ARGUMENT" });
+  }
+});
+
 it("accepts --update-lock only for assets install, and --config for doctor", () => {
   expect(parseArguments(["assets", "install", "--update-lock"], {})).toMatchObject({ command: "assets install", updateLock: true });
   expect(parseArguments(["assets", "install"], {})).toMatchObject({ command: "assets install", updateLock: false });

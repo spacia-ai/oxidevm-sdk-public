@@ -14,6 +14,14 @@ import { isTrustworthyURL } from "../trustworthy-url.js";
 
 export interface DoctorOptions {
   readonly browser: "chromium" | "firefox" | "webkit";
+  /**
+   * The runtime the application uses (engine ADR 0021): `self-hosted` checks its own runtime assets, `frame` its page and
+   * the hosted runtime frame of this SDK release. Without it the doctor checks a self-hosted runtime when the
+   * application serves the SDK's doctor probe at its asset base, and the hosted frame otherwise; the report names which.
+   */
+  readonly hosting?: "frame" | "self-hosted";
+  /** The runtime frame's origin when the frame is checked; `https://run.oxidevm.dev` by default. */
+  readonly frameOrigin?: string;
   readonly previewOrigin?: string;
   /** The project configuration whose `oxidevm.lock.json` the `lock` check compares with this SDK; without it that check is `not-configured`. */
   readonly project?: string;
@@ -45,7 +53,7 @@ export async function doctorLockCheck(project: string | undefined, signal?: Abor
 /** The browser runner reports the lock check as not configured; the Node-side result replaces it. */
 function withLockCheck(report: DoctorReport, lock: DoctorCheckResult): DoctorReport {
   const checks = report.checks.map(check => check.check === "lock" ? lock : check);
-  return decodeDoctorReport({ result: checks.some(check => check.status === "failed") ? "failed" : "passed", url: report.url, checks });
+  return decodeDoctorReport({ result: checks.some(check => check.status === "failed") ? "failed" : "passed", url: report.url, hosting: report.hosting, checks });
 }
 
 /** Probe a real deployed origin in a real browser without running build instructions. */
@@ -56,6 +64,14 @@ export async function doctorProject(value: string, options: DoctorOptions): Prom
   if (options.previewOrigin !== undefined) {
     const preview = new URL(options.previewOrigin);
     if (preview.origin !== options.previewOrigin || !isTrustworthyURL(preview)) throw new VMError("INVALID_ARGUMENT", "preview must be a secure origin or localhost origin");
+  }
+  const hosting: unknown = options.hosting;
+  if (hosting !== undefined && hosting !== "frame" && hosting !== "self-hosted") throw new VMError("INVALID_ARGUMENT", "doctor hosting must be frame or self-hosted");
+  if (options.frameOrigin !== undefined) {
+    if (hosting === "self-hosted") throw new VMError("INVALID_ARGUMENT", "a runtime frame origin applies only to frame hosting");
+    let frame: URL;
+    try { frame = new URL(options.frameOrigin); } catch { throw new VMError("INVALID_ARGUMENT", "the runtime frame must be a secure origin or localhost origin"); }
+    if (frame.origin !== options.frameOrigin || !isTrustworthyURL(frame)) throw new VMError("INVALID_ARGUMENT", "the runtime frame must be a secure origin or localhost origin");
   }
   abortIfRequested(options.signal);
   const lock = await doctorLockCheck(options.project, options.signal);

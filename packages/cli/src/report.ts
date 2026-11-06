@@ -1,29 +1,10 @@
 import { VMError } from "@oxidevm/sdk";
-import { decodeBuilderError, decodeImageDigest, decodeImageDistribution, decodeImageInspection, decodeImageTestReport,decodeSnapshotBuildResult,decodeSnapshotTestReport,decodeSnapshotInspectResult, decodeWasmAddResult, decodeWasmBuildResult, decodeWasmDoctorReport, decodeWasmInspectResult, decodeWasmStageResult, decodeWasmTestReport } from "@oxidevm/sdk/image-builder";
+import { decodeBuilderError, decodeDoctorReport, decodeImageDigest, decodeImageDistribution, decodeImageInspection, decodeImageTestReport,decodeSnapshotBuildResult,decodeSnapshotTestReport,decodeSnapshotInspectResult, decodeWasmAddResult, decodeWasmBuildResult, decodeWasmDoctorReport, decodeWasmInspectResult, decodeWasmStageResult, decodeWasmTestReport } from "@oxidevm/sdk/image-builder";
 import type { ProjectLockChange, ProjectLockIdentity } from "@oxidevm/sdk/image-builder";
-import type { CliCommand, CliReport, DoctorCheck, DoctorReport } from "./contracts.js";
+import type { CliCommand, CliReport } from "./contracts.js";
 import { choice, fields, number, object, text } from "./validation.js";
 
 const commands: readonly CliCommand[] = ["init", "assets install", "doctor", "image init", "image keygen", "image build", "image test", "image inspect", "image pack","snapshot init","snapshot build","snapshot pack","snapshot test","snapshot inspect","wasm add","wasm stage","wasm doctor","wasm inspect","wasm build","wasm release","wasm init","wasm test"];
-const doctorChecks: readonly DoctorCheck[] = ["secure-context", "cross-origin-isolation", "wasm-features", "worker-load", "asset-integrity", "wasm-mime", "content-security-policy", "storage", "preview-origin", "lock"];
-
-export function decodeDoctorReport(value: unknown): DoctorReport {
-  const input = object(value, "doctor report"); fields(input, ["result", "url", "checks"]);
-  const url = new URL(text(input["url"]));
-  if (url.protocol !== "https:" && url.protocol !== "http:" || url.username !== "" || url.password !== "") throw new VMError("PROTOCOL_ERROR", "invalid doctor URL");
-  const result = choice(input["result"], ["passed", "failed"]);
-  if (!Array.isArray(input["checks"])) throw new VMError("PROTOCOL_ERROR", "doctor checks must be an array");
-  const checks: DoctorReport["checks"] = Array.from<unknown>(input["checks"]).map(value => {
-    const item = object(value, "doctor check"); const check = choice(item["check"], doctorChecks);
-    if (item["status"] === "passed") { fields(item, ["check", "status"]); return { check, status: "passed" }; }
-    if (item["status"] === "failed") { fields(item, ["check", "status", "message"]); return { check, status: "failed", message: text(item["message"]) }; }
-    fields(item, ["check", "status"]);
-    if (check !== "preview-origin" && check !== "lock" || item["status"] !== "not-configured") throw new VMError("PROTOCOL_ERROR", "mandatory doctor check cannot be omitted");
-    return { check, status: "not-configured" };
-  });
-  if (checks.length !== doctorChecks.length || new Set(checks.map(item => item.check)).size !== checks.length || (result === "failed") !== checks.some(item => item.status === "failed")) throw new VMError("PROTOCOL_ERROR", "incomplete or contradictory doctor report");
-  return { result, url: url.href, checks };
-}
 
 function lockIdentity(value: unknown): ProjectLockIdentity {
   const input = object(value, "project lock release"); fields(input, ["sdkVersion", "engineRelease", "manifestSHA256"]);

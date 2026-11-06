@@ -22,6 +22,13 @@ export function navigationFailure(url: string, failure: unknown): VMError {
   });
 }
 
+/** Why a request the doctor sent itself failed: the HTTP status, or the network error's name. Its raw text stays local. */
+export function requestCause(failure: unknown): string {
+  if (typeof failure === "number" && Number.isSafeInteger(failure)) return `HTTP ${String(failure)}`;
+  if (!(failure instanceof Error)) return "request failed";
+  return /\b(E[A-Z][A-Z_]{1,30})\b/u.exec(failure.message)?.[1] ?? (/\btimed? ?out\b/iu.test(failure.message) ? "timed out" : "request failed");
+}
+
 /** The selected browser did not start, usually because Playwright has not installed it. Its raw error stays local. */
 export function browserStartFailure(browser: DoctorBrowser): VMError {
   return new VMError("FEATURE_NOT_AVAILABLE", `doctor could not start ${browser}; install it with \`npx playwright install ${browser}\``, { reason: "doctor-browser-unavailable" });

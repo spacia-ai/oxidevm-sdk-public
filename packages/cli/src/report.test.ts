@@ -71,13 +71,23 @@ it("reads the doctor's closed lock check", () => {
   const browser = ["secure-context", "cross-origin-isolation", "wasm-features", "worker-load", "asset-integrity", "wasm-mime", "content-security-policy", "storage"].map(check => ({ check, status: "passed" }));
   const preview = { check: "preview-origin", status: "not-configured" };
   const stale = { check: "lock", status: "failed", message: "project lock oxidevm.lock.json does not match the installed SDK release" };
+  const hosting = { kind: "self-hosted", assets: "http://localhost:5173/oxidevm/" };
   for (const lock of [{ check: "lock", status: "passed" }, { check: "lock", status: "not-configured" }]) {
-    const report = { result: "passed", url: "http://localhost:5173/", checks: [...browser, preview, lock] };
+    const report = { result: "passed", url: "http://localhost:5173/", hosting, checks: [...browser, preview, lock] };
     expect(decodeCliReport(envelope("doctor", report))).toEqual(envelope("doctor", report));
   }
-  const failed = { result: "failed", url: "http://localhost:5173/", checks: [...browser, preview, stale] };
+  const failed = { result: "failed", url: "http://localhost:5173/", hosting, checks: [...browser, preview, stale] };
   expect(decodeCliReport(envelope("doctor", failed))).toEqual(envelope("doctor", failed));
   for (const checks of [[...browser, preview], [...browser, preview, { check: "lock", status: "skipped" }], [...browser, preview, stale, stale]]) {
-    expect(() => decodeCliReport(envelope("doctor", { result: "failed", url: "http://localhost:5173/", checks }))).toThrow();
+    expect(() => decodeCliReport(envelope("doctor", { result: "failed", url: "http://localhost:5173/", hosting, checks }))).toThrow();
   }
+});
+
+it("reads a frame-hosted doctor report and refuses one that does not name its runtime", () => {
+  const owned = new Set(["worker-load", "storage"]);
+  const checks = ["secure-context", "cross-origin-isolation", "wasm-features", "worker-load", "asset-integrity", "wasm-mime", "content-security-policy", "storage"].map(check => owned.has(check) ? { check, status: "not-applicable" } : { check, status: "passed" });
+  const report = { result: "passed", url: "https://app.example/", hosting: { kind: "frame", frame: "https://run.oxidevm.dev/v/0.0.15/" }, checks: [...checks, { check: "preview-origin", status: "not-configured" }, { check: "lock", status: "passed" }] };
+  expect(decodeCliReport(envelope("doctor", report))).toEqual(envelope("doctor", report));
+  expect(() => decodeCliReport(envelope("doctor", { result: report.result, url: report.url, checks: report.checks }))).toThrow();
+  expect(() => decodeCliReport(envelope("doctor", { ...report, hosting: { kind: "self-hosted", assets: "https://app.example/oxidevm/" } }))).toThrow();
 });

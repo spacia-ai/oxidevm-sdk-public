@@ -1,20 +1,8 @@
 import type { RuntimeMode, SHA256, VMErrorCode } from "@oxidevm/sdk";
-import type { ImageDistribution, ImageInspection, ImagePackReport, ImageTestReport, ProjectLockChange,SnapshotBuildResult,SnapshotTestReport,SnapshotInspectResult, WasmAddResult, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult, WasmTestReport } from "@oxidevm/sdk/image-builder";
+import type { DoctorReport, ImageDistribution, ImageInspection, ImagePackReport, ImageTestReport, ProjectLockChange,SnapshotBuildResult,SnapshotTestReport,SnapshotInspectResult, WasmAddResult, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult, WasmTestReport } from "@oxidevm/sdk/image-builder";
 
-export type DoctorCheck =
-  | "secure-context" | "cross-origin-isolation" | "wasm-features" | "worker-load"
-  | "asset-integrity" | "wasm-mime" | "content-security-policy" | "storage"
-  | "preview-origin" | "lock";
-
-export interface DoctorReport {
-  readonly result: "passed" | "failed";
-  readonly url: string;
-  readonly checks: readonly (
-    | { readonly check: DoctorCheck; readonly status: "passed" }
-    | { readonly check: DoctorCheck; readonly status: "failed"; readonly message: string }
-    | { readonly check: "preview-origin" | "lock"; readonly status: "not-configured" }
-  )[];
-}
+/** The deployment doctor's report is the SDK's (`decodeDoctorReport` owns its decoding). */
+export type { DoctorCheck, DoctorHosting, DoctorReport } from "@oxidevm/sdk/image-builder";
 
 export interface WasmInitResult {
   readonly directory: string;

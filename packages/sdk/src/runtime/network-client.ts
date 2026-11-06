@@ -1,12 +1,18 @@
 import { VMError } from "./errors.js";
 import type { NetworkState, RelayConnectionOptions, VMNetwork } from "./network-types.js";
 import { PROTOCOL_VERSION } from "./protocol/common.js";
-import { networkResponseDecoders, serializeRelayOptions, type NetworkOperations, type NetworkView } from "./protocol/network.js";
+import { networkResponseDecoders, serializeRelayOptions, type NetworkOperations, type NetworkView, type RelayScope } from "./protocol/network.js";
 import { type WorkerClient, workerClientForPort } from "./worker-client.js";
+
+/** The relay scope of a VM created in this document; inside the runtime frame, `embedderOrigin` names the page that embeds it. */
+export function vmRelayScope(options: {readonly workspaceId: string; readonly relayPolicy?: "personal-only"; readonly embedderOrigin?: string}): RelayScope {
+  return {origin: typeof location === "undefined" ? "null" : location.origin, workspaceId: options.workspaceId, serverAllowed: options.relayPolicy !== "personal-only",
+    ...(options.embedderOrigin === undefined ? {} : {embedderOrigin: options.embedderOrigin})};
+}
 
 export class NetworkClient implements VMNetwork {
   readonly #worker: (() => Worker) | undefined;
-  readonly #scope: {readonly origin: string; readonly workspaceId: string; readonly workspaceName?: string; readonly serverAllowed?: boolean};
+  readonly #scope: RelayScope;
   readonly #prepare: () => Promise<void>;
   readonly #revoke: () => Promise<void>;
   readonly #lifetime = new AbortController();
@@ -17,7 +23,7 @@ export class NetworkClient implements VMNetwork {
   #disposed = false;
   #failure: VMError | undefined;
 
-  constructor(worker: () => Worker, scope: {readonly origin: string; readonly workspaceId: string; readonly workspaceName?: string; readonly serverAllowed?: boolean}, prepare: () => Promise<void> = async () => {}, revoke: () => Promise<void> = async () => {}) {
+  constructor(worker: () => Worker, scope: RelayScope, prepare: () => Promise<void> = async () => {}, revoke: () => Promise<void> = async () => {}) {
     this.#worker = worker; this.#scope = scope; this.#prepare = prepare; this.#revoke = revoke;
   }
   static fromPort(port: MessagePort, pageUrl: string): NetworkClient {
