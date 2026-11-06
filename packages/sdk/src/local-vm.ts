@@ -1,8 +1,8 @@
 import { typescriptInterceptor } from "./typescript-interceptor.js";
 import { commandAccelerationSupport, NATIVE_EXECUTION_ABSENT_WARNING, openNativeExecution, type NativeExecutionOpen } from "./native-execution.js";
-import type { LicenseStatus, VM } from "./contracts.js";
+import type { BootProgress, LicenseStatus, VM } from "./contracts.js";
 import { admitLicense } from "./license-admission.js";
-import { defineImage, imagePublicKeyBytes } from "./image.js";
+import { defineImage, imagePublicKeyBytes, type ImageInfo } from "./image.js";
 import { resolveProcessLimit } from "./vm-options.js";
 import type { ValidatedVMOptions } from "./vm-options.js";
 import { loadEngineAssets, requireEngineUrl, abortIfRequested } from "./engine-assets.js";
@@ -45,15 +45,22 @@ async function openLocalVM(options: ValidatedVMOptions, baseUrl: string, hosting
   if (typeof Worker !== "function" || typeof globalThis.location !== "object") throw new VMError("FEATURE_NOT_AVAILABLE", "VM creation requires a browser with module workers", { reason: "browser-unsupported" });
   if (options.mode === "system" && options.vcpus !== 1) throw new VMError("FEATURE_NOT_AVAILABLE", "this SDK release qualifies one System vCPU", { reason: "release-gate-open" });
   const requestedImage = options.image ?? defaultImage(options.mode);
-  const [inspection, loading] = await Promise.allSettled([
-    inspectRetainedStart(options, requestedImage, location.href, storage),
+  // Without a retained image the pinned manifest is fetched and verified while the engine loads; its progress is held
+  // until the engine's is done, and failures keep their order: retained inspection, then engine, then image.
+  const inspecting = inspectRetainedStart(options, requestedImage, location.href, storage), imageProgress = heldProgress(options.onProgress);
+  const [inspection, loading, verification] = await Promise.allSettled([
+    inspecting,
     loadEngineAssets(options.mode, new URL(baseUrl, location.href).href, options.signal, options.onProgress),
+    inspecting.then((retained): Promise<StartImage> | StartImage => retained === null ? verifyImage(requestedImage, location.href, options.signal, imageProgress.report)
+      : {info:retained.image,memoryMiB:retained.memoryMiB,...(retained.maxProcesses===undefined?{}:{maxProcesses:retained.maxProcesses})}),
   ]);
   if (inspection.status === "rejected") { if (loading.status === "fulfilled") loading.value.dispose(); const failure: unknown = inspection.reason; throw failure; }
   if (loading.status === "rejected") { const failure: unknown = loading.reason; throw failure; }
   const retained = inspection.value, assets = loading.value;
+  try { imageProgress.release(); } catch (error) { assets.dispose(); throw error; }
+  if (verification.status === "rejected") { assets.dispose(); const failure: unknown = verification.reason; throw failure; }
   const image = retained === null ? requestedImage : defineImage({mode:options.mode,manifestUrl:retained.manifestUrl,manifestSHA256:retained.image.manifestSHA256,trust:requestedImage.trust});
-  const verified = await (retained === null ? verifyImage(image, location.href, options.signal, options.onProgress) : Promise.resolve({info:retained.image,memoryMiB:retained.memoryMiB,...(retained.maxProcesses===undefined?{}:{maxProcesses:retained.maxProcesses})})).catch((error: unknown) => { assets.dispose(); throw error; });
+  const verified = verification.value;
   // The engine admits this use before anything runs (ADR 0021); a refusal stops here.
   let license: LicenseStatus;
   let userspaceWasmModule: WebAssembly.Module | undefined;
@@ -97,6 +104,8 @@ async function openLocalVM(options: ValidatedVMOptions, baseUrl: string, hosting
     abortIfRequested(options.signal);
     const booted = await runtime.bootManagedImage(image.manifestUrl, {
       trustedKeyId: image.trust.keyId, trustedPublicKey: imagePublicKeyBytes(image.trust), manifestSHA256: image.manifestSHA256,
+      // The storage owner checks these against the pin and key, as it checks a download, instead of fetching them again.
+      ...(options.mode === "userspace" && verified.manifest !== undefined ? { manifestBytes: verified.manifest } : {}),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       resume: options.resume,
       imagePreparation: options.imagePreparation,
@@ -119,4 +128,28 @@ async function openLocalVM(options: ValidatedVMOptions, baseUrl: string, hosting
     finally { assets.dispose(); }
     throw error;
   }
+}
+
+/** The image a start runs: verified from its pinned manifest, whose bytes it keeps, or retained by an earlier start. */
+interface StartImage { readonly info: ImageInfo; readonly memoryMiB: number; readonly maxProcesses?: number; readonly manifest?: Uint8Array<ArrayBuffer> }
+
+/**
+ * Progress of a step that runs alongside another, held until `release()` so it is reported after that step's: the
+ * latest event of each phase waits and is reported in the order it last arrived; later events go straight through.
+ */
+function heldProgress(report: ((progress: BootProgress) => void) | undefined): { readonly report: (progress: BootProgress) => void; release(): void } {
+  const held = new Map<BootProgress["phase"], BootProgress>();
+  let released = false;
+  return {
+    report: progress => {
+      if (released) { report?.(progress); return; }
+      held.delete(progress.phase); held.set(progress.phase, progress);
+    },
+    release: () => {
+      if (released) return;
+      released = true;
+      for (const progress of held.values()) report?.(progress);
+      held.clear();
+    },
+  };
 }

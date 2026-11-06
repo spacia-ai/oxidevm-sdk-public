@@ -9,6 +9,20 @@ no Linux kernel, engine, Node.js, npm, Bun, Git, compiler or preinstalled projec
 Application users receive the prebuilt signed image. These commands are for
 image maintainers only. Keep signing keys outside Git and package archives.
 
+## Versions
+
+| Version | Author key | Delivery packs |
+| --- | --- | --- |
+| 0.0.2 | `ed25519-d753cdd5739b36c670441766e2c08ea8` | The files in `pack-first.txt` first, then the rest by path |
+| 0.0.1 | `ed25519-07c107e31f3b392da4a9cbfdf7e155d7` | Files in blob digest order |
+
+0.0.2 contains exactly the files of 0.0.1. It has the same root tree and is
+built from the same source archive (SHA-256
+`25a0bb56f9988f77b437e7130f5cd85855fd32e342b9035694b6b2edd06d1d55`). Its SBOM,
+notices and corresponding sources are those of 0.0.1; only the SBOM's document
+name changed. A cold `python3` run reads two 4 MiB packs of 0.0.2 instead of
+ten of 0.0.1.
+
 ## Locate the complete recipe
 
 This directory belongs to the SDK source release. It is not copied into
@@ -21,6 +35,7 @@ materials, not an OCI base or the required prebuilt Python rootfs.
 | --- | --- |
 | `Dockerfile`, `.dockerignore` | Runtime stages and bounded build context |
 | `oxidevm.image.ts` | Userspace resources, evidence paths and import smoke test |
+| `pack-first.txt` | Files the smoke test reads, packed first so a cold `python3` run downloads two packs |
 | `inputs.lock.json`, `python-inputs.lock.json` | Exact utility, Python, NumPy and pandas inputs |
 | `source-lock.json`, `components.json`, `LICENSE-SELECTIONS.md` | Source identities, component inventory and license selections |
 | `prepare.ts` | Download and verify pinned inputs and the supplied Python rootfs |

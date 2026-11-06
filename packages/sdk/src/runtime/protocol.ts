@@ -357,7 +357,7 @@ export interface StorageOperations {
     PreparedManagedImage
   >;
   readonly "prepare-userspace-rootfs": Operation<
-    { readonly manifestUrl: string; readonly trustedKeyId: string; readonly trustedPublicKey: Uint8Array; readonly manifestSHA256?: string; readonly cachedOnly?: boolean; readonly boot?:ManagedBoot; readonly imagePreparation?: ImagePreparation },
+    { readonly manifestUrl: string; readonly trustedKeyId: string; readonly trustedPublicKey: Uint8Array; readonly manifestSHA256?: string; readonly manifestBytes?: Uint8Array; readonly cachedOnly?: boolean; readonly boot?:ManagedBoot; readonly imagePreparation?: ImagePreparation },
     PreparedUserspaceRootfs
   >;
   readonly "check-userspace-update": Operation<

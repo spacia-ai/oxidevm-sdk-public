@@ -17,14 +17,14 @@ async function requested() {
 const old: ImageInfo = { id: "image", version: "old", mode: "userspace", manifestSHA256: decodeSHA256("a".repeat(64), "fixture"), cpuProfile: "x86-64-v2", signatureVerified: true, keyId: "test" };
 it("returns only verified configured-image offers and ignores a result after image replacement", async () => {
   const ref = await requested(), next: ImageInfo = { ...old, version: "new", manifestSHA256: ref.manifestSHA256 };
-  vi.mocked(verifyImage).mockResolvedValue({ info: next, memoryMiB: 256 });
+  vi.mocked(verifyImage).mockResolvedValue({ info: next, memoryMiB: 256, manifest: new Uint8Array() });
   expect(await checkForImageUpdate(ref, () => old, "https://page.test/")).toEqual(next);
   expect(await checkForImageUpdate(ref, () => next, "https://page.test/")).toBeNull();
   let actual = old;
-  vi.mocked(verifyImage).mockImplementation(() => { actual = next; return Promise.resolve({ info: next, memoryMiB: 256 }); });
+  vi.mocked(verifyImage).mockImplementation(() => { actual = next; return Promise.resolve({ info: next, memoryMiB: 256, manifest: new Uint8Array() }); });
   expect(await checkForImageUpdate(ref, () => actual, "https://page.test/")).toBeNull();
   actual = old;
-  vi.mocked(verifyImage).mockImplementation(() => { actual = { ...old }; return Promise.resolve({ info: next, memoryMiB: 256 }); });
+  vi.mocked(verifyImage).mockImplementation(() => { actual = { ...old }; return Promise.resolve({ info: next, memoryMiB: 256, manifest: new Uint8Array() }); });
   expect(await checkForImageUpdate(ref, () => actual, "https://page.test/")).toBeNull();
 });
 it("propagates failure and cancellation without activating any image", async () => {

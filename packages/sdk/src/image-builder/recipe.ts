@@ -87,9 +87,29 @@ function workspace(value: unknown): NonNullable<UserspaceImageRecipe["workspace"
   }
 }
 
+/** At most one entry per image file, which the manifest bounds the same way. */
+const MAX_PACK_FIRST = 262_144;
+
+/**
+ * Relative image paths, an author's argument like the workspace owner; whether each names a file is checked against
+ * the built tree when the packs are written.
+ */
+function packFirst(value: unknown): readonly string[] {
+  if (!Array.isArray(value) || value.length > MAX_PACK_FIRST) throw new VMError("INVALID_ARGUMENT", "packFirst must be a bounded list of image paths");
+  const items: readonly unknown[] = value;
+  return items.map((item, index) => {
+    const label = `packFirst[${String(index)}]`;
+    const path = typeof item === "string" ? text(item, label) : undefined;
+    if (path === undefined || path.startsWith("/") || path.split("/").some(part => part === "" || part === "." || part === "..")) {
+      throw new VMError("INVALID_ARGUMENT", `${label} must be a relative image path such as usr/bin/python3`);
+    }
+    return path;
+  });
+}
+
 export function decodeImageRecipe(value: unknown): ImageRecipe {
   const input = record(value, "image recipe");
-  exactKeys(input, ["id", "version", "mode", "source", "smokeTest"], ["cpuProfile", "sourceDateEpoch", "evidence", "resources", "boot", "disk", "workspace"]);
+  exactKeys(input, ["id", "version", "mode", "source", "smokeTest"], ["cpuProfile", "sourceDateEpoch", "evidence", "resources", "boot", "disk", "workspace", "packFirst"]);
   const id = text(input["id"], "id"); const version = text(input["version"], "version");
   if (![id, version].every(value => /^[a-z0-9][a-z0-9._-]{0,63}$/u.test(value))) throw new VMError("INVALID_ARGUMENT", "image ID/version must be bounded portable identifiers");
   const cpuProfile = input["cpuProfile"];
@@ -107,10 +127,12 @@ export function decodeImageRecipe(value: unknown): ImageRecipe {
     if (resources !== undefined) exactKeys(resources, [], ["memoryMiB", "maxProcesses"]);
     return { ...common, mode: "userspace", source: decodedSource,
       ...(resources === undefined ? {} : { resources: { ...memoryMiB, ...(resources["maxProcesses"] === undefined ? {} : { maxProcesses: integer(resources["maxProcesses"], "maxProcesses", 1, 64) }) } }),
-      ...(input["workspace"] === undefined ? {} : { workspace: workspace(input["workspace"]) }) };
+      ...(input["workspace"] === undefined ? {} : { workspace: workspace(input["workspace"]) }),
+      ...(input["packFirst"] === undefined ? {} : { packFirst: packFirst(input["packFirst"]) }) };
   }
   if (input["mode"] !== "system") throw new VMError("INVALID_ARGUMENT", "mode must be system or userspace");
   if (input["workspace"] !== undefined) throw new VMError("INVALID_ARGUMENT", "workspace ownership is a Userspace recipe option; a System disk keeps the owners its source recorded");
+  if (input["packFirst"] !== undefined) throw new VMError("INVALID_ARGUMENT", "packFirst is a Userspace recipe option; a System disk is delivered in fixed chunks");
   if (resources !== undefined) exactKeys(resources, [], ["memoryMiB", "vcpus"]);
   const vcpus = resources?.["vcpus"];
   if (vcpus !== undefined && vcpus !== 1 && vcpus !== 2 && vcpus !== 3 && vcpus !== 4) throw new VMError("INVALID_ARGUMENT", "invalid vCPU count");

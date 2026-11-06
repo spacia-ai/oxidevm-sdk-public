@@ -13,6 +13,9 @@ import sys
 import tarfile
 
 
+IMAGE_VERSION = '0.0.2'
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -152,7 +155,7 @@ def prepare(job):
         records.append({'packageId':pid,'kind':'source','archive':{'path':str(target.relative_to(output)),'sha256':source['sha256']},'buildInstructionsFile':'evidence/BUILD.md'})
         if 'buildInstructions' in source: shutil.copy2(source['buildInstructions'], evidence / 'sources' / (pid + '.BUILD.md'))
         (evidence / 'licenses' / (packages[pid]['name'] + '.txt')).write_text(notices[pid]['text'])
-    save(evidence / 'sbom.spdx.json', {**sbom,'name':'oxidevm-starter-pandas-0.0.1','documentNamespace':'https://oxidevm.dev/sbom/pandas/'+digest(json.dumps(rows,sort_keys=True).encode()),'packages':[packages[p] for p in sorted(active)],'files':rows,'relationships':relations})
+    save(evidence / 'sbom.spdx.json', {**sbom,'name':'oxidevm-starter-pandas-'+IMAGE_VERSION,'documentNamespace':'https://oxidevm.dev/sbom/pandas/'+digest(json.dumps(rows,sort_keys=True).encode()),'packages':[packages[p] for p in sorted(active)],'files':rows,'relationships':relations})
     save(evidence / 'sbom.cdx.json', {'bomFormat':'CycloneDX','specVersion':'1.6','version':1,'components':[{'type':'library','name':packages[p]['name'],'version':packages[p]['versionInfo'],'bom-ref':p,'licenses':[{'expression':packages[p]['licenseConcluded']}]} for p in sorted(active)]})
     save(evidence / 'notices.json', {'schemaVersion':1,'notices':[notices[p] for p in sorted(active)]})
     save(evidence / 'sources.json', {'schemaVersion':1,'packages':records})
@@ -160,7 +163,8 @@ def prepare(job):
     save(output / 'components.json', [{'name':packages[p]['name'],'version':packages[p]['versionInfo'],'license':packages[p]['licenseConcluded']} for p in sorted(active)])
     (evidence / 'OPEN-SOURCE-NOTICE.md').write_text('# Python + pandas starter image\n\nThis image is a collection of separately licensed programs. Complete original license texts and copyright notices are in licenses/. Corresponding sources and build inputs are in sources/. The SDK and starter application use Apache-2.0. The proprietary OxideVM engine has separate terms. Engine terms do not limit component license rights. NumPy and pandas execute as native Linux x86-64 libraries. The image excludes BusyBox, Bun, libquadmath and libgfortran. GCC runtime libraries retain their explicit Runtime Library Exception. Automated checks do not grant legal or publication approval.\n')
     archive = output / 'rootfs.tar.gz'; pack(archive, root)
-    save(output / 'recipe.json', {'mode':'userspace','id':'oxidevm-starter-pandas','version':'0.0.1','cpuProfile':'x86-64-v2','sourceDateEpoch':1792886400,'resources':{'memoryMiB':1536},'source':{'kind':'archive','artifact':{'path':'rootfs.tar.gz','sha256':digest(archive.read_bytes())}},'evidence':{'sbom':{'kind':'file','path':'evidence/sbom.spdx.json'},'noticesFile':'evidence/notices.json','correspondingSourcesFile':'evidence/sources.json','licensePolicyFile':'evidence/policy.json'},'smokeTest':{'command':'/usr/bin/python3','args':['-c','import pandas,numpy; print(pandas.__version__,numpy.__version__)'],'expectedExitCode':0,'stdoutIncludes':'2.3.3 2.2.6'}})
+    pack_first = [line for line in (recipe / 'pack-first.txt').read_text().split('\n') if line and not line.startswith('#')]
+    save(output / 'recipe.json', {'mode':'userspace','id':'oxidevm-starter-pandas','version':IMAGE_VERSION,'cpuProfile':'x86-64-v2','sourceDateEpoch':1792886400,'resources':{'memoryMiB':1536},'source':{'kind':'archive','artifact':{'path':'rootfs.tar.gz','sha256':digest(archive.read_bytes())}},'evidence':{'sbom':{'kind':'file','path':'evidence/sbom.spdx.json'},'noticesFile':'evidence/notices.json','correspondingSourcesFile':'evidence/sources.json','licensePolicyFile':'evidence/policy.json'},'smokeTest':{'command':'/usr/bin/python3','args':['-c','import pandas,numpy; print(pandas.__version__,numpy.__version__)'],'expectedExitCode':0,'stdoutIncludes':'2.3.3 2.2.6'},'packFirst':pack_first})
     (evidence / 'SHA256SUMS').write_text(''.join(digest(p.read_bytes())+'  '+p.relative_to(evidence).as_posix()+'\n' for p in sorted(evidence.rglob('*')) if p.is_file()))
     print(json.dumps({'files':len(rows),'components':len(active),'published':False}))
 

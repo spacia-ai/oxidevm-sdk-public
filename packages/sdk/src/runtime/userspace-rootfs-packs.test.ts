@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { packRootfsContents } from "./userspace-rootfs-packing.js";
+import { inDigestOrder, packRootfsContents } from "./userspace-rootfs-packing.js";
 import { decodeRootfsPackIndex, ROOTFS_PACK_BYTES } from "./userspace-rootfs-packs.js";
 import { sha256Hex } from "./workers/snapshot-content.js";
 
@@ -18,7 +18,23 @@ it("packs complete files deterministically and splits a large file across bounde
     for (const extent of blob.extents) bytes.set(emitted.get(extent.chunk)?.subarray(extent.offset,extent.offset+extent.bytes) ?? new Uint8Array(),extent.fileOffset);
     expect(await sha256Hex(bytes)).toBe(blob.sha256);
   }
-  expect(await packRootfsContents([...blobs].reverse(),read,()=>Promise.resolve())).toEqual(first);
+  expect(await packRootfsContents(inDigestOrder([...blobs].reverse()),read,()=>Promise.resolve())).toEqual(await packRootfsContents(inDigestOrder(blobs),read,()=>Promise.resolve()));
+});
+
+it("packs references in the order given, each digest once where it first appears", async () => {
+  const contents = [Uint8Array.of(1), Uint8Array.of(2), Uint8Array.of(3), new Uint8Array(ROOTFS_PACK_BYTES).fill(7)];
+  const refs = await Promise.all(contents.map(async bytes => ({ sha256: await sha256Hex(bytes), bytes: bytes.length })));
+  const bodies = new Map(refs.map((ref, index) => [ref.sha256, contents[index] ?? new Uint8Array()]));
+  const read = async function*(blob: { readonly sha256: string }) { yield await Promise.resolve(bodies.get(blob.sha256) ?? new Uint8Array()); };
+  // The small files in reverse digest order, so a packer that sorts by digest cannot pass.
+  const [first, second, last] = inDigestOrder(refs.slice(0, 3)).reverse(), big = refs[3];
+  if (first === undefined || second === undefined || last === undefined || big === undefined) throw new Error("missing fixture");
+  const index = await packRootfsContents([first, second, first, big, last], read, () => Promise.resolve());
+  const chunkOf = (blob: { readonly sha256: string }) => index.blobs.find(packed => packed.sha256 === blob.sha256)?.extents.map(extent => index.chunks.findIndex(chunk => chunk.sha256 === extent.chunk));
+  expect(index.blobs.map(blob => blob.sha256)).toEqual([first.sha256, second.sha256, big.sha256, last.sha256]);
+  // The first two open the first pack; the large file fills it and spills into the second, where the last one follows.
+  expect([chunkOf(first), chunkOf(second), chunkOf(big), chunkOf(last)]).toEqual([[0], [0], [0, 1], [1]]);
+  expect(decodeRootfsPackIndex(index, refs)).toEqual(index);
 });
 
 it("rejects malformed, duplicate and incomplete extent graphs", async () => {

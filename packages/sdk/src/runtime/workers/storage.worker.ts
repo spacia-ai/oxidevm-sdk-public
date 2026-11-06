@@ -362,10 +362,12 @@ async function handle(request: StorageRequest): Promise<unknown> {
       if(selection!==null)await store.inspectRequestedImage(request.manifestUrl,{keyId:request.trustedKeyId,publicKey:new Uint8Array(request.trustedPublicKey)},request.manifestSHA256,active.get(request.id)?.controller.signal,true);
       const installed = selection === null && request.imagePreparation === "before-ready" && request.boot !== "fresh-image" && request.boot !== "update-image"
         ? await store.inspectCachedImage(request.manifestUrl, { keyId: request.trustedKeyId, publicKey: new Uint8Array(request.trustedPublicKey) }, request.manifestSHA256) : undefined;
+      // The page's manifest bytes describe the requested image, so a start of a retained one reads its own copy.
       const activeRootfs = await store.prepare(selection?.manifestUrl??request.manifestUrl, {
         keyId: request.trustedKeyId,
         publicKey: new Uint8Array(request.trustedPublicKey),
-      }, selection?.manifestSHA256??installed?.manifestSHA256??request.manifestSHA256, selection!==null||installed!==undefined||request.cachedOnly===true,active.get(request.id)?.controller.signal,request.imagePreparation);
+      }, selection?.manifestSHA256??installed?.manifestSHA256??request.manifestSHA256, selection!==null||installed!==undefined||request.cachedOnly===true,active.get(request.id)?.controller.signal,request.imagePreparation,
+      selection===null&&installed===undefined?request.manifestBytes:undefined);
       const prepared=activeRootfs;
       preparedUserspace = prepared;
       return prepared;

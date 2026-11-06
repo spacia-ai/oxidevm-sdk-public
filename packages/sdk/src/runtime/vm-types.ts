@@ -175,6 +175,11 @@ export interface ManagedImageBootOptions {
   /** Internal verified retained-image startup: refuse fetching another manifest. */
   readonly cachedOnly?: boolean;
   readonly manifestSHA256?: string;
+  /**
+   * Internal, Userspace: the bytes of the pinned manifest that `createVM` already fetched. The storage owner checks
+   * them against `manifestSHA256` and the trusted key, as it checks a download, instead of downloading them again.
+   */
+  readonly manifestBytes?: Uint8Array;
   readonly signal?: AbortSignal;
   readonly trustedKeyId?: string;
   readonly trustedPublicKey?: Uint8Array;

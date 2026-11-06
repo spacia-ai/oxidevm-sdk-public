@@ -29,7 +29,7 @@ export { decodeImageDistribution, decodeImageInspection, decodeImageTestReport }
 export { decodeSerializedError as decodeBuilderError } from "../runtime/errors.js";
 export { decodeSHA256 as decodeImageDigest } from "../values.js";
 
-export { buildRootfsPacks, packImage, type BuiltRootfsPacks, type ImagePackReport } from "./rootfs-packs.js";
+export { buildRootfsPacks, packImage, type BuiltRootfsPacks, type ImagePackReport, type RootfsPackLayout } from "./rootfs-packs.js";
 export {isAuthoringName as isSnapshotProcessName} from "../snapshot-authoring-receipt.js";
 export { createAccelerationProfile, type AccelerationProfileOptions } from "./acceleration.js";
 export { BlobCache, defaultModuleCacheDir } from "./modules/cache.js";

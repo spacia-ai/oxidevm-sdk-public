@@ -46,7 +46,7 @@ it("returns retained metadata without waiting for uncached optional update disco
   vi.stubGlobal("Worker",ScriptedWorker);const ref=await image();
   const selected={image:{id:"retained",version:"old",mode:"userspace",manifestSHA256:decodeSHA256("a".repeat(64),"test"),cpuProfile:"x86-64-v2",keyId:"test",signatureVerified:true},manifestUrl:"https://profiles.test/retained.json",memoryMiB:256} as const;
   ScriptedWorker.answers.set("inspect-start-image",()=>selected);
-  vi.mocked(verifyImage).mockResolvedValue({info:{...selected.image,id:"new-default",version:"new",manifestSHA256:ref.manifestSHA256},memoryMiB:256});
+  vi.mocked(verifyImage).mockResolvedValue({info:{...selected.image,id:"new-default",version:"new",manifestSHA256:ref.manifestSHA256},memoryMiB:256,manifest:new Uint8Array()});
   expect(await inspectRetainedStart(decodePublicVMOptions({mode:"userspace",workspaceId:"ws",restorePoint:"latest"}),ref,"https://page.test/",ORIGIN_STORAGE)).toEqual(selected);
   expect(verifyImage).not.toHaveBeenCalled();
 });

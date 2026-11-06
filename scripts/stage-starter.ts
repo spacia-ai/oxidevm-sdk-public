@@ -5,7 +5,7 @@ import { record, string } from "../packages/sdk/src/runtime/decode.ts";
 import { isEntryPoint } from "./entry-point.ts";
 
 export async function stageStarter(root: string): Promise<void> {
-  const paths = ["index.html", "vite.config.ts", "dev/preview-host.ts", "dev/runtime-assets.ts", "src/main.ts", "src/python.ts", "src/editor.ts", "src/analysis.ts", "src/dataframe.ts", "src/terminal.ts", "src/style.css", "README.md", "public/favicon.png", "public/licenses/highlight.js.txt", "public/fonts/archivo.woff2", "public/fonts/roboto.woff2", "public/fonts/jetbrains-mono.woff2", "public/fonts/Archivo-OFL.txt", "public/fonts/Roboto-OFL.txt", "public/fonts/JetBrainsMono-OFL.txt", "public/fonts/README.md"];
+  const paths = ["index.html", "vite.config.ts", "dev/preview-host.ts", "dev/runtime-assets.ts", "src/main.ts", "src/python.ts", "src/editor.ts", "src/analysis.ts", "src/dataframe.ts", "src/terminal.ts", "src/workspace.ts", "src/style.css", "README.md", "public/favicon.png", "public/licenses/highlight.js.txt", "public/fonts/archivo.woff2", "public/fonts/roboto.woff2", "public/fonts/jetbrains-mono.woff2", "public/fonts/Archivo-OFL.txt", "public/fonts/Roboto-OFL.txt", "public/fonts/JetBrainsMono-OFL.txt", "public/fonts/README.md"];
   const files: Record<string, string> = {};
   paths.push("src/agent-skills.ts");
   const sdk: unknown = JSON.parse(await readFile(join(root, "packages/sdk/package.json"), "utf8"));

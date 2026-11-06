@@ -5,7 +5,7 @@ import { retainRootfsRead, type RootfsReadLock } from "./rootfs-read-lock.js";
 import { RootfsImagePreparation, type ImagePreparationProgress } from "./rootfs-image-preparation.js";
 import { decodeRootfsPackIndex, ROOTFS_PACK_BYTES, type UserspaceRootfsPacks, type RootfsBlobIdentity, type RootfsPackIndex } from "../userspace-rootfs-packs.js";
 import { decodeRootfsTransport, rootfsTransportURL } from "../userspace-rootfs-transport.js";
-import { packRootfsContents } from "../userspace-rootfs-packing.js";
+import { inDigestOrder, packRootfsContents } from "../userspace-rootfs-packing.js";
 import { exactKeys, record, protocolError, string } from "../decode.js";
 import { VMError } from "../errors.js";
 import { read, remove, names, opfsDirectory, sha256, type Backend, type Scope } from "./rootfs-store-backend.js";
@@ -294,7 +294,8 @@ export class RootfsPackCache {
     active(signal);if(manifest.packs!==undefined||this.#write===undefined)return false;
     if(await this.verify(manifest,digest,signal))return true;
     const backend=this.#backend,write=this.#write;
-    const index=await packRootfsContents(rootfsClosure(manifest),async function*(blob){
+    // Digest order matches the packs of a transport sidecar, which this cache can then serve without downloading.
+    const index=await packRootfsContents(inDigestOrder(rootfsClosure(manifest)),async function*(blob){
       active(signal);
       if(backend.kind==="opfs"){
         const file=await (await (await opfsDirectory(backend.root,"blobs",false)).getFileHandle(blob.sha256)).getFile();

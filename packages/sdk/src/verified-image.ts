@@ -6,7 +6,8 @@ import { decodeUserspaceRootfsManifest, verifyUserspaceRootfsManifest } from "./
 import { VMError } from "./runtime/errors.js";
 import type { RuntimeMode } from "./values.js";
 
-export async function verifyImage<M extends RuntimeMode>(image: ImageRef<M>, base: string, signal?: AbortSignal, progress?: (progress: BootProgress) => void): Promise<{ readonly info: ImageInfo & { readonly mode: M }; readonly memoryMiB: number; readonly maxProcesses?: number }> {
+/** `manifest` is the pinned manifest's bytes it verified, which a Userspace start hands to its storage owner. */
+export async function verifyImage<M extends RuntimeMode>(image: ImageRef<M>, base: string, signal?: AbortSignal, progress?: (progress: BootProgress) => void): Promise<{ readonly info: ImageInfo & { readonly mode: M }; readonly memoryMiB: number; readonly maxProcesses?: number; readonly manifest: Uint8Array<ArrayBuffer> }> {
   const url = new URL(image.manifestUrl, base);
   const bytes = await fetchPinnedBytes(url, image.manifestSHA256, "image", signal, progress);
   let input: unknown;
@@ -27,5 +28,6 @@ export async function verifyImage<M extends RuntimeMode>(image: ImageRef<M>, bas
     info: { id: manifest.id, version: manifest.version, mode: image.mode, manifestSHA256: image.manifestSHA256, cpuProfile: manifest.cpuProfile, signatureVerified: true, keyId: image.trust.keyId },
     memoryMiB: "memoryMiB" in manifest ? manifest.memoryMiB : manifest.resources?.memoryMiB ?? 1024,
     ...("kind" in manifest && manifest.resources?.maxProcesses !== undefined ? { maxProcesses: manifest.resources.maxProcesses } : {}),
+    manifest: bytes,
   };
 }

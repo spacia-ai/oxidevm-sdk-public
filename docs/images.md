@@ -270,8 +270,13 @@ not make it distributable. Kernels and guest packages retain their real licenses
 and corresponding-source obligations. See [usage](usage.md) for recipes and the
 [development guide](development.md) for verification requirements.
 
-Schema 8 adds authenticated gzip packs of four MiB decoded data, in deterministic
-blob digest order. Large files span chunks; loose URLs still support demand reads.
+Schema 8 adds authenticated gzip packs of four MiB decoded data. A program's first
+run downloads every pack that holds a file it reads, so the builder packs the
+recipe's `packFirst` paths first, in their order, then every other file in path
+order and the evidence by digest. List the files the image's first command reads,
+in first-read order (for example from `strace -f -e trace=open,openat`); a path
+may cross symlinks but must end at a regular file in the image, or the build
+stops with `INVALID_ARGUMENT`. Large files span chunks; loose URLs still support demand reads.
 Saves acquire the complete image through at most two pack downloads at once and
 store decoded packs directly, with bounded buffers. A committed native checkpoint
 remains complete offline. The manifest digest and signature bind both the original
@@ -296,7 +301,8 @@ A signature does not replace the guest-artifact publication approval.
 
 For an existing whole-manifest signed Userspace bundle, run
 `oxidevm image pack <bundle> --trust <trust-file>`. This writes deterministic packs
-and `transport/<original-manifest-sha256>/packs-v1.json` beside the unchanged
+in blob digest order, the layout browsers compact such images into, and
+`transport/<original-manifest-sha256>/packs-v1.json` beside the unchanged
 manifest and lock. Publish those additions at the original image directory before
 enabling the new client. Keep the loose URLs available for old readers. The optional
 sidecar can fall back to loose acquisition only on HTTP 404; invalid metadata,

@@ -82,7 +82,7 @@ export async function buildDistribution(recipe: ImageRecipe, options: BuildImage
       const previous = Object.fromEntries(Object.entries(record(decodeBundleJSON(new Uint8Array(await readFile(join(bundle, "manifest.json")))), "built manifest")).filter(([key])=>key!=="packs"));
       const source={...previous,provenance,...(recipe.mode==="userspace"?{schemaVersion:6}:{})};
       const base = new URL(output.image.manifestUrl, "https://image.invalid");
-      const manifest=recipe.mode==="userspace"?{...source,schemaVersion:8,packs:await buildRootfsPacks(bundle,source,base,options.signal)}:source;
+      const manifest=recipe.mode==="userspace"?{...source,schemaVersion:8,packs:await buildRootfsPacks(bundle,source,base,options.signal,{kind:"locality",first:recipe.packFirst ?? []})}:source;
       const canonical = recipe.mode === "userspace" ? canonicalUserspaceRootfsBytes(decodeUserspaceRootfsManifest(manifest, base))
         : canonicalManagedImageBytes(decodeManagedImageManifest(manifest, base));
       const manifestBytes = `${JSON.stringify({ ...manifest, provenance: { ...provenance, signature: sign(null, canonical, signing.key).toString("base64url") } }, null, 2)}\n`;

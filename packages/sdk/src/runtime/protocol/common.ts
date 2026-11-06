@@ -124,7 +124,9 @@
  * `erase-local-data`: the runtime frame keeps each embedding origin's OPFS, IndexedDB and locks apart. */
 /** 181 adds `embedderOrigin` to the network worker's `connect-network-control`: inside the runtime frame, the page that
  * embeds it, which the relay owner names in the workspace it presents to relays (protocol/network.ts `RelayScope`). */
-export const PROTOCOL_VERSION = 181;
+/** 182 adds `manifestBytes` to the storage worker's `prepare-userspace-rootfs`: the pinned manifest the page already
+ * fetched, which the storage owner authenticates like a download instead of fetching it a second time. */
+export const PROTOCOL_VERSION = 182;
 /** Combined architecture, background compilation and code-profile trace layout. */
 export const SYSTEM_TRACE_SCHEMA_VERSION = 54;
 

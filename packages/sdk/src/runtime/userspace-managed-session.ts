@@ -49,6 +49,7 @@ export class UserspaceManagedSession {
     const prepared = await this.#host.storage.request("prepare-userspace-rootfs", {
       manifestUrl: href, trustedKeyId: trusted.keyId, trustedPublicKey: trusted.publicKey,
       ...(options.manifestSHA256 === undefined ? {} : { manifestSHA256: options.manifestSHA256 }),
+      ...(options.manifestBytes === undefined ? {} : { manifestBytes: options.manifestBytes }),
       ...(options.cachedOnly === undefined ? {} : { cachedOnly: options.cachedOnly }),
       ...(options.imagePreparation === undefined ? {} : { imagePreparation: options.imagePreparation }),
       boot: resume === "pre-resume" || resume === "fresh-image" || resume === "update-image" ? resume : "live",

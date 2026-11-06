@@ -194,6 +194,27 @@ releases reported every browser check of such an application as failed
 - The CLI's `DoctorCheck` and `DoctorReport` types are now the SDK's, and the
   CLI exports `DoctorHosting` too.
 
+## Image pack order and the starter image 0.0.2
+
+The image builder fills an image's 4 MiB delivery packs in a new order: the
+paths a recipe lists in its new `packFirst` option, in that order, then every
+other file by guest path, then the evidence. Before, it filled them in
+content-hash order. A cold start downloads every pack that holds a file it
+reads, so files read together now share packs. A `packFirst` path may cross
+symlinks but must end at a file; a path the image does not have fails the
+build with `INVALID_ARGUMENT`. Packs are part of the signed manifest, so
+rebuilding an unchanged image with this SDK gives it a new manifest digest:
+update the references that pin it.
+
+The Python + pandas starter image is now 0.0.2. It has the files of 0.0.1,
+with the files a first `python3` run reads packed first, and is signed with a
+new author key, `ed25519-d753cdd5739b36c670441766e2c08ea8`. The SDK does not
+boot a workspace saved on an image signed by another key: `createVM` rejects
+with `PROTOCOL_ERROR` and `detail.reason: "image-trust-changed"`. An app that
+moves from the 0.0.1 image to 0.0.2 keeps its users' files by starting such a
+workspace again with `restorePoint: "update-image"`, as the generated starter
+now does, or starts them on a new `workspaceId`.
+
 ## Module commands
 
 This release lets an application turn a command module's commands on for one
