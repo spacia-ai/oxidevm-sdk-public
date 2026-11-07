@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { SystemTraceJitModule } from "./system.js";
 
 import {
   decodeSystemJitModuleMap,
+  decodeSystemJitModuleForInstall,
+  decodeSystemJitAliasSuffix,
   decodeSystemJitRipMap,
   readSystemJitContextDiagnostics,
   readSystemJitExecutionDiagnostics,
@@ -496,3 +499,289 @@ function u32(output: number[], value: number): void {
     output.push(byte | (value === 0 ? 0 : 0x80));
   } while (value !== 0);
 }
+
+
+describe("certified executable prefixes", () => {
+  it.each([false, true])("certifies a complete static prefix with a named artifact=%s", named => {
+    const plain = generatedModule(16, false, 1, true);
+    const prefix = named ? withProfileName(plain, "oxidevm_tb_0123456789abcdef_r0000000000000010") : plain;
+    const bytes = aliasConcat(prefix, aliasSuffix());
+    const prepared = decodeSystemJitModuleForInstall(bytes, prefix.byteLength);
+    expect(prepared.moduleMap).toEqual(decodeSystemJitModuleMap(bytes));
+    expect(prepared.executablePrefixReusable).toBe(true);
+  });
+
+  it("withholds proof for cuts inside sections or before static maps", () => {
+    const prefix = generatedModule(16, false, 1, true);
+    const bytes = aliasConcat(prefix, aliasSuffix());
+    for (const cut of [0, 7, 8, prefix.byteLength - 1, prefix.byteLength + 1, bytes.byteLength]) {
+      const prepared = decodeSystemJitModuleForInstall(bytes, cut);
+      expect(prepared.moduleMap).toEqual(decodeSystemJitModuleMap(bytes));
+      expect(prepared.executablePrefixReusable).toBe(false);
+    }
+  });
+
+  it("withholds proof when optional static metadata follows the artifact cut", () => {
+    const plain = generatedModule(16, false, 1, true);
+    const named = withProfileName(plain, "oxidevm_tb_0123456789abcdef_r0000000000000010");
+    const training = generatedModule(16, false, 1, true, 0, 1, null, false, 0, true);
+    for (const prefix of [named, training]) {
+      const bytes = aliasConcat(prefix, aliasSuffix());
+      expect(decodeSystemJitModuleForInstall(bytes, plain.byteLength).executablePrefixReusable).toBe(false);
+    }
+    const bytes = aliasConcat(training, aliasSuffix());
+    expect(decodeSystemJitModuleForInstall(bytes, training.byteLength).executablePrefixReusable)
+      .toBe(true);
+  });
+
+  it("withholds proof for binding-specific sections in the prefix and retains duplicate rejection", () => {
+    const prefix = aliasConcat(generatedModule(16, false, 1, true), aliasSuffix({ bindingId: 3n }));
+    const prepared = decodeSystemJitModuleForInstall(prefix, prefix.byteLength);
+    expect(prepared.executablePrefixReusable).toBe(false);
+    const duplicate = aliasConcat(prefix, aliasSuffix({ bindingId: 7n }));
+    expect(() => decodeSystemJitModuleMap(duplicate)).toThrow(TypeError);
+    expect(() => decodeSystemJitModuleForInstall(duplicate, prefix.byteLength)).toThrow(TypeError);
+  });
+
+  it("withholds proof when a prior long suffix makes an IR wire bound appear valid", () => {
+    const prefix = generatedModule(16, false, 1, true);
+    const original = aliasConcat(prefix, aliasSuffix({ pages: 2 }));
+    const operation = decodeSystemJitModuleMap(original).operations[0];
+    if (operation === undefined) throw new Error("IR fixture missing");
+    const traceBodyStart = operation.wireStart - operation.emittedStart;
+    aliasPayload(original, "oxidevm.ir-map").setUint32(44, original.byteLength - traceBodyStart - 1, true);
+    const prepared = decodeSystemJitModuleForInstall(original, prefix.byteLength);
+    expect(prepared.moduleMap).toEqual(decodeSystemJitModuleMap(original));
+    expect(prepared.executablePrefixReusable).toBe(false);
+    const shorter = aliasConcat(original.subarray(0, prefix.byteLength), aliasSuffix({ pages: 1 }));
+    expect(() => decodeSystemJitModuleMap(shorter)).toThrow(TypeError);
+    expect(() => decodeSystemJitModuleForInstall(shorter, prefix.byteLength)).toThrow(TypeError);
+  });
+
+  it.each(["disposition", "proof class", "source index"] as const)("validates every %s before certifying", field => {
+    const prefix = generatedModule(16, false, 1, true);
+    const bytes = aliasConcat(prefix, aliasSuffix());
+    const ir = aliasPayload(bytes, "oxidevm.ir-map");
+    ir.setUint8(field === "disposition" ? 39 : field === "proof class" ? 52 : 38, 255);
+    expect(() => decodeSystemJitModuleMap(bytes)).toThrow(TypeError);
+    expect(() => decodeSystemJitModuleForInstall(bytes, prefix.byteLength)).toThrow(TypeError);
+  });
+
+  it.each([false, true])("matches full decoding with a fresh identity and nullable artifact name=%s", named => {
+    const plain = generatedModule(16, false, 1, true);
+    const prefix = named ? withProfileName(plain, "oxidevm_tb_0123456789abcdef_r0000000000000010") : plain;
+    const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix({ bindingId: 3n })), prefix.byteLength);
+    const proof = prepared.executablePrefixReusable;
+    if (!proof) throw new Error("Canonical prefix was not certified");
+    const suffix = aliasSuffix({ bindingId: 9n, addressSpaceId: 5n, generation: 27n });
+    const alias = decodeSystemJitAliasSuffix(suffix, prepared.moduleMap);
+    expect(alias).toEqual(decodeSystemJitModuleMap(aliasConcat(prefix, suffix)));
+    expect(alias?.instructions).toBe(prepared.moduleMap.instructions);
+    expect(alias?.operations).toBe(prepared.moduleMap.operations);
+    expect(alias?.artifactProfileModuleId).toBe(named ? "0123456789abcdef" : null);
+    expect(alias?.bindingIdentity).toEqual({ id: 9n, originBindingId: 3n });
+    expect(alias?.runtimeIdentity?.codePages[0]?.generation).toBe(27n);
+  });
+
+  it("takes Tier-2 profile generation from each fresh suffix", () => {
+    const prefix = generatedModule(16, false, 1, true, 0, 2);
+    const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix({ profileGeneration: 7n })), prefix.byteLength);
+    const proof = prepared.executablePrefixReusable;
+    if (!proof) throw new Error("Tier-2 prefix was not certified");
+    const suffix = aliasSuffix({ bindingId: 9n, profileGeneration: 11n });
+    const alias = decodeSystemJitAliasSuffix(suffix, prepared.moduleMap);
+    expect(alias).toEqual(decodeSystemJitModuleMap(aliasConcat(prefix, suffix)));
+    expect(alias?.recordedProfileGeneration).toBe(11n);
+  });
+
+  it("preserves full rejection for duplicate, malformed and incompatible identity sections", () => {
+    const prefix = generatedModule(16, false, 1, true);
+    const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix()), prefix.byteLength);
+    const proof = prepared.executablePrefixReusable;
+    if (!proof) throw new Error("Canonical prefix was not certified");
+    const malformed = aliasSuffix();
+    const invalidRuntime = malformed.slice();
+    // The runtime payload precedes the final binding section. Find it through a complete module.
+    const invalidModule = aliasConcat(prefix, invalidRuntime);
+    aliasPayload(invalidModule, "oxidevm.runtime-identity").setUint8(5, 255);
+    const variants = [
+      aliasConcat(aliasSuffix(), aliasSuffix()),
+      aliasSuffix({ bindingId: 0n }), aliasSuffix({ bindingId: 2n, originBindingId: 3n }),
+      aliasSuffix({ profileGeneration: 1n }), invalidModule.subarray(prefix.byteLength),
+      malformed.subarray(0, malformed.byteLength - 1),
+    ];
+    for (const suffix of variants) {
+      expect(() => decodeSystemJitModuleMap(aliasConcat(prefix, suffix))).toThrow(TypeError);
+      expect(() => decodeSystemJitAliasSuffix(suffix, prepared.moduleMap)
+        ?? decodeSystemJitModuleMap(aliasConcat(prefix, suffix))).toThrow(TypeError);
+    }
+  });
+
+  it("falls back for static suffix metadata and preserves the full decoder change on the next alias", () => {
+    const prefix = generatedModule(16, false, 1, true);
+    const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix()), prefix.byteLength);
+    const proof = prepared.executablePrefixReusable;
+    if (!proof) throw new Error("Canonical prefix was not certified");
+    const named = withProfileName(aliasConcat(prefix, aliasSuffix({ bindingId: 8n })), "oxidevm_tb_0123456789abcdef_r0000000000000010");
+    const suffix = named.subarray(prefix.byteLength);
+    expect(decodeSystemJitAliasSuffix(suffix, prepared.moduleMap)).toBeUndefined();
+    const fromFallback = decodeSystemJitModuleMap(named);
+    expect(fromFallback.artifactProfileModuleId).toBe("0123456789abcdef");
+    expect(decodeSystemJitModuleMap(aliasConcat(prefix, aliasSuffix({ bindingId: 9n }))).artifactProfileModuleId).toBeNull();
+    const training = generatedModule(16, false, 1, true, 0, 1, null, false, 0, true);
+    const trainingBase = decodeSystemJitModuleMap(aliasConcat(training, aliasSuffix({ bindingId: 8n })));
+    expect(trainingBase.aotTrainingSource).not.toBeNull();
+    expect(decodeSystemJitModuleMap(aliasConcat(prefix, aliasSuffix({ bindingId: 9n }))).aotTrainingSource).toBeNull();
+  });
+});
+
+function aliasConcat(prefix: Uint8Array, suffix: Uint8Array): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(prefix.byteLength + suffix.byteLength);
+  bytes.set(prefix); bytes.set(suffix, prefix.byteLength);
+  return bytes;
+}
+
+function aliasSuffix(options: { readonly bindingId?: bigint; readonly originBindingId?: bigint; readonly addressSpaceId?: bigint;
+  readonly generation?: bigint; readonly pages?: number; readonly profileGeneration?: bigint } = {}): Uint8Array<ArrayBuffer> {
+  const payload = new Uint8Array(40 + (options.pages ?? 1) * 32), view = new DataView(payload.buffer);
+  view.setUint32(0, 4, true); payload.set([3, 3, 1, 1], 4); view.setUint16(8, 0x2000, true); payload[10] = 1;
+  view.setUint32(12, options.pages ?? 1, true); view.setBigUint64(16, options.addressSpaceId ?? 2n, true);
+  view.setUint32(32, 0xffff_ffff, true);
+  for (let index = 0; index < (options.pages ?? 1); index++) {
+    view.setBigUint64(40 + index * 32, 0x1000n + BigInt(index) * 0x1000n, true);
+    view.setBigUint64(48 + index * 32, 0x9000n + BigInt(index) * 0x1000n, true);
+    view.setBigUint64(56 + index * 32, options.generation ?? 17n, true);
+  }
+  const output: number[] = [], runtime: number[] = [];
+  name(runtime, "oxidevm.runtime-identity"); runtime.push(...payload); section(output, 0, runtime);
+  if (options.profileGeneration !== undefined) {
+    const profile: number[] = []; name(profile, "oxidevm.tier2-profile"); littleU32(profile, 1); littleU64(profile, options.profileGeneration); section(output, 0, profile);
+  }
+  return withBindingIdentity(new Uint8Array(output), options.bindingId ?? 7n, options.originBindingId ?? 3n);
+}
+
+function aliasPayload(module: Uint8Array<ArrayBuffer>, sectionName: string): DataView {
+  const payload = WebAssembly.Module.customSections(new WebAssembly.Module(module), sectionName)[0];
+  if (payload === undefined) throw new Error(`Missing fixture section ${sectionName}`);
+  const bytes = new Uint8Array(payload);
+  const start = module.findIndex((_, index) => bytes.every((byte, offset) => module[index + offset] === byte));
+  if (start < 0) throw new Error(`Missing fixture payload ${sectionName}`);
+  return new DataView(module.buffer, module.byteOffset + start, bytes.byteLength);
+}
+
+
+it("certifies static loop-policy source spans through the same full validator", () => {
+  const prefix = aliasLoopPrefix();
+  const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix({ profileGeneration: 7n })), prefix.byteLength);
+  const proof = prepared.executablePrefixReusable;
+  expect(proof).toBe(true);
+  if (!proof) throw new Error("Loop prefix was not certified");
+  const suffix = aliasSuffix({ bindingId: 9n, profileGeneration: 11n });
+  expect(decodeSystemJitAliasSuffix(suffix, prepared.moduleMap)).toEqual(decodeSystemJitModuleMap(aliasConcat(prefix, suffix)));
+  const wrongTier = prefix.slice();
+  aliasPayload(wrongTier, "oxidevm.ir-map").setUint8(32, 1);
+  const invalid = aliasConcat(wrongTier, aliasSuffix());
+  expect(() => decodeSystemJitModuleMap(invalid)).toThrow("source spans");
+  expect(() => decodeSystemJitModuleForInstall(invalid, wrongTier.byteLength)).toThrow("source spans");
+});
+
+it("shows the full-decoder loop-policy change that requires eligibility revocation", () => {
+  const prefix = generatedModule(16, false, 2, true, 0, 2, null, false, 0, false, 0, false, [0, 1, 8, 8, 13]);
+  const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix({ profileGeneration: 7n })), prefix.byteLength);
+  const proof = prepared.executablePrefixReusable;
+  if (!proof) throw new Error("Plain Tier-2 prefix was not certified");
+  const fromFallback = decodeSystemJitModuleMap(aliasConcat(aliasLoopPrefix(), aliasSuffix({ profileGeneration: 9n })));
+  expect(fromFallback.loopPolicy?.decision).toBe("selected");
+  expect(decodeSystemJitModuleMap(aliasConcat(prefix, aliasSuffix({ bindingId: 9n, profileGeneration: 11n }))).loopPolicy).toBeNull();
+});
+
+it("preserves unknown-section and single binding-duplicate rejection in the alias suffix", () => {
+  const prefix = generatedModule(16, false, 1, true);
+  const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix()), prefix.byteLength);
+  const proof = prepared.executablePrefixReusable;
+  if (!proof) throw new Error("Canonical prefix was not certified");
+  const unknown = Array.from(aliasSuffix()), payload: number[] = [];
+  name(payload, "oxidevm.unknown"); section(unknown, 0, payload);
+  for (const suffix of [new Uint8Array(unknown), withBindingIdentity(aliasSuffix(), 9n, 3n)]) {
+    expect(() => decodeSystemJitModuleMap(aliasConcat(prefix, suffix))).toThrow(TypeError);
+    expect(() => decodeSystemJitAliasSuffix(suffix, prepared.moduleMap)
+      ?? decodeSystemJitModuleMap(aliasConcat(prefix, suffix))).toThrow(TypeError);
+  }
+});
+
+it("preserves duplicate Tier-2 profile-generation rejection in the alias suffix", () => {
+  const prefix = generatedModule(16, false, 1, true, 0, 2);
+  const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix({ profileGeneration: 7n })), prefix.byteLength);
+  const proof = prepared.executablePrefixReusable;
+  if (!proof) throw new Error("Tier-2 prefix was not certified");
+  const suffix = Array.from(aliasSuffix({ profileGeneration: 9n })), payload: number[] = [];
+  name(payload, "oxidevm.tier2-profile"); littleU32(payload, 1); littleU64(payload, 11n); section(suffix, 0, payload);
+  const duplicate = new Uint8Array(suffix);
+  expect(() => decodeSystemJitModuleMap(aliasConcat(prefix, duplicate))).toThrow(TypeError);
+  expect(() => decodeSystemJitAliasSuffix(duplicate, prepared.moduleMap)
+    ?? decodeSystemJitModuleMap(aliasConcat(prefix, duplicate))).toThrow(TypeError);
+});
+
+function aliasLoopPrefix(): Uint8Array<ArrayBuffer> {
+  const prefix = Array.from(generatedModule(16, false, 2, true, 0, 2, null, false, 0, false, 0, false, [0, 1, 8, 8, 13]));
+  const policy: number[] = [];
+  name(policy, "oxidevm.loop-policy");
+  policy.push(1, 0, 0, 0, 1, 10, 2, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 8, ...new Uint8Array(16));
+  section(prefix, 0, policy);
+  return new Uint8Array(prefix);
+}
+
+
+it("clears a previous Tier-2 generation when the fresh canonical suffix omits it", () => {
+  const prefix = generatedModule(16, false, 1, true, 0, 2);
+  const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix({ profileGeneration: 7n })), prefix.byteLength);
+  expect(prepared.executablePrefixReusable).toBe(true);
+  expect(prepared.moduleMap.recordedProfileGeneration).toBe(7n);
+  const suffix = aliasSuffix({ bindingId: 9n });
+  const alias = decodeSystemJitAliasSuffix(suffix, prepared.moduleMap);
+  expect(alias).toStrictEqual(decodeSystemJitModuleMap(aliasConcat(prefix, suffix)));
+  expect(alias?.recordedProfileGeneration).toBeNull();
+});
+
+it.each(["runtime", "binding"] as const)("selects full fallback when a fresh suffix omits %s identity", missing => {
+  const prefix = generatedModule(16, false, 1, true);
+  const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix()), prefix.byteLength);
+  expect(prepared.executablePrefixReusable).toBe(true);
+  const complete = aliasSuffix({ bindingId: 9n });
+  const binding = withBindingIdentity(new Uint8Array(), 9n, 3n);
+  const suffix = missing === "runtime" ? binding : complete.subarray(0, complete.byteLength - binding.byteLength);
+  expect(decodeSystemJitAliasSuffix(suffix, prepared.moduleMap)).toBeUndefined();
+  const decoded = decodeSystemJitModuleMap(aliasConcat(prefix, suffix));
+  if (missing === "runtime") expect(decoded.runtimeIdentity).toBeNull();
+  else expect(decoded.bindingIdentity).toBeUndefined();
+});
+
+it.each([false, true])("keeps a named artifact=%s in full fallback when either creation identity is absent", named => {
+  const plain = generatedModule(16, false, 1, true);
+  const prefix = named ? withProfileName(plain, "oxidevm_tb_0123456789abcdef_r0000000000000010") : plain;
+  const complete = aliasSuffix();
+  const binding = withBindingIdentity(new Uint8Array(), 7n, 3n);
+  for (const suffix of [binding, complete.subarray(0, complete.byteLength - binding.byteLength)]) {
+    const bytes = aliasConcat(prefix, suffix);
+    const prepared = decodeSystemJitModuleForInstall(bytes, prefix.byteLength);
+    expect(prepared.moduleMap).toStrictEqual(decodeSystemJitModuleMap(bytes));
+    expect(prepared.executablePrefixReusable).toBe(false);
+  }
+});
+
+it("projects a store-shaped base without leaking cache, artifact or training fields", () => {
+  const prefix = generatedModule(16, false, 1, true);
+  const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix()), prefix.byteLength);
+  expect(prepared.executablePrefixReusable).toBe(true);
+  const stored: SystemTraceJitModule = { ...prepared.moduleMap, profileModuleId: "0000000000000007",
+    artifactIdentity: { cacheKey: 9n, moduleLength: prefix.byteLength }, cacheKey: 123n,
+    aotTraining: { emissions: 42, emittedBytes: 1000, compilationMilliseconds: 17,
+      instantiationMilliseconds: 19, installationMilliseconds: 23, outerEntries: 29, outerRetired: 31n } };
+  const suffix = aliasSuffix({ bindingId: 9n, addressSpaceId: 5n, generation: 27n });
+  const alias = decodeSystemJitAliasSuffix(suffix, stored);
+  expect(alias).toStrictEqual(decodeSystemJitModuleMap(aliasConcat(prefix, suffix)));
+  if (alias === undefined) throw new Error("Canonical alias unexpectedly required full fallback");
+  for (const field of ["cacheKey", "aotTraining", "artifactIdentity"]) expect(Object.hasOwn(alias, field)).toBe(false);
+  expect(stored.cacheKey).toBe(123n);
+  expect(stored.aotTraining.emissions).toBe(42);
+});

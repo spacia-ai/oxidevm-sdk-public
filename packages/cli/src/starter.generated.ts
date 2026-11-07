@@ -1,7 +1,7 @@
 // Generated from immutable, independently authenticated release inputs.
 export const starterRelease: unknown = {
   "schemaVersion": 2,
-  "sdkVersion": "0.0.18",
+  "sdkVersion": "0.0.19",
   "engineRelease": "ff6f803564ffbc6d8120bd0cd11a37c56da58fec07c54023906dff6e487cd823",
   "engineCompliance": {
     "url": "https://cdn.oxidevm.dev/engine/ff6f803564ffbc6d8120bd0cd11a37c56da58fec07c54023906dff6e487cd823/compliance/bb207e56969b02e65d057e188fc992b456d7912cd90dda19d595c38ac7756a2b/compliance.json",
