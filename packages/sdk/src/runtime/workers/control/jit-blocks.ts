@@ -1,8 +1,8 @@
-import { JIT_PROFILE_MODULE_IDS_OFFSET, type CoreJitAction } from "../../core-abi.js";
+import { JIT_CONTEXT_LENGTH, JIT_PROFILE_MODULE_IDS_OFFSET, type CoreJitAction, type decodeJitAliasEvents } from "../../core-abi.js";
 import { VMError } from "../../errors.js";
 import { findContiguousJitSlots, JIT_DISPATCH_TABLE_ENTRIES } from "../../jit-cache.js";
 import type { SystemJitEvictionReason } from "../../protocol.js";
-import { decodeSystemJitModuleMap, type JitModuleTraceMap } from "../../protocol/system-trace-jit.js";
+import { decodeSystemJitAliasSuffix, decodeSystemJitModuleForInstall, type JitModuleTraceMap } from "../../protocol/system-trace-jit.js";
 import {
   type Core,
   type JitBlock,
@@ -31,6 +31,9 @@ import { engineJitCall } from "./jit-health.js";
  * owns the compiled modules and is the only writer of the byte accounting on `Core`. */
 
 export type CompiledJitAction = Extract<CoreJitAction, { readonly kind: "compile" | "install" }>;
+
+// The optional proof field belongs to the artifact record even after every binding retires.
+const EXECUTABLE_PREFIX_PROOF_BYTES = 16;
 
 /** The dispatcher module's entry points for `loaded`, instantiated once over its memory and
  * dispatch tables. Translated modules carry no dispatcher of their own. */
@@ -158,7 +161,7 @@ export function installJitBlock(
     JitBlock,
     | "cacheKey" | "bindingKey" | "artifactCacheKey" | "artifact" | "key" | "tier" | "instructions"
     | "profileModuleId" | "compileGeneration" | "codeUnit" | "bindingId"
-  > & Partial<Pick<JitBlock, "bindings" | "executableBytes">>,
+  > & Partial<Pick<JitBlock, "bindings" | "executableBytes" | "executablePrefixReusable">>,
   trace: unknown,
   recordTrace: unknown,
 ): JitBlock {
@@ -169,7 +172,9 @@ export function installJitBlock(
     throw new VMError("VM_FAULT", "compiled JIT recording trace is invalid");
   }
   const initialBindingBytes = entry.bindings === undefined ? bindingMetadataBytes(entry.bindingKey, entry.bindingId) : 0;
-  byteLength += initialBindingBytes;
+  const prefixProofBytes = entry.bindings === undefined && entry.executablePrefixReusable !== undefined
+    ? EXECUTABLE_PREFIX_PROOF_BYTES : 0;
+  byteLength += initialBindingBytes + prefixProofBytes;
   if (byteLength > loaded.jitCacheBytes) {
     throw new VMError("QUOTA_EXCEEDED", "compiled JIT module exceeds its cache");
   }
@@ -233,12 +238,7 @@ export function selectJitBlockBinding(
   bindingKey: string,
   moduleLength: number,
 ): boolean {
-  if (
-    block.artifactCacheKey !== action.artifactCacheKey ||
-    block.key !== `${action.artifactCacheKey.toString(16)}:${action.artifactModuleLength}`
-  ) {
-    throw new VMError("VM_FAULT", "JIT artifact identity changed before registration");
-  }
+  assertAliasArtifactIdentity(block, action);
   let binding = block.bindings.get(bindingKey);
   if (binding === undefined) {
     if (moduleLength === 0) {
@@ -278,29 +278,94 @@ export function selectJitBlockBinding(
 export function retainJitBlockAlias(
   loaded: Core, block: JitBlock, action: CompiledJitAction,
   bindingKey: string, moduleBytes: Uint8Array,
-  decoded?: JitModuleTraceMap,
 ): boolean {
-  if (block.artifactCacheKey !== action.artifactCacheKey ||
-      block.key !== `${action.artifactCacheKey.toString(16)}:${action.artifactModuleLength}`) {
-    throw new VMError("VM_FAULT", "JIT artifact identity changed before registration");
-  }
-  const existing = block.bindings.get(bindingKey);
-  if (existing !== undefined) {
-    if (existing.cacheKey !== action.cacheKey) throw new VMError("VM_FAULT", "JIT binding cache identity changed");
-    return true;
-  }
+  assertAliasArtifactIdentity(block, action);
   if (moduleBytes.byteLength !== action.moduleLength) {
     throw new VMError("VM_FAULT", "JIT alias module length changed before registration");
   }
   assertExecutableArtifactBytes(block.executableBytes, moduleBytes, action.artifactModuleLength);
-  const moduleMap = { ...(decoded ?? decodeSystemJitModuleMap(moduleBytes)), artifactIdentity: { cacheKey: action.artifactCacheKey, moduleLength: action.artifactModuleLength } };
+  const decoded = decodeSystemJitModuleForInstall(moduleBytes, action.artifactModuleLength);
+  return retainValidatedJitBlockAlias(loaded, block, action, bindingKey, decoded.moduleMap, decoded.executablePrefixReusable);
+}
+
+/** Validate each fresh journal payload before an existing binding can take its replay return. */
+export function retainJitBlockAliasEvent(
+  loaded: Core,
+  block: JitBlock,
+  event: ReturnType<typeof decodeJitAliasEvents>[number],
+): boolean {
+  const executable = block.executableBytes;
+  if ((loaded.jitBlocks.get(block.key) !== block && loaded.dormantJitBlocks.get(block.key) !== block)
+    || executable === undefined || executable.byteLength !== event.artifactModuleLength) {
+    throw new VMError("VM_FAULT", "JIT alias references an unavailable installed artifact");
+  }
+  assertAliasArtifactIdentity(block, event);
+  const base = reusableAliasMap(loaded, block, event.artifactModuleLength);
+  const reused = base === undefined ? undefined : decodeSystemJitAliasSuffix(event.suffix, base);
+  let moduleMap: JitModuleTraceMap;
+  let canonical: boolean;
+  if (reused === undefined) {
+    const module = new Uint8Array(event.moduleLength);
+    module.set(executable);
+    module.set(event.suffix, event.artifactModuleLength);
+    const decoded = decodeSystemJitModuleForInstall(module, event.artifactModuleLength);
+    moduleMap = decoded.moduleMap;
+    canonical = decoded.executablePrefixReusable;
+  } else {
+    moduleMap = reused;
+    canonical = true;
+  }
+  const first = moduleMap.instructions[0];
+  if (moduleMap.bindingIdentity === undefined || moduleMap.runtimeIdentity === null || first === undefined) {
+    throw new VMError("VM_FAULT", "JIT alias lacks binding, instruction or runtime identity");
+  }
+  return retainValidatedJitBlockAlias(loaded, block, {
+    kind: "compile", instructionCount: moduleMap.instructions.length, startRip: first.rip,
+    cacheKey: event.cacheKey, moduleLength: event.moduleLength,
+    artifactCacheKey: event.artifactCacheKey, artifactModuleLength: event.artifactModuleLength,
+    contextLength: JIT_CONTEXT_LENGTH, maximumInstructions: moduleMap.instructions.length,
+  }, `${event.cacheKey.toString(16)}:${event.moduleLength}`, moduleMap, canonical);
+}
+
+function assertAliasArtifactIdentity(
+  block: JitBlock,
+  identity: Pick<CompiledJitAction, "artifactCacheKey" | "artifactModuleLength">,
+): void {
+  if (block.artifactCacheKey !== identity.artifactCacheKey
+    || block.key !== `${identity.artifactCacheKey.toString(16)}:${identity.artifactModuleLength}`) {
+    throw new VMError("VM_FAULT", "JIT artifact identity changed before registration");
+  }
+}
+
+function reusableAliasMap(loaded: Core, block: JitBlock, artifactModuleLength: number): JitModuleTraceMap | undefined {
+  if (block.executablePrefixReusable !== true || block.profileModuleId === null
+    || loaded.collidingProfileJitModuleIds.has(block.profileModuleId)) return undefined;
+  const map = loaded.profileJitModules.get(block.profileModuleId);
+  if (map === undefined || map.artifactIdentity === undefined
+    || map.artifactIdentity.cacheKey !== block.artifactCacheKey
+    || map.artifactIdentity.moduleLength !== artifactModuleLength
+    || map.tier !== block.tier || map.instructions !== block.instructions) return undefined;
+  return map;
+}
+
+function retainValidatedJitBlockAlias(
+  loaded: Core, block: JitBlock, action: CompiledJitAction,
+  bindingKey: string, decoded: JitModuleTraceMap, canonical: boolean,
+): boolean {
+  const moduleMap = { ...decoded, artifactIdentity: { cacheKey: action.artifactCacheKey, moduleLength: action.artifactModuleLength } };
   if (
     moduleMap.tier !== block.tier ||
     moduleMap.instructions.length !== action.instructionCount
   ) {
     throw new VMError("VM_FAULT", "JIT artifact alias has incompatible executable metadata");
   }
-  pruneRetiredJitBindings(loaded, block);
+  const existing = block.bindings.get(bindingKey);
+  if (existing !== undefined && existing.cacheKey !== action.cacheKey) {
+    throw new VMError("VM_FAULT", "JIT binding cache identity changed");
+  }
+  if (existing === undefined) pruneRetiredJitBindings(loaded, block);
+  if (!canonical && block.executablePrefixReusable === true) block.executablePrefixReusable = false;
+  if (existing !== undefined) return true;
   const metadataBytes = bindingMetadataBytes(bindingKey, moduleMap.bindingIdentity?.id);
   const previousMap = block.profileModuleId === null ? undefined : loaded.profileJitModules.get(block.profileModuleId);
   retainProfileJitModule(loaded, { ...moduleMap, instructions: block.instructions, operations: previousMap?.operations ?? moduleMap.operations }, action.cacheKey);

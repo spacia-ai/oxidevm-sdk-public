@@ -254,6 +254,13 @@ function decodeCpl(value: number): 0 | 1 | 2 | 3 {
 }
 
 export function decodeSystemJitModuleMap(module: Uint8Array): JitModuleTraceMap {
+  return decodeSystemJitModuleForInstall(module, 0).moduleMap;
+}
+
+export function decodeSystemJitModuleForInstall(
+  module: Uint8Array,
+  artifactModuleLength: number,
+): { readonly moduleMap: JitModuleTraceMap; readonly executablePrefixReusable: boolean } {
   const input = new Reader(module);
   for (const expected of MODULE_HEADER) {
     if (input.byte() !== expected) throw new TypeError("invalid JIT Wasm header");
@@ -269,13 +276,24 @@ export function decodeSystemJitModuleMap(module: Uint8Array): JitModuleTraceMap 
   let aotTrainingSource: JitAotTrainingSource | null = null;
   let traceBodyStart: number | null = null;
   let lastSection = 0;
+  let prefixBoundary = artifactModuleLength === MODULE_HEADER.length;
+  let prefixReusable = Number.isSafeInteger(artifactModuleLength)
+    && artifactModuleLength >= MODULE_HEADER.length && artifactModuleLength <= module.byteLength;
   while (!input.done()) {
+    const sectionStart = input.position;
     const id = input.byte();
     const payloadBytes = input.sized();
     const payloadStart = input.position - payloadBytes.byteLength;
     const payload = new Reader(payloadBytes);
     if (id === 0) {
       const name = payload.name();
+      if (prefixReusable) {
+        const bindingSection = name === "oxidevm.runtime-identity"
+          || name === "oxidevm.binding-identity" || name === "oxidevm.tier2-profile";
+        if (bindingSection ? sectionStart < artifactModuleLength : input.position > artifactModuleLength) {
+          prefixReusable = false;
+        }
+      }
       if (name === "oxidevm.rip-map" && ripMap === undefined) {
         ripMap = payload.rest();
       } else if (name === "oxidevm.ir-map" && irMap === undefined) {
@@ -289,25 +307,9 @@ export function decodeSystemJitModuleMap(module: Uint8Array): JitModuleTraceMap 
         name === "oxidevm.tier2-profile" &&
         recordedProfileGeneration === null
       ) {
-        const identity = payload.rest();
-        if (
-          identity.byteLength !== 12 ||
-          view(identity).getUint32(0, true) !== 1
-        ) {
-          throw new TypeError("invalid JIT Wasm Tier-2 profile identity");
-        }
-        recordedProfileGeneration = view(identity).getBigUint64(4, true);
+        recordedProfileGeneration = decodeTierTwoProfileIdentity(payload.rest());
       } else if (name === "oxidevm.binding-identity" && bindingIdentity === undefined) {
-        const bytes = payload.rest();
-        if (bytes.byteLength !== 20 || view(bytes).getUint32(0, true) !== 1) {
-          throw new TypeError("invalid JIT binding identity");
-        }
-        const id = view(bytes).getBigUint64(4, true);
-        const originBindingId = view(bytes).getBigUint64(12, true);
-        if (id === 0n || originBindingId === 0n || originBindingId > id) {
-          throw new TypeError("invalid JIT binding identity");
-        }
-        bindingIdentity = { id, originBindingId };
+        bindingIdentity = decodeBindingIdentity(payload.rest());
       } else if (
         name === "oxidevm.runtime-identity" &&
         runtimeIdentity === null
@@ -322,6 +324,7 @@ export function decodeSystemJitModuleMap(module: Uint8Array): JitModuleTraceMap 
         throw new TypeError("unexpected JIT Wasm custom section");
       }
     } else {
+      if (input.position > artifactModuleLength) prefixReusable = false;
       if (id <= lastSection) throw new TypeError("JIT Wasm sections are out of order");
       lastSection = id;
       if (id === 10) {
@@ -335,6 +338,7 @@ export function decodeSystemJitModuleMap(module: Uint8Array): JitModuleTraceMap 
       }
     }
     payload.finish("JIT Wasm section");
+    if (input.position === artifactModuleLength) prefixBoundary = true;
   }
   if (ripMap === undefined || ripMap.byteLength === 0) {
     throw new TypeError("invalid JIT Wasm RIP map");
@@ -407,9 +411,7 @@ export function decodeSystemJitModuleMap(module: Uint8Array): JitModuleTraceMap 
     throw new TypeError("invalid JIT Wasm IR map length");
   }
   const tier = irVersion >= 4 ? decodeTier(irView, 32) : "tier1";
-  if (tier !== "tier2" && recordedProfileGeneration !== null) {
-    throw new TypeError("Tier-1 JIT Wasm has Tier-2 profile identity");
-  }
+  validateTierTwoProfileIdentity(tier, recordedProfileGeneration);
   let previousIdentity = -1;
   let previousStart = -1;
   const operations = Array.from(
@@ -446,6 +448,7 @@ export function decodeSystemJitModuleMap(module: Uint8Array): JitModuleTraceMap 
       }
       previousIdentity = identity;
       previousStart = emittedStart;
+      if (prefixReusable && traceBodyStart + emittedEnd > artifactModuleLength) prefixReusable = false;
       return {
         span,
         instructionIndex,
@@ -485,26 +488,97 @@ export function decodeSystemJitModuleMap(module: Uint8Array): JitModuleTraceMap 
     throw new TypeError("JIT loop policy does not match its source spans");
   }
   return {
-    loopPolicy,
-    profileModuleId,
-    ...(bindingIdentity === undefined ? {} : {
-      artifactProfileModuleId: profileModuleId,
-      profileModuleId: bindingIdentity.id.toString(16).padStart(16, "0"),
-      bindingIdentity,
-    }),
-    tier,
-    recordedProfileGeneration,
-    runtimeIdentity,
-    aotTrainingSource,
-    instructions,
-    operations,
-    plan: {
-      initialStateMask,
-      dirtyStateMask,
-      stateMaterializationBoundaries,
-      segmentGuards,
+    executablePrefixReusable: prefixReusable && prefixBoundary
+      && bindingIdentity !== undefined && runtimeIdentity !== null,
+    moduleMap: {
+      loopPolicy,
+      profileModuleId,
+      ...(bindingIdentity === undefined ? {} : {
+        artifactProfileModuleId: profileModuleId,
+        profileModuleId: bindingIdentity.id.toString(16).padStart(16, "0"),
+        bindingIdentity,
+      }),
+      tier,
+      recordedProfileGeneration,
+      runtimeIdentity,
+      aotTrainingSource,
+      instructions,
+      operations,
+      plan: {
+        initialStateMask,
+        dirtyStateMask,
+        stateMaterializationBoundaries,
+        segmentGuards,
+      },
     },
   };
+}
+
+/** The caller owns the certified prefix and its current profile-map lineage. */
+export function decodeSystemJitAliasSuffix(suffix: Uint8Array, base: JitModuleTraceMap): JitModuleTraceMap | undefined {
+  if (base.bindingIdentity === undefined || base.runtimeIdentity === null || base.artifactProfileModuleId === undefined) return undefined;
+  const input = new Reader(suffix);
+  let bindingIdentity: JitBindingIdentity | undefined;
+  let runtimeIdentity: JitRuntimeIdentity | null = null;
+  let recordedProfileGeneration: bigint | null = null;
+  while (!input.done()) {
+    const id = input.byte();
+    const payload = new Reader(input.sized());
+    if (id !== 0) return undefined;
+    const name = payload.name();
+    if (name === "oxidevm.runtime-identity" && runtimeIdentity === null) {
+      runtimeIdentity = decodeRuntimeIdentity(payload.rest());
+    } else if (name === "oxidevm.binding-identity" && bindingIdentity === undefined) {
+      bindingIdentity = decodeBindingIdentity(payload.rest());
+    } else if (name === "oxidevm.tier2-profile" && recordedProfileGeneration === null) {
+      recordedProfileGeneration = decodeTierTwoProfileIdentity(payload.rest());
+    } else if (name === "oxidevm.runtime-identity" || name === "oxidevm.binding-identity" || name === "oxidevm.tier2-profile") {
+      throw new TypeError("unexpected JIT Wasm custom section");
+    } else {
+      return undefined;
+    }
+    payload.finish("JIT Wasm section");
+  }
+  validateTierTwoProfileIdentity(base.tier, recordedProfileGeneration);
+  if (bindingIdentity === undefined || runtimeIdentity === null) return undefined;
+  return {
+    loopPolicy: base.loopPolicy ?? null,
+    profileModuleId: bindingIdentity.id.toString(16).padStart(16, "0"),
+    artifactProfileModuleId: base.artifactProfileModuleId,
+    bindingIdentity,
+    tier: base.tier,
+    recordedProfileGeneration,
+    runtimeIdentity,
+    aotTrainingSource: base.aotTrainingSource,
+    instructions: base.instructions,
+    operations: base.operations,
+    plan: base.plan,
+  };
+}
+
+function decodeBindingIdentity(bytes: Uint8Array): JitBindingIdentity {
+  if (bytes.byteLength !== 20 || view(bytes).getUint32(0, true) !== 1) {
+    throw new TypeError("invalid JIT binding identity");
+  }
+  const id = view(bytes).getBigUint64(4, true);
+  const originBindingId = view(bytes).getBigUint64(12, true);
+  if (id === 0n || originBindingId === 0n || originBindingId > id) {
+    throw new TypeError("invalid JIT binding identity");
+  }
+  return { id, originBindingId };
+}
+
+function decodeTierTwoProfileIdentity(bytes: Uint8Array): bigint {
+  if (bytes.byteLength !== 12 || view(bytes).getUint32(0, true) !== 1) {
+    throw new TypeError("invalid JIT Wasm Tier-2 profile identity");
+  }
+  return view(bytes).getBigUint64(4, true);
+}
+
+function validateTierTwoProfileIdentity(tier: JitModuleTraceMap["tier"], generation: bigint | null): void {
+  if (tier !== "tier2" && generation !== null) {
+    throw new TypeError("Tier-1 JIT Wasm has Tier-2 profile identity");
+  }
 }
 
 function sameAotInstructionIdentity(

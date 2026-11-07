@@ -1,7 +1,7 @@
 import { VMError } from "../../errors.js";
 import type { SystemTraceJitArtifact } from "../../protocol.js";
 import {
-  decodeSystemJitModuleMap,
+  decodeSystemJitModuleForInstall,
   type JitModuleTraceMap,
 } from "../../protocol/system-trace-jit.js";
 import type { Core, JitBlock } from "./core.js";
@@ -35,7 +35,8 @@ export function prepareJitModule(
   bindingKey: string,
   moduleBytes: Uint8Array,
 ): PreparedJitModule {
-  const moduleMap = { ...decodeSystemJitModuleMap(moduleBytes), artifactIdentity: { cacheKey: action.artifactCacheKey, moduleLength: action.artifactModuleLength } };
+  const decoded = decodeSystemJitModuleForInstall(moduleBytes, action.artifactModuleLength);
+  const moduleMap = { ...decoded.moduleMap, artifactIdentity: { cacheKey: action.artifactCacheKey, moduleLength: action.artifactModuleLength } };
   recordJitCandidate(loaded, action.instructionCount, moduleBytes.byteLength);
   return {
     action,
@@ -57,6 +58,7 @@ export function prepareJitModule(
       ...(action.artifactModuleLength < moduleBytes.byteLength ? {
         executableBytes: moduleBytes.slice(0, action.artifactModuleLength),
       } : {}),
+      ...(decoded.executablePrefixReusable ? { executablePrefixReusable: true } : {}),
     },
   };
 }

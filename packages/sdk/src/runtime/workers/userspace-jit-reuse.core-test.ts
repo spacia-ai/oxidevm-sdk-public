@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
+import type { JitTraceInstruction, JitTraceOperation } from "../protocol/system-trace-jit.js";
 import { decodeCoreRuntimeProfile } from "../core-abi/profile.js";
 import { readExportedView } from "./control/core.js";
 import { clearJitBlocks } from "./control/jit-blocks.js";
@@ -54,6 +55,46 @@ for (const tier of [1, 2] as const) {
     } finally { await jitRuntime.dispose(); }
   }, 60_000);
 }
+
+
+it("scopes certified prefixes and profile arrays to each real runtime across growth and disposal", async () => {
+  const bytes = new Uint8Array(await readFile(engineModulePath("oxidevm_userspace.wasm")));
+  const module = await WebAssembly.compile(bytes.buffer);
+  const previousInstructions = new Set<readonly JitTraceInstruction[]>();
+  const previousOperations = new Set<readonly JitTraceOperation[]>();
+  for (let lifetime = 0; lifetime < 2; lifetime++) {
+    const base = await instantiateRuntime(module, "certified-prefix-lifetime", { kind: "disabled" });
+    await base.jitRuntime.dispose();
+    const { runtime: jitRuntime, compilers } = deferredRuntime("batched");
+    const runtime = { ...base, jitRuntime };
+    try {
+      expect(runtime.core.jitBlocks.size).toBe(0);
+      expect(runtime.core.profileJitModules.size).toBe(0);
+      mountTestRuntime(runtime, 1);
+      for (let command = 0; command < 2; command++) {
+        const pid = spawnRing(runtime, traceRingElf(20_000));
+        for (let turn = 0; turn < 100_000 && termination(runtime, pid) === 0xffff_ffff; turn++) {
+          runRingTurn(runtime);
+          for (const compiler of compilers) compiler.release();
+        }
+        expect(termination(runtime, pid)).toBe(Number(20_000n * 20_001n / 2n & 255n));
+        if (command === 0) runtime.memory.grow(1);
+      }
+      const blocks = [...runtime.core.jitBlocks.values()].filter(block => block.executableBytes !== undefined);
+      expect(blocks.length).toBeGreaterThan(0);
+      for (const block of blocks) expect(block.executablePrefixReusable).toBe(true);
+      const maps = [...runtime.core.profileJitModules.values()];
+      expect(maps.some(map => map.bindingIdentity !== undefined && map.bindingIdentity.id !== map.bindingIdentity.originBindingId)).toBe(true);
+      for (const map of maps) {
+        expect(previousInstructions.has(map.instructions)).toBe(false);
+        expect(previousOperations.has(map.operations)).toBe(false);
+      }
+      for (const map of maps) { previousInstructions.add(map.instructions); previousOperations.add(map.operations); }
+      expect(runtime.core.jitHealth.state).toBe("active");
+      expect(runtime.core.jitCode.profile().reservedBytes).toBe(0);
+    } finally { await jitRuntime.dispose(); }
+  }
+}, 60_000);
 
 it("retains Tier-2 provenance when an adopted trace takes different branches", async () => {
   const bytes = new Uint8Array(await readFile(engineModulePath("oxidevm_userspace.wasm")));

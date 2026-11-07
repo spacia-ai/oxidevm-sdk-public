@@ -291,6 +291,8 @@ export interface JitBlock {
   readonly slot: number;
   byteLength: number;
   readonly executableBytes?: Uint8Array;
+  /** Issued for an owned, fully validated static prefix. Alias retention may revoke it. */
+  executablePrefixReusable?: boolean;
   readonly instance: WebAssembly.Instance;
   /** The compiled unit whose code this block runs; null for AOT pack members, which the AOT
    * runtime accounts for. */

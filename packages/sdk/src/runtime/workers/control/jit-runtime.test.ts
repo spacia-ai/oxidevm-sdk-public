@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { recordingCore } from "./core.test-support.js";
 
 import {
   JIT_CONTEXT_LENGTH,
@@ -19,9 +20,13 @@ import {
 } from "../../jit-cache.js";
 import { decodeJitOperationSamples } from "../../protocol.js";
 import type { JitBlock } from "./core.js";
-import { reactivateDormantJitBlock, rememberDormantJitBlock } from "./jit-dormant.js";
+import { jitBlockBytes, reactivateDormantJitBlock, rememberDormantJitBlock, retireOldestDormantJitBlock } from "./jit-dormant.js";
 import {
   byteCapacityVictim,
+  evictJitBlock,
+  installJitBlock,
+  pruneRetiredJitBindings,
+  retainJitBlockAlias,
   selectSecondChanceJitBlock,
   touchJitBlock,
   touchLastDispatchedJitBlock,
@@ -31,9 +36,10 @@ import {
   drainJitProfileSamples,
   validatePreparedJitModuleLength,
 } from "./jit-runtime.js";
-import { instantiateJitModule, recordJitCompilation } from "./jit-module-install.js";
+import { instantiateJitModule, prepareJitModule, recordJitCompilation } from "./jit-module-install.js";
 import {
   assertExecutableArtifactBytes,
+  retainProfileJitModule,
   synchronizeJitDispatchGeneration,
   TraceRecordingCadence,
   TRACE_RECORDING_INVOCATION_PERIOD,
@@ -654,6 +660,117 @@ function moduleWithTraces(): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(new ArrayBuffer(source.length));
   bytes.set(source);
   return bytes;
+}
+
+
+it.each(["live eviction", "dormant retirement"] as const)("keeps the 16-byte eligibility charge with its artifact through %s", release => {
+  const { core } = recordingCore(0, CONTEXT_PAGES);
+  const prefix = accountingPrefix(), initialSuffix = accountingSuffix(3n);
+  const initial = accountingJoin(prefix, initialSuffix);
+  const initialAction = accountingAction(prefix, initialSuffix, 3n);
+  const prepared = prepareJitModule(core, initialAction, `9:${String(prefix.byteLength)}`, `3:${String(initial.byteLength)}`, initial);
+  const instance = instantiateJitModule(prefix, {});
+  const payloadBytes = initial.byteLength + prefix.byteLength;
+  const fresh = installJitBlock(core, payloadBytes, instance, { ...prepared.entry, codeUnit: null }, instance.exports["trace"], instance.exports["record_trace"]);
+  retainProfileJitModule(core, prepared.moduleMap, 3n);
+  const bindingBytes = (entry: JitBlock) => [...entry.bindings.values()].reduce((sum, binding) => sum + (binding.metadataBytes ?? 0), 0);
+  expect(fresh.executablePrefixReusable).toBe(true);
+  expect(fresh.byteLength - payloadBytes - bindingBytes(fresh)).toBe(16);
+  expect(core.jitBlockBytes).toBe(fresh.byteLength);
+  const chargedBytes = fresh.byteLength;
+
+  evictJitBlock(core, fresh, "dispatch-slot");
+  expect(core.jitBlockBytes).toBe(0);
+  expect(core.dormantJitBlockBytes).toBe(chargedBytes);
+  const dormant = reactivateDormantJitBlock(core, fresh.key);
+  if (dormant === undefined) throw new Error("Dormant accounting fixture missing");
+  const live = installJitBlock(core, dormant.byteLength, dormant.instance, dormant, dormant.trace, dormant.recordTrace);
+  expect(live.byteLength).toBe(chargedBytes);
+  expect(live.executablePrefixReusable).toBe(true);
+  expect(core.jitBlockBytes).toBe(chargedBytes);
+  expect(core.dormantJitBlockBytes).toBe(0);
+
+  const suffix = accountingSuffix(7n, true), alias = accountingJoin(prefix, suffix);
+  expect(retainJitBlockAlias(core, live, accountingAction(prefix, suffix, 7n), `7:${String(alias.byteLength)}`, alias)).toBe(true);
+  expect(live.executablePrefixReusable).toBe(false);
+  expect(live.byteLength - payloadBytes - bindingBytes(live)).toBe(16);
+  expect(core.jitBlockBytes).toBe(live.byteLength);
+  pruneRetiredJitBindings(core, live);
+  expect(live.bindings.size).toBe(0);
+  expect(live.byteLength).toBe(payloadBytes + 16);
+  expect(core.jitBlockBytes).toBe(payloadBytes + 16);
+  expect(live.executablePrefixReusable).toBe(false);
+
+  if (release === "live eviction") evictJitBlock(core, live, "byte-capacity");
+  else {
+    evictJitBlock(core, live, "dispatch-slot");
+    expect(core.jitBlockBytes).toBe(0);
+    expect(core.dormantJitBlockBytes).toBe(payloadBytes + 16);
+    expect(retireOldestDormantJitBlock(core)).toBe(true);
+  }
+  expect(core.jitBlocks.size).toBe(0);
+  expect(core.dormantJitBlocks.size).toBe(0);
+  expect(core.jitBlockBytes).toBe(0);
+  expect(core.dormantJitBlockBytes).toBe(0);
+  expect(jitBlockBytes(core)).toBe(0);
+});
+
+function accountingPrefix(): Uint8Array<ArrayBuffer> {
+  const output = Array.from(moduleWithTraces());
+  const rip = new Uint8Array(23), ripView = new DataView(rip.buffer);
+  ripView.setUint32(0, 2, true);
+  ripView.setUint32(4, 1, true);
+  rip[20] = 1;
+  accountingCustomSection(output, "oxidevm.rip-map", rip);
+  const ir = new Uint8Array(54), irView = new DataView(ir.buffer);
+  irView.setUint32(0, 5, true);
+  irView.setUint32(4, 1, true);
+  ir[32] = 1;
+  irView.setUint32(44, 1, true);
+  ir[52] = 7;
+  accountingCustomSection(output, "oxidevm.ir-map", ir);
+  return new Uint8Array(output);
+}
+
+function accountingSuffix(bindingId: bigint, withName = false): Uint8Array<ArrayBuffer> {
+  const output: number[] = [];
+  const runtime = new Uint8Array(56), runtimeView = new DataView(runtime.buffer);
+  runtimeView.setUint32(0, 2, true);
+  runtime.set([3, 3, 1, 1], 4);
+  runtimeView.setUint32(12, 1, true);
+  runtimeView.setBigUint64(16, 2n, true);
+  runtimeView.setBigUint64(32, 0x4000n, true);
+  runtimeView.setBigUint64(40, 1n, true);
+  accountingCustomSection(output, "oxidevm.runtime-identity", runtime);
+  const binding = new Uint8Array(20), bindingView = new DataView(binding.buffer);
+  bindingView.setUint32(0, 1, true);
+  bindingView.setBigUint64(4, bindingId, true);
+  bindingView.setBigUint64(12, 3n, true);
+  accountingCustomSection(output, "oxidevm.binding-identity", binding);
+  if (withName) {
+    const name = new TextEncoder().encode("oxidevm_tb_0123456789abcdef_r0000000000000000");
+    const functions = [1, 0, name.byteLength, ...name];
+    accountingCustomSection(output, "name", new Uint8Array([1, functions.length, ...functions]));
+  }
+  return new Uint8Array(output);
+}
+
+function accountingCustomSection(output: number[], name: string, payload: Uint8Array): void {
+  const encoded = new TextEncoder().encode(name);
+  output.push(0, 1 + encoded.byteLength + payload.byteLength, encoded.byteLength, ...encoded, ...payload);
+}
+
+function accountingJoin(prefix: Uint8Array, suffix: Uint8Array): Uint8Array<ArrayBuffer> {
+  const output = new Uint8Array(prefix.byteLength + suffix.byteLength);
+  output.set(prefix);
+  output.set(suffix, prefix.byteLength);
+  return output;
+}
+
+function accountingAction(prefix: Uint8Array, suffix: Uint8Array, cacheKey: bigint) {
+  return { kind: "compile" as const, instructionCount: 1, startRip: 0n, cacheKey,
+    moduleLength: prefix.byteLength + suffix.byteLength, artifactCacheKey: 9n, artifactModuleLength: prefix.byteLength,
+    contextLength: JIT_CONTEXT_LENGTH, maximumInstructions: 1 };
 }
 
 function moduleWithoutRecording(): Uint8Array<ArrayBuffer> {
