@@ -13,8 +13,10 @@ export const MAX_LINKED_BYTES = MAX_JIT_MODULE_BYTES;
 const WASM_HEADER = [0, 0x61, 0x73, 0x6d, 1, 0, 0, 0] as const;
 /** Sections a member may carry: custom, type, import, function, table, export, element, code. */
 const MEMBER_SECTIONS: ReadonlySet<number> = new Set([0, 1, 2, 3, 4, 7, 9, 10]);
-/** The core linker admits one type-0 trace and at most two private helpers. */
-const MAX_MEMBER_FUNCTIONS = 3;
+/** One type-0 trace and at most three private helpers: state publication, the module exit path
+ * and the SHA helper. Mirrors the core linker (`jit/emit/link.rs`, `MAX_PRIVATE_HELPERS`); a
+ * lower limit silently compiles such members standalone. */
+const MAX_MEMBER_FUNCTIONS = 4;
 const HEX = Array.from({ length: 256 }, (_, byte) => byte.toString(16).padStart(2, "0"));
 
 /**

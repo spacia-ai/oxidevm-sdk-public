@@ -68,10 +68,18 @@ describe("JIT link signature", () => {
     expect(jitLinkSignature(first)).not.toBe(jitLinkSignature(module({ functionTypes: [0, 1, 1] })));
   });
 
+  it("admits a dispatching member's three private helpers", () => {
+    // State publication, the module exit path and the SHA helper (`jit/emit.rs`).
+    const member = module({ functionTypes: [0, 1, 1, 1] });
+
+    expect(WebAssembly.validate(member)).toBe(true);
+    expect(jitLinkSignature(member)).not.toBeNull();
+  });
+
   it("rejects missing, excessive, truncated and trace-shaped helpers", () => {
     for (const bytes of [
       module({ functionTypes: [0, 1], bodies: [[0, 0x0b]] }),
-      module({ functionTypes: [0, 1, 1, 1] }),
+      module({ functionTypes: [0, 1, 1, 1, 1] }),
       module({ functionTypes: [0, 1, 0] }),
       module({ functionTypes: [0, 1] }).subarray(0, -1),
     ]) expect(jitLinkSignature(bytes)).toBeNull();
