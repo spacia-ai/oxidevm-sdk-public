@@ -164,3 +164,58 @@ describe("SessionRegistry", () => {
     await expect(registry.parent()).resolves.toBeNull();
   });
 });
+
+describe("SessionRegistry site access", () => {
+  const SITES = { kind: "sites", sites: ["api.example.com"] } as const;
+  const ANY = { kind: "any" } as const;
+  const perSession = (store: SessionStore = memoryStore()): SessionRegistry => new SessionRegistry({ kind: "per-session", session: A }, transports, store);
+
+  it("site access defaults to none", async () => {
+    await expect(perSession().siteAccess()).resolves.toEqual({ kind: "none" });
+    await expect(new SessionRegistry({ kind: "shared" }, transports, memoryStore()).siteAccess()).resolves.toEqual({ kind: "none" });
+  });
+
+  it("applied site access is what siteAccess() returns", async () => {
+    const registry = perSession();
+    await expect(registry.setSiteAccess(A, 1, SITES)).resolves.toBe("applied");
+    await expect(registry.siteAccess()).resolves.toEqual(SITES);
+  });
+
+  it("a restarted worker starts with no sites", async () => {
+    const store = memoryStore({ current: { session: A, parentOrigin: PARENT } });
+    for (const scope of [{ kind: "per-session", session: A }, { kind: "shared" }] as const) {
+      await expect(new SessionRegistry(scope, transports, store).setSiteAccess(A, 3, SITES)).resolves.toBe("applied");
+      const restarted = new SessionRegistry(scope, transports, store);
+      await expect(restarted.siteAccess()).resolves.toEqual({ kind: "none" });
+      // The keeper restores the grant with its unchanged revision.
+      await expect(restarted.setSiteAccess(A, 3, SITES)).resolves.toBe("applied");
+      await expect(restarted.siteAccess()).resolves.toEqual(SITES);
+    }
+  });
+
+  it("a lower or equal revision is stale", async () => {
+    const registry = perSession();
+    await registry.setSiteAccess(A, 5, SITES);
+    await expect(registry.setSiteAccess(A, 5, ANY)).resolves.toBe("stale");
+    await expect(registry.setSiteAccess(A, 4, ANY)).resolves.toBe("stale");
+    await expect(registry.siteAccess()).resolves.toEqual(SITES);
+    await expect(registry.setSiteAccess(A, 6, ANY)).resolves.toBe("applied");
+  });
+
+  it("a retired session refuses site access", async () => {
+    const registry = perSession();
+    await registry.retire(A);
+    await expect(registry.setSiteAccess(A, 1, SITES)).resolves.toBe("retired");
+    await expect(perSession().setSiteAccess(B, 1, SITES)).resolves.toBe("retired");
+  });
+
+  it("a new session on the shared address starts with no sites", async () => {
+    const registry = new SessionRegistry({ kind: "shared" }, transports, memoryStore());
+    await registry.attach(A, port(), "keeper-a", PARENT);
+    await expect(registry.setSiteAccess(A, 1, SITES)).resolves.toBe("applied");
+    await registry.attach(B, port(), "keeper-b", PARENT);
+    await expect(registry.siteAccess()).resolves.toEqual({ kind: "none" });
+    await expect(registry.setSiteAccess(A, 2, ANY)).resolves.toBe("retired");
+    await expect(registry.setSiteAccess(B, 1, ANY)).resolves.toBe("applied");
+  });
+});

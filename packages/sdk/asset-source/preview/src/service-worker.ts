@@ -8,8 +8,9 @@ import {
   cookieRefusalHeader, disconnectedPage, isParentOrigin, movedPage, pageContentSecurityPolicy, startingPage, unavailableResponse,
   upstreamFailure, upstreamLateResponse, unsupportedRequestBodyResponse,
 } from "./worker/policy";
+import { decodeSiteAccess } from "./site-access";
 import { SessionRegistry, workerScope, type SessionStore } from "./worker/sessions";
-import { HEAD_WAIT_MS, RequestInbox, SessionTransport, type KeeperDirectory } from "./worker/transport";
+import { HEAD_WAIT_MS, isKeeperDocument, RequestInbox, SessionTransport, type KeeperDirectory } from "./worker/transport";
 import { previewRequestBody } from "./worker/request-body";
 
 const scopeValue: unknown = globalThis;
@@ -36,6 +37,21 @@ scope.addEventListener("message", (event) => {
     if (!(port instanceof MessagePort) || !(acknowledgement instanceof MessagePort) || !isParentOrigin(parent) || !(keeper instanceof Client)) return;
     event.waitUntil(registry.attach(session, port, keeper.id, parent).then((result) => {
       acknowledgement.postMessage({ kind: result, session });
+      acknowledgement.close();
+    }));
+    return;
+  }
+  if (message["kind"] === "sites" && exactKeys(message, ["kind", "session", "revision", "access", "acknowledgement"]) && isSession(session)) {
+    // Only a keeper document of this session grants (ADR 0030 D9); any other sender is ignored
+    // like a malformed message.
+    const keeper = event.source;
+    if (!(keeper instanceof WindowClient) || !isKeeperDocument(keeper.url, session)) return;
+    const revision = message["revision"];
+    const access = decodeSiteAccess(message["access"]);
+    const acknowledgement: unknown = message["acknowledgement"];
+    if (typeof revision !== "number" || !Number.isInteger(revision) || revision < 1 || revision > 0x7fff_ffff || access === null || !(acknowledgement instanceof MessagePort)) return;
+    event.waitUntil(registry.setSiteAccess(session, revision, access).then((result) => {
+      acknowledgement.postMessage(result === "applied" ? { kind: "sites-applied", session, revision } : { kind: "sites-refused", session, revision, reason: result });
       acknowledgement.close();
     }));
     return;
@@ -105,10 +121,8 @@ async function withoutTransport(request: Request): Promise<Response> {
 /** A session's keeper documents: window clients at /__oxidevm/?session=<session>. */
 function keeperDirectory(): KeeperDirectory {
   return {
-    keepers: async (wanted) => (await scope.clients.matchAll({ type: "window", includeUncontrolled: true })).filter((client) => {
-      const url = new URL(client.url);
-      return url.pathname === BOOTSTRAP_PREFIX && url.searchParams.get("session") === wanted;
-    }),
+    keepers: async (wanted) => (await scope.clients.matchAll({ type: "window", includeUncontrolled: true }))
+      .filter((client) => isKeeperDocument(client.url, wanted)),
     isOpen: async (id) => (await scope.clients.get(id)) !== undefined,
   };
 }
@@ -198,7 +212,7 @@ async function proxy(request: Request, path: string, port: MessagePort, transpor
   });
   const responseHeaders = new Headers(head.headers.filter(([name]) => !STRIPPED_RESPONSE_HEADERS.has(name.toLowerCase())));
   if (html) responseHeaders.delete("content-length");
-  responseHeaders.set("Content-Security-Policy", pageContentSecurityPolicy(parent));
+  responseHeaders.set("Content-Security-Policy", pageContentSecurityPolicy(parent, await registry.siteAccess()));
   for (const [name, value] of Object.entries(cookieRefusalHeader(refused))) responseHeaders.set(name, value);
   responseHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
   responseHeaders.set("Cross-Origin-Opener-Policy", "same-origin-allow-popups");

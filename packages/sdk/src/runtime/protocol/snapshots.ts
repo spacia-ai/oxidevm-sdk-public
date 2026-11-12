@@ -126,6 +126,10 @@ export function validateAutoSaveEnabled(policy: unknown): boolean {
   throw new VMError("INVALID_ARGUMENT", "an automatic save policy says whether saves are enabled");
 }
 
+export const AUTO_SAVE_BUSY_CAUSES = ["js-process-active", "not-quiesced"] as const;
+/** Why the VM refused an automatic save as busy: a live JS process, or Linux not quiesced for a checkpoint. */
+export type AutoSaveBusyCause = (typeof AUTO_SAVE_BUSY_CAUSES)[number];
+
 /** What a VM's restore points tell the pages that follow them, as it happens. */
 export type SnapshotEventRecord =
   | ({ readonly type: "image-preparation-progress" } & ImagePreparationReport)
@@ -142,7 +146,11 @@ export type SnapshotEventRecord =
     }
   | { readonly type: "save-failed"; readonly kind: SnapshotKind; readonly error: SerializedError }
   | { readonly type: "auto-save-paused"; readonly reason: "quota"; readonly retryInMilliseconds: number }
+  | { readonly type: "auto-save-paused"; readonly reason: "busy"; readonly cause: AutoSaveBusyCause; readonly retryInMilliseconds: number }
   | { readonly type: "restore-progress"; readonly completedBytes: number; readonly totalBytes: number };
+
+/** What a save tells the pages of itself: that it started, and how it ended. */
+export type SaveReport = Extract<SnapshotEventRecord, { readonly type: "save-started" | "save-finished" | "save-failed" }>;
 
 /** Decodes one `{ version, event }` message from a VM's restore point event port. */
 export function decodeSnapshotEventMessage(value: unknown): SnapshotEventRecord {
@@ -178,15 +186,29 @@ export function decodeSnapshotEventRecord(value: unknown): SnapshotEventRecord {
       exactKeys(event, ["type", "kind", "error"]);
       return { type: "save-failed", kind: decodeKind(event["kind"]), error: decodeSerializedError(event["error"]) };
     case "auto-save-paused":
-      exactKeys(event, ["type", "reason", "retryInMilliseconds"]);
-      if (event["reason"] !== "quota") invalidEvent();
-      return { type: "auto-save-paused", reason: "quota", retryInMilliseconds: integer(event["retryInMilliseconds"], "retry delay", 0) };
+      return decodeAutoSavePause(event);
     case "restore-progress": {
       exactKeys(event, ["type", "completedBytes", "totalBytes"]);
       const completedBytes = integer(event["completedBytes"], "restored bytes", 0);
       const totalBytes = integer(event["totalBytes"], "bytes to restore", 0);
       if (completedBytes > totalBytes) invalidEvent();
       return { type: "restore-progress", completedBytes, totalBytes };
+    }
+    default:
+      return invalidEvent();
+  }
+}
+
+/** Automatic saves paused: for space, or because the VM refused them as busy, with its cause. */
+function decodeAutoSavePause(event: Readonly<Record<string, unknown>>): Extract<SnapshotEventRecord, { readonly type: "auto-save-paused" }> {
+  switch (event["reason"]) {
+    case "quota":
+      exactKeys(event, ["type", "reason", "retryInMilliseconds"]);
+      return { type: "auto-save-paused", reason: "quota", retryInMilliseconds: integer(event["retryInMilliseconds"], "retry delay", 0) };
+    case "busy": {
+      exactKeys(event, ["type", "reason", "cause", "retryInMilliseconds"]);
+      const cause = AUTO_SAVE_BUSY_CAUSES.find((candidate) => candidate === event["cause"]) ?? invalidEvent();
+      return { type: "auto-save-paused", reason: "busy", cause, retryInMilliseconds: integer(event["retryInMilliseconds"], "retry delay", 0) };
     }
     default:
       return invalidEvent();

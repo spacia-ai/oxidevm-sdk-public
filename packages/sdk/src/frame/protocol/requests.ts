@@ -5,7 +5,8 @@ import { decodeRelayOptions } from "../../runtime/protocol/network.js";
 import type { RelayOptions } from "../../runtime/protocol/network.js";
 import { decodeSnapshotRef, validateAppData, validateAutoSaveEnabled, validateAutoSaveHint } from "../../runtime/protocol/snapshots.js";
 import type { AutoSaveHint } from "../../runtime/protocol/snapshots.js";
-import type { SnapshotRef } from "../../contracts.js";
+import type { PreviewSiteAccess, SnapshotRef } from "../../contracts.js";
+import { decodePreviewSiteAccess } from "../../preview-site-access.js";
 import { FRAME_PROTOCOL_VERSION } from "./handshake.js";
 import { decodeKeeperReport } from "./keepers.js";
 import { decodeWorkspaceRequest, isWorkspaceFrameType } from "./workspace.js";
@@ -57,7 +58,10 @@ export type FrameOperation =
   | ({ readonly type: "module.spawn"; readonly descriptor: string; readonly files: Readonly<Record<CopyKey, Blob>>; readonly io: MessagePort } & ModuleSpawnWire)
   /** Protocol 17: one request to the frame VM's module-command owner, answered even when the page cancels it. */
   | { readonly type: "module.commands"; readonly request: ModuleCommandsRequest }
-  | { readonly type: "exposePort"; readonly port: number }
+  /** Protocol 19 (ADR 0030): the exposure's canonical site access, which the frame's VM applies before it answers. */
+  | { readonly type: "exposePort"; readonly port: number; readonly siteAccess?: PreviewSiteAccess }
+  /** Protocol 19: a site access change for a preview this frame exposed, named by the id it answered with. */
+  | { readonly type: "preview.sites"; readonly preview: number; readonly access: PreviewSiteAccess }
   | { readonly type: "preview.close"; readonly preview: number }
   | { readonly type: "listeningPorts" | "watchListeningPorts" }
   | { readonly type: "network.connect"; readonly options: RelayOptions }
@@ -153,9 +157,14 @@ export function decodeFrameMessage(value: unknown): FrameMessage {
     case "terminal.attach":
       fields(["key", "io"]);
       return { type, id, key: string(message["key"], "terminal key"), io: port(message["io"]) };
-    case "exposePort":
-      fields(["port"]);
-      return { type, id, port: integer(message["port"], "guest port", 1, 65_535) };
+    case "exposePort": {
+      fields(["port"], ["siteAccess"]);
+      const access = message["siteAccess"];
+      return { type, id, port: integer(message["port"], "guest port", 1, 65_535), ...(access === undefined ? {} : { siteAccess: decodePreviewSiteAccess(access, "PROTOCOL_ERROR") }) };
+    }
+    case "preview.sites":
+      fields(["preview", "access"]);
+      return { type, id, preview: integer(message["preview"], "preview id", 1, MAX_REQUEST_ID), access: decodePreviewSiteAccess(message["access"], "PROTOCOL_ERROR") };
     case "preview.close":
       fields(["preview"]);
       return { type, id, preview: integer(message["preview"], "preview id", 1, MAX_REQUEST_ID) };

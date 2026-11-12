@@ -19,6 +19,7 @@ import {
   decodeRequestId,
   MAX_SYSTEM_CONSOLE_INPUT_BYTES,
   PROTOCOL_VERSION,
+  type SnapshotEventRecord,
   type SystemProbeResult,
   type SystemSliceResult,
   type WorkerResponse,
@@ -142,11 +143,11 @@ const autoSave = new AutoSave({
     return () => clearTimeout(timer);
   },
   dirty: () => systemBooted && core !== undefined && retiredInstructions(core) !== retiredAtLastSave,
-  save: () => snapshotSession.capture({ kind: "automatic" }),
+  save: (report) => snapshotSession.capture({ kind: "automatic" }, report),
   collect: async () => {
     await requireSnapshotStorage().request({ type: "collect" });
   },
-  emit: (event) => snapshotEvents.broadcast(event),
+  emit: notifySnapshot,
 });
 const snapshotSession = new SnapshotSession({
   core: requireCore,
@@ -167,12 +168,7 @@ const snapshotSession = new SnapshotSession({
   agentState: () => encodeAgentResumeState(guestAgent.resumeState(systemConsole.tailBytes())),
   // Saves are not page requests a page can cancel, so the sync runs under no request id.
   syncFilesystems: () => guestAgent.syncFilesystems(0),
-  notify: (event) => {
-    snapshotEvents.broadcast(event);
-    if (event.type !== "save-finished") return;
-    retiredAtLastSave = core === undefined ? undefined : retiredInstructions(core);
-    if (event.kind !== "automatic") autoSave.saved(performance.now(), event.durationMilliseconds, event.pauseMilliseconds);
-  },
+  notify: notifySnapshot,
   now: () => performance.now(),
   lost: () => {
     systemBooted = false;
@@ -181,6 +177,16 @@ const snapshotSession = new SnapshotSession({
     networkLink?.detach();
   },
 });
+/**
+ * Tells the pages what this VM's restore points did, saves and automatic saves alike. A finished
+ * save marks the guest as saved, and one made for another reason counts as automatic saves' latest.
+ */
+function notifySnapshot(event: SnapshotEventRecord): void {
+  snapshotEvents.broadcast(event);
+  if (event.type !== "save-finished") return;
+  retiredAtLastSave = core === undefined ? undefined : retiredInstructions(core);
+  if (event.kind !== "automatic") autoSave.saved(performance.now(), event.durationMilliseconds, event.pauseMilliseconds);
+}
 const active = new Set<number>();
 const canceled = new Set<number>();
 let controlAttention: AttentionWatch | undefined;

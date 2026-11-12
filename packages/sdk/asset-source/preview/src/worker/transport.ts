@@ -23,6 +23,17 @@ export interface KeeperDirectory {
   isOpen(clientId: string): Promise<boolean>;
 }
 
+/** A keeper document is the preview base itself: /__oxidevm/?session=<session>. */
+const KEEPER_PATH = "/__oxidevm/";
+
+/** Whether a window client's URL is a keeper document of `session`. It tells keepers from the
+ * app's pages; guest code that drives a keeper is beyond it (ADR 0030 D9). */
+export function isKeeperDocument(url: string, session: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const parsed = new URL(url);
+  return parsed.pathname === KEEPER_PATH && parsed.searchParams.get("session") === session;
+}
+
 export type Watched<T> =
   | { readonly kind: "settled"; readonly value: T }
   | { readonly kind: "lost" }

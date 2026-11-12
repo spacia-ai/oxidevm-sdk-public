@@ -1,6 +1,37 @@
 import { describe, expect, it } from "vitest";
 
+import type { SiteAccess } from "../site-access";
 import { cookieRefusalHeader, disconnectedPage, frameAncestors, movedPage, isParentOrigin, pageContentSecurityPolicy, startingPage, unavailableResponse, upstreamFailedResponse, upstreamFailure, upstreamLateResponse, unsupportedRequestBodyResponse } from "./policy";
+
+const NONE: SiteAccess = { kind: "none" };
+
+function directives(policy: string): Map<string, string> {
+  return new Map(policy.split(";").map((part) => part.trim()).map((part) => [part.split(" ")[0] ?? "", part]));
+}
+
+const SITE_DIRECTIVES = ["default-src", "script-src", "style-src", "img-src", "font-src", "connect-src"];
+
+describe("preview page content security policy", () => {
+  it("allows only the same origin to connect when no site is granted", () => {
+    const policy = pageContentSecurityPolicy(null, NONE);
+    expect(directives(policy).get("connect-src")).toBe("connect-src 'self'");
+    expect(policy).not.toMatch(/\bwss?:/);
+  });
+  it("appends granted sites to the six fetch directives only", () => {
+    const parsed = directives(pageContentSecurityPolicy("https://p.example", { kind: "sites", sites: ["api.open-meteo.com"] }));
+    for (const name of SITE_DIRECTIVES) expect(parsed.get(name)).toMatch(/ https:\/\/api\.open-meteo\.com wss:\/\/api\.open-meteo\.com$/);
+    expect(parsed.get("worker-src")).toBe("worker-src 'self' blob:");
+    expect(parsed.get("frame-ancestors")).toBe("frame-ancestors 'self' https://p.example");
+  });
+  it("allows any https and wss site, never http or ws", () => {
+    const parsed = directives(pageContentSecurityPolicy(null, { kind: "any" }));
+    for (const name of SITE_DIRECTIVES) {
+      expect(parsed.get(name)).toMatch(/ https: wss:$/);
+      expect(parsed.get(name)).not.toMatch(/ (http|ws):/);
+    }
+    expect(parsed.get("frame-ancestors")).toBe("frame-ancestors 'none'");
+  });
+});
 
 describe("preview worker policy", () => {
   it("explicitly refuses unsupported uploads while retaining preview isolation", () => {
@@ -11,9 +42,9 @@ describe("preview worker policy", () => {
     expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'self' https://p.example");
   });
   it("lets only the session's parent frame proxied pages", () => {
-    expect(pageContentSecurityPolicy("http://127.0.0.1:4173")).toContain("frame-ancestors 'self' http://127.0.0.1:4173;");
-    expect(pageContentSecurityPolicy("https://playground.example")).not.toContain("oxidevm-ide.test");
-    expect(pageContentSecurityPolicy(null)).toContain("frame-ancestors 'none'");
+    expect(pageContentSecurityPolicy("http://127.0.0.1:4173", NONE)).toContain("frame-ancestors 'self' http://127.0.0.1:4173;");
+    expect(pageContentSecurityPolicy("https://playground.example", NONE)).not.toContain("oxidevm-ide.test");
+    expect(pageContentSecurityPolicy(null, NONE)).toContain("frame-ancestors 'none'");
     expect(frameAncestors(null)).toBe("'none'");
   });
 

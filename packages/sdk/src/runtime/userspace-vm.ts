@@ -1,3 +1,5 @@
+import type { PreviewSiteAccess } from "../contracts.js";
+import { watchHandleBlockedSites } from "../preview-blocked-sites.js";
 import { NetworkClient, vmRelayScope } from "./network-client.js";
 import { rejectingTimeout } from "./disposal.js";
 import { openPreviewSession } from "./preview-session.js";
@@ -331,7 +333,7 @@ class BrowserUserspaceVM implements RuntimeVM {
   /** One preview session per exposed port on its own origin below `previewOrigin`;
    * Userspace listeners are reached through the same session transport as
    * system-mode ones. */
-  async exposePort(port: number, options?: { readonly signal?: AbortSignal }): Promise<PreviewHandle> {
+  async exposePort(port: number, options?: { readonly signal?: AbortSignal; readonly siteAccess?: PreviewSiteAccess }): Promise<PreviewHandle> {
     this.#ensureActive();
     if (!Number.isInteger(port) || port < 1 || port > 65_535) {
       throw new VMError("INVALID_ARGUMENT", "preview port must be an integer from 1 through 65535");
@@ -342,10 +344,16 @@ class BrowserUserspaceVM implements RuntimeVM {
     }
     if (this.#previews.has(port)) throw new VMError("INVALID_ARGUMENT", "This port already has an active preview session");
     // Closing frees the VM for the next session at once; the old one finishes closing on its own.
-    const opening = openPreviewSession({ previewOrigin, isolation: this.#previewIsolation, ...(this.#previewKeeperHost === undefined ? {} : { host: this.#previewKeeperHost }), runtime: "userspace", port, network: this.#network, signal: AbortSignal.any([this.#disposing.signal, ...(options?.signal === undefined ? [] : [options.signal])]) }).then(handle => ({
-      url: handle.url,
-      close: () => { if (this.#previews.get(port) === opening) this.#previews.delete(port); return handle.close(); },
-    }));
+    const opening = openPreviewSession({ previewOrigin, isolation: this.#previewIsolation, ...(this.#previewKeeperHost === undefined ? {} : { host: this.#previewKeeperHost }), runtime: "userspace", port, network: this.#network,
+      ...(options?.siteAccess === undefined ? {} : { siteAccess: options.siteAccess }), signal: AbortSignal.any([this.#disposing.signal, ...(options?.signal === undefined ? [] : [options.signal])]) }).then((session): PreviewHandle => {
+      const closed = new AbortController(), ends = { closed: closed.signal, lifetime: this.#disposing.signal };
+      return {
+        url: session.url,
+        setSiteAccess: (access, request) => session.setSiteAccess(access, request),
+        watchBlockedSites: (listener, request) => watchHandleBlockedSites(session.url.origin, ends, listener, request),
+        close: () => { closed.abort(); if (this.#previews.get(port) === opening) this.#previews.delete(port); return session.close(); },
+      };
+    });
     this.#previews.set(port, opening);
     opening.catch(() => { if (this.#previews.get(port) === opening) this.#previews.delete(port); });
     return opening;

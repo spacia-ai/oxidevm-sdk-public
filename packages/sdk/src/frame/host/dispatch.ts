@@ -82,10 +82,16 @@ async function dispatchCommon(request: CommonRequest, context: DispatchContext):
       return { pid: handle.pid, kind: handle.kind,...(handle.snapshotKey===undefined?{}:{snapshotKey:handle.snapshotKey}) };
     }
     case "exposePort": {
-      const preview = await vm.exposePort(request.port, { signal });
+      const preview = await vm.exposePort(request.port, { signal, ...(request.siteAccess === undefined ? {} : { siteAccess: request.siteAccess }) });
       const id = context.nextPreview();
       context.previews.set(id, preview);
       return { port: preview.port, url: preview.url.href, isolation: preview.isolation, preview: id };
+    }
+    // Protocol 19: only a preview this frame exposed and has not closed takes a change.
+    case "preview.sites": {
+      const preview = context.previews.get(request.preview);
+      if (preview === undefined) throw new VMError("INVALID_ARGUMENT", "no open preview has that id");
+      return preview.setSiteAccess(request.access, { signal });
     }
     case "preview.close": {
       const preview = context.previews.get(request.preview);

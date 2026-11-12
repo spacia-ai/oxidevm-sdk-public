@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ATTACH_WAIT_MS, HEAD_WAIT_MS, LIVENESS_INTERVAL_MS, RequestInbox, SessionTransport, type KeeperClient, type KeeperDirectory } from "./transport";
+import { ATTACH_WAIT_MS, HEAD_WAIT_MS, isKeeperDocument, LIVENESS_INTERVAL_MS, RequestInbox, SessionTransport, type KeeperClient, type KeeperDirectory } from "./transport";
 
 const SESSION = "0123456789abcdef0123456789abcdef";
 
@@ -183,5 +183,24 @@ describe("SessionTransport", () => {
     transport.attach(port1, "keeper-1");
     await expect(transport.whileAlive(Promise.resolve("head"), HEAD_WAIT_MS)).resolves.toEqual({ kind: "settled", value: "head" });
     port1.close();
+  });
+});
+
+describe("isKeeperDocument", () => {
+  const OTHER = "fedcba9876543210fedcba9876543210";
+
+  it("names a keeper document of the session", () => {
+    expect(isKeeperDocument(`https://s.example/__oxidevm/?session=${SESSION}`, SESSION)).toBe(true);
+    expect(isKeeperDocument(`https://s.example/__oxidevm/?session=${SESSION}&parentOrigin=https%3A%2F%2Fplay.example&isolation=shared`, SESSION)).toBe(true);
+  });
+
+  it.each([
+    ["another path", `https://s.example/?session=${SESSION}`],
+    ["another session", `https://s.example/__oxidevm/?session=${OTHER}`],
+    ["a missing session parameter", "https://s.example/__oxidevm/"],
+    ["the worker script", `https://s.example/__oxidevm/sw.js?session=${SESSION}`],
+    ["a value that is not a URL", `/__oxidevm/?session=${SESSION}`],
+  ])("refuses %s", (_name, url) => {
+    expect(isKeeperDocument(url, SESSION)).toBe(false);
   });
 });

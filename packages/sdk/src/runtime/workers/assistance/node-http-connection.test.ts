@@ -240,3 +240,23 @@ it("keeps inactivity retirement after the parser hands an error to the applicati
   wire.send("INVALID / HTTP/1.1\r\n\r\n"); await closed.promise;
   expect(wire.socket.destroyed).toBe(true);
 });
+
+it("gives each response the request it answers as response.req, as Node does", async () => {
+  // Vite's proxy error handler tells an HTTP response from a WebSocket by `"req" in res` and logs res.req.url;
+  // without it a failed proxy request was ended as an empty 200.
+  const wire = transport(); const responses = createHttpResponses(wire.context);
+  const answered = Promise.withResolvers<{ readonly own: boolean; readonly same: boolean; readonly url: string | undefined }>();
+  createHttpConnection(wire.socket, module, wire.context, {
+    Response: responses.ServerResponse,
+    request(request, response) {
+      const seen = { own: Object.hasOwn(response, "req"), same: response.req === request, url: response.req?.url };
+      response.sendDate = false; response.writeHead(500, { "Content-Type": "text/plain" }).end();
+      void response.completion.then(() => answered.resolve(seen));
+    },
+    upgrade: () => false, clientError: error => { throw error; }, closed: () => {},
+  });
+  wire.send("GET /api/remote HTTP/1.1\r\nHost: local\r\n\r\n");
+  expect(await answered.promise).toEqual({ own: true, same: true, url: "/api/remote" });
+  expect(wire.output()).toMatch(/^HTTP\/1\.1 500 Internal Server Error\r\n/u);
+  expect(new responses.ServerResponse(wire.socket, { method: "GET", major: 1, minor: 1, keepAlive: true }).req).toBeUndefined();
+});

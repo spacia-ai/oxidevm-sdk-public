@@ -98,7 +98,8 @@ export async function admitLicense(module: BufferSource | string | WebAssembly.M
     if (typeof value !== "function") throw new VMError("CORE_LOAD_FAILED", `the engine has no ${name}`);
     const result: unknown = Reflect.apply(value, undefined, args);
     if (typeof result !== "number") throw new VMError("CORE_LOAD_FAILED", `${name} returned no status`);
-    return result;
+    // The core's exports return u32, which Wasm hands to JavaScript as a signed i32.
+    return result >>> 0;
   };
   const memory = instance.exports["memory"];
   if (!(memory instanceof WebAssembly.Memory)) throw new VMError("CORE_LOAD_FAILED", "the engine exports no memory");

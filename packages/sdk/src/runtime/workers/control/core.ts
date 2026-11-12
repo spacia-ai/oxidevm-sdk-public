@@ -3,7 +3,7 @@ import {
   createBoundedRing,
 } from "../../bounded-ring.js";
 import { assertBrowserSupport } from "../../browser-support.js";
-import { CORE_API_VERSION, createCoreEntropyImport, unsignedWasmPointer } from "../../core-abi.js";
+import { CORE_API_VERSION, createCoreEntropyImport } from "../../core-abi.js";
 import { JIT_API_VERSION } from "../../core-abi/jit.ts";
 import { decodeCoreRuntimeProfile } from "../../core-abi/profile.js";
 import { record } from "../../decode.js";
@@ -631,28 +631,34 @@ export function readExportedBytes(
   return readExportedView(loaded, prefix).slice();
 }
 
+/** The `length` bytes at `pointer`, an unsigned pointer as `callNumber` returns it. */
 export function memorySlice(
   memory: WebAssembly.Memory,
   pointer: number,
   length: number,
 ): Uint8Array<ArrayBuffer> {
-  const unsignedPointer = unsignedWasmPointer(pointer);
   if (
     !Number.isSafeInteger(pointer) ||
-    pointer < -0x8000_0000 ||
+    pointer < 0 ||
     pointer > 0xffff_ffff ||
     !Number.isSafeInteger(length) ||
     length < 0 ||
-    unsignedPointer + length > memory.buffer.byteLength
+    pointer + length > memory.buffer.byteLength
   ) {
     throw new VMError(
       "VM_FAULT",
-      `Wasm record is outside memory (pointer=${String(pointer)}, unsigned=${String(unsignedPointer)}, length=${String(length)}, memory=${String(memory.buffer.byteLength)})`,
+      `Wasm record is outside memory (pointer=${String(pointer)}, length=${String(length)}, memory=${String(memory.buffer.byteLength)})`,
     );
   }
-  return new Uint8Array(memory.buffer, unsignedPointer, length);
+  return new Uint8Array(memory.buffer, pointer, length);
 }
 
+/**
+ * Calls a core export. Every export called through here returns `u32`: a status, count, length
+ * or pointer. Wasm hands an i32 result to JavaScript as a signed number, so the pointer of an
+ * allocation above 2 GiB, which a System machine with 2,048 MiB or more makes, arrives negative;
+ * this returns the unsigned value the export produced.
+ */
 export function callNumber(
   loaded: Pick<Core, "exports">,
   name: string,
@@ -663,10 +669,15 @@ export function callNumber(
     throw new VMError("CORE_LOAD_FAILED", `missing Wasm export ${name}`);
   }
   const result: unknown = Reflect.apply(operation, undefined, args);
-  if (typeof result !== "number") {
+  if (
+    typeof result !== "number" ||
+    !Number.isInteger(result) ||
+    result < -0x8000_0000 ||
+    result > 0xffff_ffff
+  ) {
     throw new VMError("VM_FAULT", `Wasm export ${name} returned invalid data`);
   }
-  return result;
+  return result >>> 0;
 }
 
 export function assertStatus(status: number): void {

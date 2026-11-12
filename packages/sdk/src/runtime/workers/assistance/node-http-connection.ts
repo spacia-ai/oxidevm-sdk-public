@@ -33,7 +33,7 @@ export function createHttpConnection(socket: NodeSocket, module: WebAssembly.Mod
       const incoming = createIncomingMessage(socket, head, () => { bodyBlocked = false; schedule(); }, context);
       current = incoming;
       if (head.upgrade) { upgrade = current; return; }
-      const response = new handlers.Response(socket, head, previous);
+      const response = new handlers.Response(socket, head, previous, incoming.message);
       responses.add(response); previous = response.completion;
       response.on("error", () => socket.destroy());
       void response.completion.then(() => {

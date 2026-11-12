@@ -19,15 +19,8 @@ export default defineConfig({
     rolldownOptions: {
       input: {
         bootstrap: fileURLToPath(new URL("./index.html", import.meta.url)),
-        "service-worker": fileURLToPath(new URL("./src/service-worker.ts", import.meta.url)),
-        websocket: fileURLToPath(new URL("./src/websocket.ts", import.meta.url)),
-        location: fileURLToPath(new URL("./src/location.ts", import.meta.url)),
       },
-      output: {
-        entryFileNames: (chunk) => chunk.name === "service-worker" ? "sw.js"
-          : chunk.name === "bootstrap" || chunk.name === "websocket" || chunk.name === "location" ? `${chunk.name}.js`
-            : "assets/[name]-[hash].js",
-      },
+      output: { entryFileNames: (chunk) => chunk.name === "bootstrap" ? "bootstrap.js" : "assets/[name]-[hash].js" },
     },
   },
   // Sessions run on <session>.localhost in development; the shared address over Tailscale is on .ts.net.

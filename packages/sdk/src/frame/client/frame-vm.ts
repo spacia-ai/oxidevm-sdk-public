@@ -1,4 +1,5 @@
 import { bindFrameOwner, type OwnedModuleCommands, type OwnedModules } from "../../vm-adapter.js";
+import { decodeExposeOptions, previewHandle } from "../../preview-routes.js";
 import { decodeAccelerationNotice } from "../../runtime/js-process/late-failure.js";
 import { decodeBytes } from "../../runtime/protocol/decoders.js";
 import { imageUpdateSignal } from "../../image-update.js";
@@ -70,6 +71,9 @@ function frameVM(channel: FrameChannel, description: VMDescription, page: string
   let disposal: Promise<void> | undefined;
   let image=description.image;
   const lifetime = new AbortController();
+  // Disposal begun: the preview handles refuse and end their watches from now on, as a local VM's do.
+  const disposing = new AbortController();
+  const previewLifetime = AbortSignal.any([disposing.signal, lifetime.signal]);
   const retireConnection=()=>{lifetime.abort();channel.close();release();};
   const call = <T>(operation: FrameOperation, request: FrameCall<T>): Promise<T> => {
     if (disposal !== undefined) return Promise.reject(new VMError("PROTOCOL_ERROR", "VM has been disposed"));
@@ -120,14 +124,21 @@ function frameVM(channel: FrameChannel, description: VMDescription, page: string
       const process = await spawn({ command: spec.command, ...(spec.args === undefined ? {} : { args: spec.args }), ...(spec.cwd === undefined ? {} : { cwd: spec.cwd }), ...(spec.env === undefined ? {} : { env: spec.env }), ...(spec.signal === undefined ? {} : { signal: spec.signal }) });
       return execProcess(process, { ...spec, maxOutputBytes: limit });
     },
-    exposePort: async (port: number, request?: { readonly signal?: AbortSignal }): Promise<PreviewHandle> => {
-      const preview = await call({ type: "exposePort", port }, { decode: decodePreview, signal: request?.signal });
-      return { port: preview.port, url: new URL(preview.url), isolation: preview.isolation, close: () => unit({ type: "preview.close", preview: preview.preview }) };
+    exposePort: async (port: number, request?: Parameters<VM["exposePort"]>[1]): Promise<PreviewHandle> => {
+      const exposure = decodeExposeOptions(request);
+      const preview = await call({ type: "exposePort", port, ...(exposure.siteAccess === undefined ? {} : { siteAccess: exposure.siteAccess }) }, { decode: decodePreview, signal: exposure.signal });
+      // The previews are framed by this page, so their blocked-site reports reach this window and never the frame.
+      return previewHandle({
+        port: preview.port, url: new URL(preview.url), isolation: preview.isolation, lifetime: previewLifetime,
+        setSiteAccess: (access, signal) => unit({ type: "preview.sites", preview: preview.preview, access }, signal),
+        close: () => unit({ type: "preview.close", preview: preview.preview }),
+      });
     },
     listeningPorts: (request?: { readonly signal?: AbortSignal }) => call({ type: "listeningPorts" }, { decode: decodeListeningPorts, signal: request?.signal }),
     watchListeningPorts: (listener: (ports: readonly ListeningPort[]) => void, request: { readonly signal: AbortSignal }) =>
       call({ type: "watchListeningPorts" }, { decode: decodeUnit, signal: request.signal, onAbort: "resolve", onEvent: event => { listener(decodeListeningPorts(event)); } }),
     dispose: () => {
+      disposing.abort();
       disposal ??= channel.request({ type: "dispose" }, { decode: decodeUnit }).finally(retireConnection);
       return disposal;
     },

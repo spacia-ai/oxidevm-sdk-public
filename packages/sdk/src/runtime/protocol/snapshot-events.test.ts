@@ -41,6 +41,24 @@ describe("restore point events", () => {
     }
   });
 
+  it("reads busy automatic save pauses with their cause, and still reads quota pauses", () => {
+    // Protocol 183 adds the busy pause.
+    expect(PROTOCOL_VERSION).toBe(183);
+    const busy = { type: "auto-save-paused", reason: "busy", cause: "js-process-active", retryInMilliseconds: 60_000 };
+    for (const event of [busy, { ...busy, cause: "not-quiesced", retryInMilliseconds: 900_000 }, { type: "auto-save-paused", reason: "quota", retryInMilliseconds: 60_000 }]) {
+      expect(decodeSnapshotEventMessage({ version: PROTOCOL_VERSION, event })).toEqual(event);
+    }
+    for (const event of [
+      { ...busy, cause: "tired" },
+      { ...busy, extra: 1 },
+      { type: "auto-save-paused", reason: "busy", retryInMilliseconds: 60_000 },
+      { type: "auto-save-paused", reason: "quota", cause: "js-process-active", retryInMilliseconds: 60_000 },
+      { ...busy, retryInMilliseconds: -1 },
+    ]) {
+      expect(() => decodeSnapshotEventMessage({ version: PROTOCOL_VERSION, event }), JSON.stringify(event)).toThrow(VMError);
+    }
+  });
+
   it("decodes the automatic save controls and the event port exactly", () => {
     const { port1, port2 } = new MessageChannel();
     const base = { id: 9, version: PROTOCOL_VERSION };

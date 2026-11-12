@@ -1,7 +1,9 @@
-// Reports the preview page's location to the Playground and obeys its back, forward and reload.
+// Reports the preview page's location and the other sites its CSP blocked to the Playground, and
+// obeys its back, forward and reload.
 // The worker injects this classic script into every proxied HTML page, ahead of the app's own
 // scripts and with the Playground's origin in data-oxidevm-parent, so the history wrappers see
 // every change the app makes.
+import { blockedSiteReporter } from "./blocked-sites";
 import { previewProgress } from "./progress";
 
 const LOCATION = "oxidevm-preview-location";
@@ -25,6 +27,10 @@ if (parentOrigin !== null && window.parent !== window) {
     replaceState(data, unused, url);
     report();
   };
+  const blocked = blockedSiteReporter(window.location.origin, (message) => { parent.postMessage(message, parentOrigin); });
+  document.addEventListener("securitypolicyviolation", (event) => {
+    blocked({ blockedURI: event.blockedURI, effectiveDirective: event.effectiveDirective });
+  }, true);
   window.addEventListener("popstate", report);
   window.addEventListener("hashchange", report);
   window.addEventListener("message", (event: MessageEvent<unknown>) => {

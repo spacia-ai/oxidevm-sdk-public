@@ -1,12 +1,21 @@
-import type { PreviewHandle, PreviewOptions } from "./contracts.js";
+import type { PreviewHandle, PreviewOptions, PreviewSiteAccess } from "./contracts.js";
 import type { RuntimeVM, PreviewHandle as RuntimePreviewHandle } from "./runtime/vm-types.js";
+import { exactKeys, record } from "./runtime/decode.js";
 import { VMError } from "./runtime/errors.js";
+import { requireUsableHandle, watchHandleBlockedSites, type PreviewHandleEnds } from "./preview-blocked-sites.js";
+import { decodePreviewSiteAccess } from "./preview-site-access.js";
 
 interface Route {
   readonly port: number;
   readonly controller: AbortController;
   readonly opening: Promise<RuntimePreviewHandle>;
   references: number;
+}
+
+/** `exposePort`'s options as the public layer decoded them; a site access is canonical. */
+export interface ExposeOptions {
+  readonly signal?: AbortSignal;
+  readonly siteAccess?: PreviewSiteAccess;
 }
 
 /** Browser route leases over the existing guest listener and transport owners. */
@@ -16,7 +25,8 @@ export class PreviewRoutes {
   #disposal: Promise<void> | undefined;
   constructor(readonly runtime: Pick<RuntimeVM, "listeningPorts" | "watchListeningPorts" | "exposePort">, readonly isolation: PreviewOptions["isolation"]) {}
 
-  async expose(port: number, signal?: AbortSignal): Promise<PreviewHandle> {
+  async expose(port: number, options: ExposeOptions = {}): Promise<PreviewHandle> {
+    const { signal, siteAccess } = options;
     if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new VMError("INVALID_ARGUMENT", "preview port must be an integer from 1 through 65535");
     if (this.#lifetime.signal.aborted) throw this.#disposed();
     if (signal?.aborted === true) throw new VMError("ABORTED", "preview admission was cancelled");
@@ -30,12 +40,19 @@ export class PreviewRoutes {
     }
     const owned = route; owned.references++;
     let handle: RuntimePreviewHandle;
-    try { handle = await admission(owned.opening, signal); }
-    catch (error) { await this.#release(owned); if (this.#isDisposed()) throw this.#disposed(); throw error; }
-    let closed = false;
-    return { port, url: handle.url, isolation: this.isolation, close: async () => {
-      if (closed) return; closed = true; await this.#release(owned);
-    } };
+    try {
+      handle = await admission(owned.opening, signal);
+      // Exposures of one port share its session and so its site access: one that names an access applies it to
+      // the session, where the last change wins, and resolves once it applied. The session opens without one, so
+      // a change that fails or is cancelled fails only the exposure that asked for it.
+      if (siteAccess !== undefined) await handle.setSiteAccess(siteAccess, signal === undefined ? {} : { signal });
+    } catch (error) { await this.#release(owned); if (this.#isDisposed()) throw this.#disposed(); throw error; }
+    const session = handle;
+    return previewHandle({
+      port, url: session.url, isolation: this.isolation, lifetime: this.#lifetime.signal,
+      setSiteAccess: (access, change) => session.setSiteAccess(access, change === undefined ? {} : { signal: change }),
+      close: () => this.#release(owned),
+    });
   }
 
   async #open(port: number, signal: AbortSignal): Promise<RuntimePreviewHandle> {
@@ -71,6 +88,73 @@ export class PreviewRoutes {
   }
   #disposed(): VMError { return new VMError("PROTOCOL_ERROR", "VM has been disposed"); }
   #isDisposed(): boolean { return this.#lifetime.signal.aborted; }
+}
+
+/** What a public preview handle stands on: its exposure, the VM's lifetime, and the owner of its session. */
+export interface PreviewHandleOwner {
+  readonly port: number;
+  readonly url: URL;
+  readonly isolation: PreviewOptions["isolation"];
+  /** Aborts when the VM's disposal begins. */
+  readonly lifetime: AbortSignal;
+  /** Applies a canonical site access to the session the exposure shares. */
+  setSiteAccess(access: PreviewSiteAccess, signal: AbortSignal | undefined): Promise<void>;
+  /** Releases the exposure; called at most once. */
+  close(): Promise<void>;
+}
+
+/**
+ * One exposure's public handle, for a local VM's routes and for a hosted frame's previews alike. It decodes what
+ * the application passes before anything is sent, refuses changes once closed (ABORTED) or once the VM's
+ * disposal began (PROTOCOL_ERROR), and watches the blocked sites the preview's pages report to this document.
+ */
+export function previewHandle(owner: PreviewHandleOwner): PreviewHandle {
+  const closed = new AbortController();
+  const ends: PreviewHandleEnds = { closed: closed.signal, lifetime: owner.lifetime };
+  return {
+    port: owner.port, url: owner.url, isolation: owner.isolation,
+    setSiteAccess: async (access, options) => {
+      const signal = signalOption(publicOptions(options, "setSiteAccess", ["signal"]), "setSiteAccess");
+      const canonical = decodePreviewSiteAccess(access, "INVALID_ARGUMENT");
+      requireUsableHandle(ends);
+      await owner.setSiteAccess(canonical, signal);
+    },
+    watchBlockedSites: (listener, options) => watchHandleBlockedSites(owner.url.origin, ends, listener, options),
+    close: async () => {
+      if (closed.signal.aborted) return;
+      closed.abort();
+      await owner.close();
+    },
+  };
+}
+
+/** The public `exposePort` options: at most an AbortSignal and a valid site access. */
+export function decodeExposeOptions(options: unknown): ExposeOptions {
+  const fields = publicOptions(options, "exposePort", ["signal", "siteAccess"]);
+  const signal = signalOption(fields, "exposePort");
+  const access = fields["siteAccess"];
+  return {
+    ...(signal === undefined ? {} : { signal }),
+    ...(access === undefined ? {} : { siteAccess: decodePreviewSiteAccess(access, "INVALID_ARGUMENT") }),
+  };
+}
+
+/** An optional options object with at most `keys`; INVALID_ARGUMENT for anything else. */
+function publicOptions(options: unknown, method: string, keys: readonly string[]): Readonly<Record<string, unknown>> {
+  if (options === undefined) return {};
+  try {
+    const fields = record(options, `${method} options`);
+    exactKeys(fields, [], keys);
+    return fields;
+  } catch (error) {
+    throw error instanceof VMError ? new VMError("INVALID_ARGUMENT", error.message) : error;
+  }
+}
+
+function signalOption(fields: Readonly<Record<string, unknown>>, method: string): AbortSignal | undefined {
+  const signal = fields["signal"];
+  if (signal === undefined || signal instanceof AbortSignal) return signal;
+  throw new VMError("INVALID_ARGUMENT", `${method} needs its signal to be an AbortSignal`);
 }
 
 function admission<T>(opening: Promise<T>, signal?: AbortSignal): Promise<T> {

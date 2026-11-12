@@ -3,6 +3,7 @@ import { serializeUnknownError, VMError } from "../../errors.js";
 import {
   type ControlRequest,
   type RestoredSnapshot,
+  type SaveReport,
   type SnapshotEventRecord,
   type SnapshotKind,
   type SnapshotRef,
@@ -119,21 +120,27 @@ export class SnapshotSession {
     this.#appData = validateAppData(data)?.slice();
   }
 
-  /** Saves the machine; the pages following its restore points hear the save start and end. */
-  capture(request: { readonly kind: SnapshotKind; readonly label?: string }): Promise<SaveOutcome> {
+  /**
+   * Saves the machine; `report` hears the save start and end: the pages following its restore
+   * points, unless automatic saves decide what they hear.
+   */
+  capture(
+    request: { readonly kind: SnapshotKind; readonly label?: string },
+    report: (event: SaveReport) => void = this.#machine.notify,
+  ): Promise<SaveOutcome> {
     return this.#exclusive(async () => {
       this.#machine.requireBooted();
       if (this.#bootError !== undefined) throw this.#bootError;
       const kind = request.kind;
-      this.#machine.notify({ type: "save-started", kind });
+      report({ type: "save-started", kind });
       const startedAt = this.#machine.now();
       try {
         const outcome = await this.#save(request);
         const durationMilliseconds = this.#machine.now() - startedAt;
-        this.#machine.notify({ type: "save-finished", kind, ...outcome, durationMilliseconds });
+        report({ type: "save-finished", kind, ...outcome, durationMilliseconds });
         return { ...outcome, durationMilliseconds };
       } catch (error) {
-        this.#machine.notify({ type: "save-failed", kind, error: serializeUnknownError(error) });
+        report({ type: "save-failed", kind, error: serializeUnknownError(error) });
         throw error;
       }
     });

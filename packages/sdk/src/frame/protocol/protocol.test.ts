@@ -26,7 +26,10 @@ function code(run: () => unknown): string {
 }
 
 it("rejects the previous frame protocol before it can drop trace requests", () => {
-  expect(FRAME_PROTOCOL_VERSION).toBe(18);
+  expect(FRAME_PROTOCOL_VERSION).toBe(19);
+  // Protocol 19 carries preview site access (ADR 0030); a protocol 18 frame would refuse exposePort's siteAccess and preview.sites.
+  expect(code(() => negotiateFrameProtocol({ kind: "oxidevm-runtime-ready", protocol: { min: 18, max: 18 } }))).toBe("FEATURE_NOT_AVAILABLE");
+  expect(code(() => decodeFrameConnectReply({ v: 18, type: "accepted", engineReleaseId: "b".repeat(64) }))).toBe("FEATURE_NOT_AVAILABLE");
   // Protocol 18 carries workspaceInUse; a protocol 17 frame would refuse the option and share one store across a site's pages.
   expect(code(() => negotiateFrameProtocol({ kind: "oxidevm-runtime-ready", protocol: { min: 17, max: 17 } }))).toBe("FEATURE_NOT_AVAILABLE");
   // Protocol 17 adds module operations (ADR 0028); a protocol 16 frame would refuse them.
@@ -64,7 +67,7 @@ describe("frame handshake", () => {
     // A frame of the previous release, which speaks only protocol 1, is refused before connecting.
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 1, max: 1 } }))).toBe("FEATURE_NOT_AVAILABLE");
     // Protocol 6 preserves byte progress and distinguishes checkpoint downloads.
-    expect(FRAME_PROTOCOL_VERSION).toBe(18);
+    expect(FRAME_PROTOCOL_VERSION).toBe(19);
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 9, max: 9 } }))).toBe("FEATURE_NOT_AVAILABLE");
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 8, max: 8 } }))).toBe("FEATURE_NOT_AVAILABLE");
     expect(code(() => negotiateFrameProtocol({ ...ready, protocol: { min: 7, max: 7 } }))).toBe("FEATURE_NOT_AVAILABLE");
@@ -204,6 +207,17 @@ describe("frame values", () => {
     const decoded = decodeSnapshotEvent(encodeSnapshotEvent({ type: "save-failed", kind: "automatic", error: new VMError("QUOTA_EXCEEDED", "full") }));
     expect(decoded.type === "save-failed" && decoded.error).toBeInstanceOf(VMError);
   });
+  it("frame protocol 19 carries busy automatic save pauses with their cause, and quota pauses as before", () => {
+    expect(FRAME_PROTOCOL_VERSION).toBe(19);
+    const busy = { type: "auto-save-paused", reason: "busy", cause: "not-quiesced", retryInMilliseconds: 60_000 } as const;
+    const quota = { type: "auto-save-paused", reason: "quota", retryInMilliseconds: 60_000 } as const;
+    expect(decodeSnapshotEvent(encodeSnapshotEvent(busy))).toEqual(busy);
+    expect(decodeSnapshotEvent(encodeSnapshotEvent({ ...busy, cause: "js-process-active" }))).toEqual({ ...busy, cause: "js-process-active" });
+    expect(decodeSnapshotEvent(encodeSnapshotEvent(quota))).toEqual(quota);
+    for (const invalid of [{ ...busy, cause: "tired" }, { ...busy, extra: true }, { type: "auto-save-paused", reason: "busy", retryInMilliseconds: 60_000 }]) {
+      expect(code(() => decodeSnapshotEvent(invalid))).toBe("PROTOCOL_ERROR");
+    }
+  });
   it("decodes every boot progress phase and rejects others", () => {
     expect(decodeBootProgress({ phase: "download", asset: "image", completedBytes: 1, totalBytes: null })).toMatchObject({ phase: "download" });
     expect(code(() => decodeBootProgress({ phase: "download", asset: "kernel", completedBytes: 1, totalBytes: 2 }))).toBe("PROTOCOL_ERROR");
@@ -228,6 +242,40 @@ it("frame protocol 15 carries common starts and Userspace cold-workspace details
   const start = { kind: "booted", reason: "first-start", workspaceDetails: details };
   expect(decodeVMDescription({ ...common, start })).toMatchObject({ mode: "userspace", start });
   expect(code(() => decodeVMDescription({ ...common, start: { ...start, workspaceDetails: { ...details, state: "bad" } } }))).toBe("PROTOCOL_ERROR");
+});
+
+describe("preview site access (frame protocol 19, ADR 0030)", () => {
+  const v = FRAME_PROTOCOL_VERSION;
+  it("decodes preview.sites and exposePort with siteAccess", () => {
+    expect(FRAME_PROTOCOL_VERSION).toBe(19);
+    expect(decodeFrameMessage(frameRequest(1, { type: "exposePort", port: 3000 }))).toEqual({ type: "exposePort", id: 1, port: 3000 });
+    // The frame decodes the page's access at its own boundary, into the canonical form.
+    expect(decodeFrameMessage({ v, id: 2, type: "exposePort", port: 3000, siteAccess: { kind: "sites", sites: ["B.example.com", "a.example.com"] } }))
+      .toEqual({ type: "exposePort", id: 2, port: 3000, siteAccess: { kind: "sites", sites: ["a.example.com", "b.example.com"] } });
+    expect(decodeFrameMessage(frameRequest(3, { type: "exposePort", port: 3000, siteAccess: { kind: "any" } }))).toEqual({ type: "exposePort", id: 3, port: 3000, siteAccess: { kind: "any" } });
+    expect(decodeFrameMessage(frameRequest(4, { type: "preview.sites", preview: 2, access: { kind: "none" } }))).toEqual({ type: "preview.sites", id: 4, preview: 2, access: { kind: "none" } });
+    expect(decodeFrameMessage({ v, id: 5, type: "preview.sites", preview: 0x7fff_ffff, access: { kind: "sites", sites: ["api.example.com:8443"] } }))
+      .toEqual({ type: "preview.sites", id: 5, preview: 0x7fff_ffff, access: { kind: "sites", sites: ["api.example.com:8443"] } });
+    for (const access of [{ kind: "sites", sites: ["localhost"] }, { kind: "sites", sites: "a.example.com" }, { kind: "all" }, "any", null]) {
+      expect(code(() => decodeFrameMessage({ v, id: 6, type: "preview.sites", preview: 1, access }))).toBe("PROTOCOL_ERROR");
+      expect(code(() => decodeFrameMessage({ v, id: 6, type: "exposePort", port: 3000, siteAccess: access }))).toBe("PROTOCOL_ERROR");
+    }
+    for (const preview of [0, 0x8000_0000, "1", 1.5]) {
+      expect(code(() => decodeFrameMessage({ v, id: 7, type: "preview.sites", preview, access: { kind: "any" } }))).toBe("PROTOCOL_ERROR");
+    }
+    // A protocol 18 page never sends these; its requests are refused whole.
+    expect(code(() => decodeFrameMessage({ v: 18, id: 8, type: "preview.sites", preview: 1, access: { kind: "any" } }))).toBe("PROTOCOL_ERROR");
+  });
+  it("refuses preview.sites with an extra key", () => {
+    expect(FRAME_PROTOCOL_VERSION).toBe(19);
+    const request = frameRequest(1, { type: "preview.sites", preview: 1, access: { kind: "any" } });
+    expect(code(() => decodeFrameMessage({ ...request, extra: true }))).toBe("PROTOCOL_ERROR");
+    expect(code(() => decodeFrameMessage({ ...request, siteAccess: { kind: "any" } }))).toBe("PROTOCOL_ERROR");
+    expect(code(() => decodeFrameMessage({ ...request, access: { kind: "any", sites: [] } }))).toBe("PROTOCOL_ERROR");
+    expect(code(() => decodeFrameMessage({ v, id: 1, type: "preview.sites", preview: 1 }))).toBe("PROTOCOL_ERROR");
+    expect(code(() => decodeFrameMessage({ v, id: 1, type: "preview.sites", access: { kind: "any" } }))).toBe("PROTOCOL_ERROR");
+    expect(code(() => decodeFrameMessage({ v, id: 1, type: "exposePort", port: 3000, siteAccess: { kind: "any" }, access: { kind: "any" } }))).toBe("PROTOCOL_ERROR");
+  });
 });
 
 describe("module operations (frame protocol 17, ADR 0028)", () => {

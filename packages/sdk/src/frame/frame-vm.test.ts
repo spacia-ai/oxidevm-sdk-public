@@ -1,11 +1,14 @@
 import {decodeSHA256} from "../values.js";
 import {VMError} from "../runtime/errors.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { UserspaceVM, BackupDestination, SystemSnapshots, SystemStart, ListeningPort } from "../contracts.js";
+import type { UserspaceVM, BackupDestination, BlockedPreviewSite, SystemSnapshots, SystemStart, ListeningPort, PreviewSiteAccess, VM } from "../contracts.js";
 import { PROCESS_STREAM_CREDIT } from "./protocol/process-io.js";
+import { frameRequest } from "./protocol/requests.js";
 import { closeChannels, connect, fakeProcess, fakeVM, readAll, rejection, snapshot } from "./frame-vm.test-support.js";
+import { blockedSiteReport, stubPageWindow } from "../preview-blocked-sites.test-support.js";
 
 afterEach(closeChannels);
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("runtime frame VM", () => {
   it("prepares the running image through the frame without disposing or recreating the session", async () => {
@@ -224,6 +227,117 @@ it("updates the hosted actual image only with the committed restore reply",async
  await client.snapshots.restore(snapshot.ref);expect(client.image).toEqual(image);
  vm.snapshots.restore=()=>Promise.reject(new VMError("STORAGE_ERROR","refused before publication"));
  await expect(client.snapshots.restore(snapshot.ref)).rejects.toMatchObject({code:"STORAGE_ERROR"});expect(client.image).toEqual(image);
+});
+
+describe("hosted previews", () => {
+  /** A frame VM whose previews record each exposure's site access, each change they get, and their closing. */
+  function previewVM() {
+    const { vm } = fakeVM();
+    const exposed: { readonly port: number; readonly siteAccess: PreviewSiteAccess | undefined }[] = [];
+    const changes: { readonly port: number; readonly access: PreviewSiteAccess }[] = [];
+    const closed: number[] = [];
+    const exposePort: VM["exposePort"] = (port, options) => {
+      exposed.push({ port, siteAccess: options?.siteAccess });
+      return Promise.resolve({
+        port, url: new URL(`https://${String(port).padStart(32, "0")}.preview.test/`), isolation: "per-session",
+        setSiteAccess: access => { changes.push({ port, access }); return Promise.resolve(); },
+        watchBlockedSites: () => Promise.reject(new VMError("PROTOCOL_ERROR", "reports reach the page, never the frame")),
+        close: () => { closed.push(port); return Promise.resolve(); },
+      });
+    };
+    return { vm: { ...vm, exposePort }, exposed, changes, closed };
+  }
+  /** The frame requests of `type` the page sent. */
+  const sentOf = (sent: readonly unknown[], type: string) => sent.filter(message => typeof message === "object" && message !== null && "type" in message && message.type === type);
+
+  it("setSiteAccess sends preview.sites for its preview id", async () => {
+    const previews = previewVM();
+    const { client, channel } = await connect(previews.vm);
+    const sent: unknown[] = [];
+    channel.port2.addEventListener("message", event => { sent.push(event.data); });
+    const first = await client.exposePort(3000);
+    const second = await client.exposePort(4000, { siteAccess: { kind: "sites", sites: ["API.example.com"] } });
+    expect(previews.exposed).toEqual([{ port: 3000, siteAccess: undefined }, { port: 4000, siteAccess: { kind: "sites", sites: ["api.example.com"] } }]);
+    expect(sentOf(sent, "exposePort")).toEqual([
+      { v: 19, id: expect.any(Number) as unknown, type: "exposePort", port: 3000 },
+      { v: 19, id: expect.any(Number) as unknown, type: "exposePort", port: 4000, siteAccess: { kind: "sites", sites: ["api.example.com"] } },
+    ]);
+    await second.setSiteAccess({ kind: "any" });
+    await first.setSiteAccess({ kind: "sites", sites: ["b.example.com", "A.example.com"] }, { signal: new AbortController().signal });
+    expect(sentOf(sent, "preview.sites")).toEqual([
+      { v: 19, id: expect.any(Number) as unknown, type: "preview.sites", preview: 2, access: { kind: "any" } },
+      { v: 19, id: expect.any(Number) as unknown, type: "preview.sites", preview: 1, access: { kind: "sites", sites: ["a.example.com", "b.example.com"] } },
+    ]);
+    expect(previews.changes).toEqual([{ port: 4000, access: { kind: "any" } }, { port: 3000, access: { kind: "sites", sites: ["a.example.com", "b.example.com"] } }]);
+    // A closed handle refuses changes in the page; closing twice sends one preview.close.
+    await second.close(); await second.close();
+    await expect(second.setSiteAccess({ kind: "none" })).rejects.toMatchObject({ code: "ABORTED" });
+    expect(previews.closed).toEqual([4000]);
+    expect(sentOf(sent, "preview.close")).toHaveLength(1);
+    expect(sentOf(sent, "preview.sites")).toHaveLength(2);
+    await first.close(); await client.dispose();
+  });
+
+  it("refuses an invalid site access in the page and an unknown preview id in the frame", async () => {
+    const previews = previewVM();
+    const { client, channel } = await connect(previews.vm);
+    const sent: unknown[] = [], replies: unknown[] = [];
+    channel.port2.addEventListener("message", event => { sent.push(event.data); });
+    channel.port1.addEventListener("message", event => { replies.push(event.data); });
+    expect((await rejection(client.exposePort(3000, { siteAccess: { kind: "sites", sites: ["localhost"] } }))).code).toBe("INVALID_ARGUMENT");
+    const handle = await client.exposePort(3000);
+    expect((await rejection(handle.setSiteAccess({ kind: "sites", sites: ["intranet"] }))).code).toBe("INVALID_ARGUMENT");
+    // @ts-expect-error a change takes only an AbortSignal option
+    expect((await rejection(handle.setSiteAccess({ kind: "any" }, { signal: true }))).code).toBe("INVALID_ARGUMENT");
+    expect(sentOf(sent, "exposePort")).toHaveLength(1);
+    expect(sentOf(sent, "preview.sites")).toEqual([]);
+    // The frame holds previews 1 and up by the ids it handed out; any other id is refused.
+    channel.port1.postMessage(frameRequest(9_000, { type: "preview.sites", preview: 7, access: { kind: "any" } }));
+    await vi.waitFor(() => { expect(replies).toContainEqual(expect.objectContaining({ id: 9_000, ok: false, error: expect.objectContaining({ code: "INVALID_ARGUMENT" }) as unknown })); });
+    expect(previews.changes).toEqual([]);
+    await handle.close(); await client.dispose();
+  });
+
+  it("refuses changes and new watches once disposal begins and ends running watches then, as a local VM does", async () => {
+    const page = stubPageWindow();
+    const previews = previewVM();
+    const finished = Promise.withResolvers<undefined>();
+    const { client } = await connect({ ...previews.vm, dispose: () => finished.promise });
+    const handle = await client.exposePort(3000);
+    const running = handle.watchBlockedSites(() => {}, { signal: new AbortController().signal });
+    const disposal = client.dispose();
+    await expect(running).resolves.toBeUndefined();
+    expect(page.listeners.size).toBe(0);
+    await expect(handle.watchBlockedSites(() => {}, { signal: new AbortController().signal })).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    await expect(handle.setSiteAccess({ kind: "any" })).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    finished.resolve(undefined); await disposal;
+    await expect(handle.watchBlockedSites(() => {}, { signal: new AbortController().signal })).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+    expect(previews.changes).toEqual([]);
+  });
+
+  it("watches blocked sites in the page that frames the preview, never in the frame", async () => {
+    const page = stubPageWindow();
+    const { client, channel } = await connect(previewVM().vm);
+    const sent: unknown[] = [];
+    channel.port2.addEventListener("message", event => { sent.push(event.data); });
+    const handle = await client.exposePort(3000), seen: BlockedPreviewSite[] = [];
+    const controller = new AbortController();
+    const watching = handle.watchBlockedSites(blocked => { seen.push(blocked); }, { signal: controller.signal });
+    page.post("https://other.preview.test", blockedSiteReport("api.example.com"));
+    page.post(handle.url.origin, blockedSiteReport("api.example.com", "image"));
+    expect(seen).toEqual([{ site: "api.example.com", directive: "image" }]);
+    controller.abort();
+    await expect(watching).resolves.toBeUndefined();
+    // A watch also ends with its handle.
+    const ending = handle.watchBlockedSites(() => {}, { signal: new AbortController().signal });
+    await handle.close();
+    await expect(ending).resolves.toBeUndefined();
+    expect(page.listeners.size).toBe(0);
+    // The frame was asked to expose and to close the preview, and nothing about its reports.
+    const types = sent.map(message => typeof message === "object" && message !== null && "type" in message ? message.type : undefined);
+    expect(types.filter(type => type !== "network.watch")).toEqual(["exposePort", "preview.close"]);
+    await client.dispose();
+  });
 });
 
 it("preserves explicit stable process keys on initial and restored handles",async()=>{

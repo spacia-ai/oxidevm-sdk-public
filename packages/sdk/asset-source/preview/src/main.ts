@@ -3,6 +3,7 @@
 // grants a fresh one whenever the worker asks or a ping finds it without one.
 import { decodeKeeperBootstrap, Keeper, REPLY_MS, registrationFailure, type KeeperFailure } from "./keeper";
 import { registerPreviewWorker } from "./keeper-worker";
+import { decodeSiteAccess } from "./site-access";
 
 const bootstrap = decodeKeeperBootstrap(location.search, location);
 const { session, parentOrigin } = bootstrap;
@@ -31,11 +32,27 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
   if (event.origin !== parentOrigin || event.source !== owner) return;
   const message = event.data;
   if (isKind(message, "oxidevm-preview-retire") && message["session"] === session) keeper.retire();
+  else if (isKind(message, "oxidevm-preview-sites")) void relaySites(message);
 });
 
 await keeper.attach();
 owner.postMessage({ kind: "oxidevm-preview-ready", session }, parentOrigin);
 await keeper.run();
+
+/** Hands the owner's site access to the worker and tells the owner the outcome; a malformed
+ * message, another session or a revision out of range is ignored, as any other malformed message. */
+async function relaySites(message: Record<string, unknown>): Promise<void> {
+  const keys = Object.keys(message);
+  const revision = message["revision"];
+  const access = decodeSiteAccess(message["access"]);
+  if (keys.length !== 4 || !["kind", "session", "revision", "access"].every((key) => keys.includes(key))
+    || message["session"] !== session || typeof revision !== "number" || !Number.isInteger(revision)
+    || revision < 1 || revision > 0x7fff_ffff || access === null) return;
+  const result = await keeper.setSiteAccess(revision, access);
+  owner.postMessage(result === "applied"
+    ? { kind: "oxidevm-preview-sites-applied", session, revision }
+    : { kind: "oxidevm-preview-sites-refused", session, revision, reason: result }, parentOrigin);
+}
 
 /** Tells the owner at once why this session cannot open, instead of letting it wait. */
 function fail(reason: KeeperFailure): void {

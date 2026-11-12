@@ -43,6 +43,8 @@ import { validateDependencyPreparation, validateSpawnSpec } from "./vm-options.j
 import type { AssistanceFrontEnd, AssistanceFrontEndFactory } from "./assistance-front-end.js";
 import { openPreviewSession } from "./preview-session.js";
 import type { PreviewKeeperHost } from "./preview-keeper.js";
+import type { PreviewSiteAccess } from "../contracts.js";
+import { watchHandleBlockedSites } from "../preview-blocked-sites.js";
 
 const SYSTEM_READ_AOT_TRAINING = Symbol.for("oxidevm.internal.system-read-aot-training");
 
@@ -632,7 +634,7 @@ class BrowserRuntimeVM implements RuntimeVM {
   /** One preview session per exposed port on its own origin. Browser requests reach the
    * assisted listener through Linux loopback inside its own task; the handle
    * resolves only once that origin's Service Worker holds the transport. */
-  exposePort(port: number, options?: { readonly signal?: AbortSignal }): Promise<PreviewHandle> {
+  exposePort(port: number, options?: { readonly signal?: AbortSignal; readonly siteAccess?: PreviewSiteAccess }): Promise<PreviewHandle> {
     if (!Number.isInteger(port) || port < 1 || port > 65_535) {
       return Promise.reject(new VMError("INVALID_ARGUMENT", "preview port must be an integer from 1 through 65535"));
     }
@@ -647,10 +649,16 @@ class BrowserRuntimeVM implements RuntimeVM {
     }
     if (this.#previews.has(port)) return Promise.reject(new VMError("INVALID_ARGUMENT", "This port already has an active preview session"));
     // Closing frees the VM for the next session at once; the old one finishes closing on its own.
-    const opening = openPreviewSession({ previewOrigin, isolation: this.#previewIsolation, ...(this.#previewKeeperHost === undefined ? {} : { host: this.#previewKeeperHost }), runtime: "system", port, network, signal: AbortSignal.any([this.#disposing.signal, ...(options?.signal === undefined ? [] : [options.signal])]) }).then(handle => ({
-      url: handle.url,
-      close: () => { if (this.#previews.get(port) === opening) this.#previews.delete(port); return handle.close(); },
-    }));
+    const opening = openPreviewSession({ previewOrigin, isolation: this.#previewIsolation, ...(this.#previewKeeperHost === undefined ? {} : { host: this.#previewKeeperHost }), runtime: "system", port, network,
+      ...(options?.siteAccess === undefined ? {} : { siteAccess: options.siteAccess }), signal: AbortSignal.any([this.#disposing.signal, ...(options?.signal === undefined ? [] : [options.signal])]) }).then((session): PreviewHandle => {
+      const closed = new AbortController(), ends = { closed: closed.signal, lifetime: this.#disposing.signal };
+      return {
+        url: session.url,
+        setSiteAccess: (access, request) => session.setSiteAccess(access, request),
+        watchBlockedSites: (listener, request) => watchHandleBlockedSites(session.url.origin, ends, listener, request),
+        close: () => { closed.abort(); if (this.#previews.get(port) === opening) this.#previews.delete(port); return session.close(); },
+      };
+    });
     this.#previews.set(port, opening);
     opening.catch(() => { if (this.#previews.get(port) === opening) this.#previews.delete(port); });
     return opening;

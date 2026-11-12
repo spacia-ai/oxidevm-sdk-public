@@ -2,6 +2,7 @@ import { Buffer } from "buffer";
 import type { Writable } from "readable-stream";
 import { HttpOutgoing, framingLength, failureOf, headerName, headerValue, headerEntries, items } from "./node-http-outgoing.js";
 import type { AsyncContext } from "./async-context.js";
+import type { IncomingMessage } from "./node-http-incoming.js";
 import { bindAsyncEvents, bindAsyncWritable, isEventListener, streamError } from "./node-streams.js";
 
 type Request = { readonly method: string; readonly major: number; readonly minor: number; readonly keepAlive: boolean };
@@ -22,6 +23,8 @@ class HttpResponse extends HttpOutgoing {
   strictContentLength = false;
   shouldKeepAlive: boolean;
   readonly socket: Writable & { setTimeout?(duration: unknown): unknown };
+  /** The request this response answers, as Node's `response.req`; set for every response a connection parses. */
+  readonly req: IncomingMessage | undefined;
   readonly completion: Promise<void>;
   readonly #context: AsyncContext;
   readonly #request: Request;
@@ -35,7 +38,7 @@ class HttpResponse extends HttpOutgoing {
   #written = 0;
   #completed = false;
 
-  constructor(context: AsyncContext, socket: Writable, request: Request, previous: Promise<void>) {
+  constructor(context: AsyncContext, socket: Writable, request: Request, previous: Promise<void>, message: IncomingMessage | undefined) {
     super({ highWaterMark: 65536, autoDestroy: true,
       write: (chunk, _encoding, done) => { void this.#write(chunk).then(() => done(), (error: unknown) => done(streamError(error))); },
       final: done => { void this.#finish().then(() => done(), (error: unknown) => done(streamError(error))); },
@@ -47,7 +50,7 @@ class HttpResponse extends HttpOutgoing {
         done(error);
       },
     });
-    this.#context = context; this.socket = socket; this.#request = request; this.#previous = previous;
+    this.#context = context; this.socket = socket; this.#request = request; this.#previous = previous; this.req = message;
     this.shouldKeepAlive = request.keepAlive;
     this.completion = this.#done.promise;
     void this.completion.catch(() => undefined);
@@ -148,10 +151,10 @@ class HttpResponse extends HttpOutgoing {
 }
 
 export function createHttpResponses(context: AsyncContext): {
-  readonly ServerResponse: new (socket: Writable, request: Request, previous?: Promise<void>) => HttpResponse;
+  readonly ServerResponse: new (socket: Writable, request: Request, previous?: Promise<void>, message?: IncomingMessage) => HttpResponse;
   readonly STATUS_CODES: Readonly<Record<number, string>>;
 } {
   return { ServerResponse: class extends HttpResponse {
-    constructor(socket: Writable, request: Request, previous = Promise.resolve()) { super(context, socket, request, previous); }
+    constructor(socket: Writable, request: Request, previous = Promise.resolve(), message?: IncomingMessage) { super(context, socket, request, previous, message); }
   }, STATUS_CODES: reasons };
 }

@@ -35,7 +35,11 @@ RUN mkdir -p /rootfs && tar -xzf /python-inputs/docs-python-rootfs.tar.gz -C /ro
  && rm -rf /rootfs/usr/lib/python3.12/site-packages/bin \
  && find /rootfs/usr/lib/python3.12/site-packages -name '*.a' -delete \
  && find /rootfs/usr/lib/python3.12/site-packages -name direct_url.json -delete \
- && PYTHONPATH= /usr/bin/python3 -m compileall -q -f --invalidation-mode checked-hash -s /rootfs -p / /rootfs/usr/lib/python3.12/site-packages \
+ && PYTHONPATH= /usr/bin/python3 -m compileall -q -f --invalidation-mode unchecked-hash -x '/config-3\.12-x86_64-linux-musl/' \
+    -s /rootfs -p / /rootfs/usr/lib/python3.12 \
+ && mkdir -m 755 /rootfs/usr/share /rootfs/usr/share/zoneinfo \
+ && ln -s ../../lib/python3.12/site-packages/pytz/zoneinfo/UTC /rootfs/usr/share/zoneinfo/UTC \
+ && test -f /rootfs/usr/share/zoneinfo/UTC \
  && ! find /rootfs -name '*quadmath*' -o -name '*gfortran*' -o -name '*openblas*' | grep .
 FROM scratch
 COPY --from=build /rootfs/ /
