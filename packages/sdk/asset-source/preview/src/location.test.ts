@@ -13,6 +13,7 @@ async function load(options: { readonly top?: boolean; readonly parentAttribute?
   const posted: Posted[] = [];
   const calls: string[] = [];
   const listeners = new Map<string, ((event: unknown) => void)[]>();
+  const documentListeners = new Map<string, { readonly listener: (event: unknown) => void; readonly capture: boolean }>();
   let paint = (): void => { throw new Error("Paint observation did not start"); };
   let observed: unknown;
   let disconnected = false;
@@ -25,7 +26,7 @@ async function load(options: { readonly top?: boolean; readonly parentAttribute?
     disconnect(): void { disconnected = true; }
   }
   const parent = { postMessage: (message: unknown, origin: string) => { posted.push({ message, origin }); } };
-  const location = { href: PAGE, reload: () => { calls.push("reload"); } };
+  const location = { href: PAGE, origin: new URL(PAGE).origin, reload: () => { calls.push("reload"); } };
   const move = (url: string | URL | null | undefined): void => {
     if (url !== null && url !== undefined) location.href = new URL(url, location.href).href;
   };
@@ -43,7 +44,12 @@ async function load(options: { readonly top?: boolean; readonly parentAttribute?
   if (options.top === true) page.parent = page;
   const attribute = options.parentAttribute === undefined ? PARENT : options.parentAttribute;
   vi.stubGlobal("window", page);
-  vi.stubGlobal("document", { currentScript: attribute === null ? null : { dataset: { oxidevmParent: attribute } } });
+  vi.stubGlobal("document", {
+    currentScript: attribute === null ? null : { dataset: { oxidevmParent: attribute } },
+    addEventListener: (type: string, listener: (event: unknown) => void, capture?: boolean) => {
+      documentListeners.set(type, { listener, capture: capture === true });
+    },
+  });
   vi.stubGlobal("crypto", { randomUUID: () => DOCUMENT });
   vi.stubGlobal("PerformanceObserver", PaintObserver);
   vi.resetModules();
@@ -56,7 +62,7 @@ async function load(options: { readonly top?: boolean; readonly parentAttribute?
     if (typeof target !== "function") throw new TypeError(`history.${method} is missing`);
     Reflect.apply(target, page.history, [null, "", url]);
   };
-  return { page, parent, posted, calls, fire, call, paint: () => { paint(); }, observation: () => ({ observed, disconnected }) };
+  return { page, parent, posted, calls, fire, documentListeners, call, paint: () => { paint(); }, observation: () => ({ observed, disconnected }) };
 }
 
 const reported = (href: string): Posted => ({ message: { type: "oxidevm-preview-location", href }, origin: PARENT });
@@ -66,6 +72,17 @@ afterEach(() => {
 });
 
 describe("location.js", () => {
+  it("reports blocked sites to the parent from a capturing securitypolicyviolation listener", async () => {
+    const { posted, documentListeners } = await load();
+    const entry = documentListeners.get("securitypolicyviolation");
+    expect(entry?.capture).toBe(true);
+    entry?.listener({ blockedURI: "https://api.open-meteo.com/a", effectiveDirective: "connect-src" });
+    expect(posted.at(-1)).toEqual({
+      message: { type: "oxidevm-preview-blocked-site", version: 1, site: "api.open-meteo.com", directive: "connect" },
+      origin: PARENT,
+    });
+  });
+
   it("reports the location on load, pushState, replaceState, popstate and hashchange", async () => {
     const { page, posted, fire, call } = await load();
     call("pushState", "/dashboard");

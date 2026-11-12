@@ -5,7 +5,7 @@ import type { UserspaceImageRecipe } from "@oxidevm/sdk/image-builder";
 const packFirst = readFileSync(new URL("pack-first.txt", import.meta.url), "utf8").split("\n").filter(line => line !== "" && !line.startsWith("#"));
 
 export default {
-  mode: "userspace", id: "oxidevm-starter-pandas", version: "0.0.2",
+  mode: "userspace", id: "oxidevm-starter-pandas", version: "0.0.3",
   sourceDateEpoch: 1792886400,
   source: { kind: "dockerfile", context: ".", file: "Dockerfile" },
   resources: { memoryMiB: 1536 },

@@ -13,8 +13,29 @@ image maintainers only. Keep signing keys outside Git and package archives.
 
 | Version | Author key | Delivery packs |
 | --- | --- | --- |
+| 0.0.3 | `ed25519-d753cdd5739b36c670441766e2c08ea8` | The files in `pack-first.txt` first, then the rest by path |
 | 0.0.2 | `ed25519-d753cdd5739b36c670441766e2c08ea8` | The files in `pack-first.txt` first, then the rest by path |
 | 0.0.1 | `ed25519-07c107e31f3b392da4a9cbfdf7e155d7` | Files in blob digest order |
+
+0.0.3 is 0.0.2's root tree after the last two steps of the Dockerfile's build
+stage. No component changed, so its notices and corresponding sources are those
+of 0.0.2; its SBOM lists the new bytecode checksums and the new link.
+
+- All Python bytecode is unchecked-hash, so an import loads a module's `.pyc`
+  without reading its `.py` source to validate it. Each of the 1,035 rewritten
+  files differs from 0.0.2's only in the four flag bytes of its header. An edit
+  to a `.py` file the image ships has no effect while its `.pyc` exists;
+  packages installed later compile their own bytecode.
+- `/usr/share/zoneinfo/UTC` links to pytz's UTC zone file. `import pandas` asks
+  dateutil for UTC, and without a system zone file dateutil unpacks and parses
+  its whole bundled zone archive. pytz's file is byte-identical to that
+  archive's UTC, and every other zone still comes from the archive, as in 0.0.2.
+  Do not link tzdata's zone files instead: they are slim TZif files, and
+  dateutil 2.9 reads every zone in them as offset zero with no name.
+
+In the browser, `import pandas` retires 1,368 M guest instructions instead of
+2,014 M, and a cold first `import pandas` downloads 15 delivery packs instead of
+20.
 
 0.0.2 contains exactly the files of 0.0.1. It has the same root tree and is
 built from the same source archive (SHA-256

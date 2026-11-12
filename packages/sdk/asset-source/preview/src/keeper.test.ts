@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { decodeKeeperBootstrap, Keeper, registrationFailure, type KeeperEnvironment } from "./keeper";
+import { decodeKeeperBootstrap, Keeper, REPLY_MS, registrationFailure, type KeeperEnvironment } from "./keeper";
+import type { SiteAccess } from "./site-access";
 
 const SESSION = "0123456789abcdef0123456789abcdef";
 const OTHER = "fedcba9876543210fedcba9876543210";
@@ -10,7 +11,7 @@ const BOOTSTRAP = { session: SESSION, parentOrigin: "http://localhost:5173", iso
 interface Pong { readonly attached: boolean; readonly retired: boolean }
 
 /** A worker that acknowledges every attach and answers pings from a script. */
-function fakeEnvironment(pongs: Pong[] = [], answer = "attached"): KeeperEnvironment & { readonly received: unknown[]; requested: number } {
+function fakeEnvironment(pongs: Pong[] = [], answer = "attached", siteReply: ((revision: unknown) => unknown) | null = (revision) => ({ kind: "sites-applied", session: SESSION, revision })): KeeperEnvironment & { readonly received: unknown[]; requested: number } {
   const received: unknown[] = [];
   const environment = {
     received,
@@ -23,6 +24,7 @@ function fakeEnvironment(pongs: Pong[] = [], answer = "attached"): KeeperEnviron
         const acknowledgement = message.acknowledgement;
         if (!(acknowledgement instanceof MessagePort)) return;
         if (message.kind === "attach") acknowledgement.postMessage({ kind: answer, session: SESSION });
+        if (message.kind === "sites" && siteReply !== null && "revision" in message) acknowledgement.postMessage(siteReply(message.revision));
         if (message.kind === "ping") acknowledgement.postMessage({ kind: "pong", session: SESSION, ...(pongs.shift() ?? { attached: true, retired: true }) });
       },
     }),
@@ -87,6 +89,93 @@ describe("Keeper", () => {
     await new Keeper(BOOTSTRAP, environment).run();
     expect(environment.requested).toBe(1);
     expect(kinds(environment.received)).toEqual(["ping", "attach", "ping"]);
+  });
+});
+
+describe("Keeper site access", () => {
+  const ANY: SiteAccess = { kind: "any" };
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("setSiteAccess posts sites to the worker and resolves applied on its acknowledgement", async () => {
+    const environment = fakeEnvironment();
+    await expect(new Keeper(BOOTSTRAP, environment).setSiteAccess(3, ANY)).resolves.toBe("applied");
+    expect(environment.received).toEqual([expect.objectContaining({ kind: "sites", session: SESSION, revision: 3, access: ANY })]);
+  });
+
+  it.each(["stale", "retired"] as const)("resolves %s when the worker refuses", async (reason) => {
+    const environment = fakeEnvironment([], "attached", (revision) => ({ kind: "sites-refused", session: SESSION, revision, reason }));
+    await expect(new Keeper(BOOTSTRAP, environment).setSiteAccess(3, ANY)).resolves.toBe(reason);
+  });
+
+  it("no acknowledgement within REPLY_MS resolves no-worker", async () => {
+    vi.useFakeTimers();
+    const keeper = new Keeper(BOOTSTRAP, fakeEnvironment([], "attached", null));
+    const result = keeper.setSiteAccess(3, ANY);
+    await vi.advanceTimersByTimeAsync(REPLY_MS);
+    await expect(result).resolves.toBe("no-worker");
+  });
+
+  it("resolves no-worker without a worker", async () => {
+    const environment = { ...fakeEnvironment(), worker: () => null };
+    await expect(new Keeper(BOOTSTRAP, environment).setSiteAccess(3, ANY)).resolves.toBe("no-worker");
+  });
+
+  it("ignores an acknowledgement for another revision or session", async () => {
+    vi.useFakeTimers();
+    const wrong = [{ kind: "sites-applied", session: SESSION, revision: 2 }, { kind: "sites-applied", session: OTHER, revision: 3 }, "applied"];
+    for (const reply of wrong) {
+      const result = new Keeper(BOOTSTRAP, fakeEnvironment([], "attached", () => reply)).setSiteAccess(3, ANY);
+      await vi.advanceTimersByTimeAsync(REPLY_MS);
+      await expect(result).resolves.toBe("no-worker");
+    }
+  });
+
+  it("a re-attach sends the last site access before and after attaching", async () => {
+    const environment = fakeEnvironment();
+    const keeper = new Keeper(BOOTSTRAP, environment);
+    const access: SiteAccess = { kind: "sites", sites: ["a.example"] };
+    await keeper.setSiteAccess(4, access);
+    environment.received.length = 0;
+    await keeper.attach();
+    expect(kinds(environment.received)).toEqual(["sites", "attach", "sites"]);
+    expect(environment.received[0]).toEqual(expect.objectContaining({ kind: "sites", session: SESSION, revision: 4, access }));
+    expect(environment.received[2]).toEqual(expect.objectContaining({ kind: "sites", session: SESSION, revision: 4, access }));
+  });
+
+  it("a failed attach sends the last site access only before attaching", async () => {
+    const environment = fakeEnvironment([], "retired");
+    const keeper = new Keeper(BOOTSTRAP, environment);
+    await keeper.setSiteAccess(4, ANY);
+    environment.received.length = 0;
+    await expect(keeper.attach()).rejects.toThrow("preview session retired");
+    expect(kinds(environment.received)).toEqual(["sites", "attach"]);
+  });
+
+  it("a re-attach before any site access sends none", async () => {
+    const environment = fakeEnvironment();
+    await new Keeper(BOOTSTRAP, environment).attach();
+    expect(kinds(environment.received)).toEqual(["attach"]);
+  });
+
+  it("does not let an older revision replace the remembered one", async () => {
+    const environment = fakeEnvironment();
+    const keeper = new Keeper(BOOTSTRAP, environment);
+    await keeper.setSiteAccess(5, ANY);
+    await keeper.setSiteAccess(2, { kind: "none" });
+    environment.received.length = 0;
+    await keeper.attach();
+    expect(kinds(environment.received)).toEqual(["sites", "attach", "sites"]);
+    expect(environment.received[0]).toEqual(expect.objectContaining({ revision: 5, access: ANY }));
+    expect(environment.received[2]).toEqual(expect.objectContaining({ revision: 5, access: ANY }));
+  });
+
+  it("a retired keeper resolves retired without posting", async () => {
+    const environment = fakeEnvironment();
+    const keeper = new Keeper(BOOTSTRAP, environment);
+    keeper.retire();
+    environment.received.length = 0;
+    await expect(keeper.setSiteAccess(3, ANY)).resolves.toBe("retired");
+    expect(environment.received).toEqual([]);
   });
 });
 

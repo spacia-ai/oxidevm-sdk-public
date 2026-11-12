@@ -1,4 +1,5 @@
 import type { CommandInterceptorRecord } from "../command-interceptors.js";
+import type { BlockedPreviewSite, PreviewSiteAccess } from "../contracts.js";
 import type {ShippedSnapshotRef} from "../shipped-snapshot.js";
 import type {PreparedImageIdentity} from "./protocol/storage.js";
 import type { UserspaceWorkspaceStart } from "./protocol/workspace-start.js";
@@ -151,6 +152,25 @@ export interface DependencyInstallHandle extends ProcessHandle {
 
 export interface PreviewHandle {
   readonly url: URL;
+  /**
+   * Sets the sites the session's pages may reach besides their own origin (ADR 0030), for pages
+   * loaded after it resolves: once the session origin's Service Worker applied it. Rejects with
+   * INVALID_ARGUMENT for an invalid access, ABORTED after `close` or when the keeper reports the
+   * session retired, PROTOCOL_ERROR when it reports the revision stale, RELAY_ERROR when no worker
+   * took it, including a change left unanswered for 10 s by a keeper that answered an earlier one
+   * (`reason` "no-answer"), and FEATURE_NOT_AVAILABLE (`reason` "preview-host-outdated") when the
+   * preview host leaves the change unanswered for 10 s and has answered none before.
+   */
+  setSiteAccess(access: PreviewSiteAccess, options?: { readonly signal?: AbortSignal }): Promise<void>;
+  /**
+   * Calls `listener` once for each other site, at most 64, that a page of this preview framed by this document
+   * reports its policy blocked. Reports come from the preview page, so they are untrusted and grant nothing.
+   * Resolves when `signal` aborts, the handle closes or the VM's disposal begins. Rejects with INVALID_ARGUMENT
+   * without a listener function and exactly an AbortSignal option; with ABORTED after `close`; with PROTOCOL_ERROR when
+   * started while the VM is disposing, and with ABORTED once disposal finished, because disposal closes the handle;
+   * and with the listener's error if it throws.
+   */
+  watchBlockedSites(listener: (blocked: BlockedPreviewSite) => void, options: { readonly signal: AbortSignal }): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -291,7 +311,8 @@ export interface RuntimeVM {
   moduleCommands?(request: ModuleCommandsRequest, options?: { readonly signal?: AbortSignal }): Promise<ModuleCommandsResult>;
   /** Requires an admitted system build and an implemented guest preparation capability. */
   prepareDependencies(options?: DependencyPreparationOptions): Promise<DependencyInstallHandle>;
-  exposePort(port: number, options?: { readonly signal?: AbortSignal }): Promise<PreviewHandle>;
+  /** With a `siteAccess` other than none, the handle resolves once the session's worker applied it. */
+  exposePort(port: number, options?: { readonly signal?: AbortSignal; readonly siteAccess?: PreviewSiteAccess }): Promise<PreviewHandle>;
   /** The TCP ports apps in the VM listen on, lowest first (at most 256). In System mode the guest
    * agent reports them; FEATURE_NOT_AVAILABLE with `reason` "image-update-required" when the
    * image's agent cannot (no capability 64), or "agent-not-ready" before the agent greets. */

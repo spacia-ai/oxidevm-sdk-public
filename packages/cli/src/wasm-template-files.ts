@@ -268,7 +268,7 @@ const MANUAL_TRIGGER = "on:\n  workflow_dispatch:\n";
  * The Playwright version \`oxidevm wasm test\` drives, which is the SDK's own dependency. The template declares the same
  * version so \`pnpm exec playwright install\` fetches the browser build that version expects; a test keeps them equal.
  */
-export const TEMPLATE_PLAYWRIGHT = "1.61.1";
+export const TEMPLATE_PLAYWRIGHT = "1.64.0";
 
 export function ciWorkflow(manual: boolean): string {
   const trigger = manual ? MANUAL_TRIGGER : "on:\n  push:\n    branches: [main]\n  pull_request:\n";

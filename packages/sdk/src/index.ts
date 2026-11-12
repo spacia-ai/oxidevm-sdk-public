@@ -11,3 +11,4 @@ export { VMError } from "./runtime/errors.js";
 export type { VMErrorCode } from "./runtime/errors.js";
 export type * from "./contracts.js";
 export {requestWorkspaceHandoff} from "./workspace-handoff.js";
+export { previewSite, MAX_PREVIEW_SITES } from "./preview-site-access.js";

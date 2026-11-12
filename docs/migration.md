@@ -501,3 +501,80 @@ private alpha, released with the module networking changes above.
   copies the VM already checked. A hand-written fake `HostArtifacts` in an
   adapter's unit tests needs the two members; `testHost` serves them from the
   artifact bytes it is given.
+
+## Preview site access
+
+A preview page now reaches only its own session origin. Some ways a page can reach
+another site are outside its policy, such as navigation (links, form submissions —
+there is no `form-action` directive — and `window.open`), WebRTC and DNS prefetch
+hints. One preview host serves every SDK version, so once the preview host's
+assets are updated this default applies to every SDK version's previews at once.
+The page policy's `connect-src` was `'self' ws: wss:`, which let a socket from the
+page, such as one a worker of the page opened, reach any host; it is now `'self'`.
+A preview page that opened `ws:` or `wss:` sockets to another host stops reaching
+it until the embedding application allows the site with
+`exposePort(port, { siteAccess })` or `PreviewHandle.setSiteAccess` (see the
+[API reference](api.md#preview-site-access)). An allowed site also admits the
+page's `fetch`, scripts, styles, fonts, images, media and frames from it, which
+the policy never admitted before. The page's `WebSocket` constructor still
+bridges a socket to the page's own host to the guest's server. For another host
+it used to throw `SecurityError`; now it opens the browser's own WebSocket, which
+the policy decides: only an allowed `wss:` site connects, and `ws:` to another
+host never does. Requests that the guest's own server makes still need
+`vm.network`.
+
+What changed for code:
+
+- `@oxidevm/sdk` adds `PreviewHandle.setSiteAccess(access, { signal? })`,
+  `PreviewHandle.watchBlockedSites(listener, { signal })`, the `siteAccess`
+  option of `exposePort`, `previewSite`, `MAX_PREVIEW_SITES` and the types
+  `PreviewSiteAccess` and `BlockedPreviewSite`. A hand-written `PreviewHandle`,
+  such as a test double, adds the two methods.
+- `exposePort` validates its options: `null`, a value that is not an object and
+  any key other than `signal` and `siteAccess` reject with `INVALID_ARGUMENT`.
+  Earlier releases ignored them.
+- The diagnostics `PreviewHandle` (`@oxidevm/sdk/diagnostics`, what
+  `RuntimeVM.exposePort` returns) gains a required `setSiteAccess` and a required
+  `watchBlockedSites`, and `RuntimeVM.exposePort` accepts `siteAccess`. Code that
+  implements either adds them. The diagnostics watch behaves as the public one,
+  except that a watch started after disposal rejects with `ABORTED`, because
+  disposal closes the VM's preview handles; while disposal runs, it rejects with
+  `PROTOCOL_ERROR`, as the public one does.
+- The runtime frame protocol is version 19. A page and the hosted runtime frame
+  always share one SDK version (`https://run.oxidevm.dev/v/<sdk-version>/`), so
+  this needs no change of its own.
+- Update self-hosted preview assets with the SDK or before it. Against older
+  assets, any access other than `{ kind: "none" }` rejects after 10 s with
+  `FEATURE_NOT_AVAILABLE` and `detail.reason: "preview-host-outdated"` (see the
+  [deployment guide](deployment.md#preview-host)).
+
+## Automatic save pauses
+
+An automatic save the VM refuses as busy no longer reports `save-failed`. The
+VM refuses a save while a JS process lives, and while Linux cannot quiesce for a
+checkpoint. Automatic saves then pause and report `auto-save-paused` with
+`reason: "busy"`. They report it again when its cause changes, or after they
+report another event or any save succeeds. Their timed retry comes after one
+minute, doubling up to fifteen. Other failed automatic saves still report
+`save-failed`; each failure in a row now doubles the interval from two minutes
+up to fifteen. A successful save starts both back-offs over (see the
+[API reference](api.md#vm-restore-points)).
+
+What changed for code:
+
+- `SnapshotEvent` gains `{ type: "auto-save-paused"; reason: "busy"; cause:
+  "js-process-active" | "not-quiesced"; retryInMilliseconds: number }` beside
+  the `reason: "quota"` pause. A `switch` on `type` already has the
+  `auto-save-paused` case, so TypeScript reports nothing: check `reason`
+  wherever a pause was taken to mean that storage is full.
+- An automatic `save-started` can now end with `auto-save-paused` instead of
+  `save-finished` or `save-failed`: the first busy refusal reports
+  `save-started`, then `auto-save-paused`. A page that clears "Saving…" only on
+  `save-finished` or `save-failed` must also clear it on `auto-save-paused`.
+- While the pause lasts, retries the VM refuses again report nothing, so a page
+  keeps showing the pause. A retry that ends some other way reports its
+  `save-started` and then its `save-finished` or `save-failed`.
+- Named and safety captures never pause. A busy refusal still rejects to the
+  caller with `FEATURE_NOT_AVAILABLE` and `detail.reason: "js-process-active"`,
+  or with the checkpoint's `PROTOCOL_ERROR`, and reports its own `save-failed`:
+  a page's last event can be that failure while automatic saves stay paused.

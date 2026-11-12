@@ -126,7 +126,9 @@
  * embeds it, which the relay owner names in the workspace it presents to relays (protocol/network.ts `RelayScope`). */
 /** 182 adds `manifestBytes` to the storage worker's `prepare-userspace-rootfs`: the pinned manifest the page already
  * fetched, which the storage owner authenticates like a download instead of fetching it a second time. */
-export const PROTOCOL_VERSION = 182;
+/** 183 adds the busy `auto-save-paused` restore point event (`reason: "busy"` with a `cause` of `js-process-active` or
+ * `not-quiesced`): automatic saves the VM refuses as busy pause and retry instead of failing. */
+export const PROTOCOL_VERSION = 183;
 /** Combined architecture, background compilation and code-profile trace layout. */
 export const SYSTEM_TRACE_SCHEMA_VERSION = 54;
 

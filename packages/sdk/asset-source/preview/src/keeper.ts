@@ -1,6 +1,8 @@
 // The keeper's decisions, apart from the document that runs them (main.ts): which bootstrap it
 // accepts, how it grants the session's worker a transport, and when it grants a fresh one.
 
+import type { SiteAccess } from "./site-access";
+
 const SESSION = /^[a-f0-9]{32}$/u;
 /** How often the keeper checks that its worker still holds a transport. */
 export const PING_MS = 20_000;
@@ -56,6 +58,9 @@ export interface KeeperEnvironment {
   sleep(ms: number): Promise<void>;
 }
 
+/** What the owner learns about a site-access revision it sent. */
+export type SiteAccessResult = "applied" | "stale" | "retired" | "no-worker";
+
 interface Pong {
   readonly attached: boolean;
   readonly retired: boolean;
@@ -67,6 +72,7 @@ export class Keeper {
   readonly #environment: KeeperEnvironment;
   #attaching: Promise<void> | undefined;
   #retired = false;
+  #sites: { readonly revision: number; readonly access: SiteAccess } | undefined;
 
   constructor(bootstrap: KeeperBootstrap, environment: KeeperEnvironment) {
     this.#session = bootstrap.session;
@@ -90,6 +96,13 @@ export class Keeper {
   retire(): void {
     this.#retired = true;
     this.#environment.worker()?.postMessage({ kind: "retire", session: this.#session }, []);
+  }
+
+  /** Hands the worker the session's site access; no acknowledgement in time reads as no worker. */
+  async setSiteAccess(revision: number, access: SiteAccess): Promise<SiteAccessResult> {
+    if (this.#retired) return "retired";
+    if (this.#sites === undefined || revision > this.#sites.revision) this.#sites = { revision, access };
+    return this.#postSites(revision, access);
   }
 
   /** Keeps the worker alive and re-attaches when a ping finds it without a transport. */
@@ -132,9 +145,46 @@ export class Keeper {
         else reject(new TypeError(message["kind"] === "refused" ? "preview session refused by this address" : "preview session retired"));
       };
     });
+    // A restarted worker has no site access: it keeps grants only in memory (ADR 0030 D9). The last
+    // grant goes just before the attach, so a session origin applies it before it serves pages
+    // again, and once more after the attach, when the shared address has made this session current.
+    this.#resendSites();
     const message = { kind: "attach", session: this.#session, port, acknowledgement: acknowledgement.port2, parentOrigin: this.#parentOrigin };
     target.postMessage(message, [port, acknowledgement.port2]);
     await attached;
+    this.#resendSites();
+  }
+
+  /** Best effort and unreported, with the revision unchanged: a worker that kept it answers stale. */
+  #resendSites(): void {
+    const sites = this.#sites;
+    if (sites !== undefined) void this.#postSites(sites.revision, sites.access);
+  }
+
+  #postSites(revision: number, access: SiteAccess): Promise<SiteAccessResult> {
+    const target = this.#environment.worker();
+    if (target === null) return Promise.resolve("no-worker");
+    return new Promise((resolve) => {
+      const channel = new MessageChannel();
+      const timeout = setTimeout(() => {
+        channel.port1.close();
+        resolve("no-worker");
+      }, REPLY_MS);
+      channel.port1.onmessage = (event: MessageEvent<unknown>) => {
+        const message = event.data;
+        if (!isRecord(message) || message["session"] !== this.#session || message["revision"] !== revision) return;
+        const kind = message["kind"];
+        const reason = message["reason"];
+        const result: SiteAccessResult | undefined = kind === "sites-applied" && exactKeys(message, ["kind", "session", "revision"]) ? "applied"
+          : kind === "sites-refused" && exactKeys(message, ["kind", "session", "revision", "reason"]) && (reason === "stale" || reason === "retired") ? reason
+          : undefined;
+        if (result === undefined) return;
+        clearTimeout(timeout);
+        channel.port1.close();
+        resolve(result);
+      };
+      target.postMessage({ kind: "sites", session: this.#session, revision, access, acknowledgement: channel.port2 }, [channel.port2]);
+    });
   }
 
   #ping(): Promise<Pong | undefined> {

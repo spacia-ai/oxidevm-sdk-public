@@ -1,5 +1,5 @@
-import { TLS_OPTION_NAMES, tlsOptions, type TlsOptions } from "./node-tls.js";
-import { exactKeys, record } from "../../decode.js";
+import { tlsOptions, UNSUPPORTED_TLS_OPTIONS, type TlsOptions } from "./node-tls.js";
+import { copyOptions, otherDefaultPort, refuseSetOptions, UNSUPPORTED_CONNECT_OPTIONS, UNSUPPORTED_NET_SOCKET_OPTIONS, type SetTests } from "./node-connect-options.js";
 import { VMError } from "../../errors.js";
 import type { AsyncContext } from "./async-context.js";
 import type { NodeSocket, NodeSockets } from "./node-socket.js";
@@ -28,9 +28,22 @@ const REQUEST_LIMIT = 1024;
 /** The agent alone owns busy/free sockets and pending requests. Inspection
  * properties are snapshots of that registry, never a second mutable authority. */
 export function createHttpAgents(net: Pick<NodeSockets, "createConnection">, context: AsyncContext, dispatch: (callback: () => void) => void = queueMicrotask, protocol: "http:" | "https:" = "http:"): { Agent: new (options?: unknown) => HttpAgent; globalAgent: HttpAgent } {
+  const defaultPort = protocol === "https:" ? 443 : 80;
+  const proxies = protocol === "https:" ? ["https_proxy", "HTTPS_PROXY"] : ["http_proxy", "HTTP_PROXY"];
+  /** Keys Node's Agent reads, for itself or for every socket it creates, that this agent does not honor. Its own
+   * options override each request's (addRequest, createSocket), so a socketPath, a signal (when truthy), a host or a
+   * port (unless undefined) applies to every connection; then another default port or protocol, a proxy that
+   * proxyEnv names for this protocol, and what the sockets read: net.Socket's keys for http, the TLS keys for https.
+   * Tuning keys such as maxCachedSessions and agentKeepAliveTimeoutBuffer, and keys Node never reads, are ignored. */
+  const unsupported: SetTests = {
+    ...UNSUPPORTED_CONNECT_OPTIONS, socketPath: Boolean, signal: Boolean, host: value => value !== undefined, port: value => value !== undefined,
+    defaultPort: otherDefaultPort(defaultPort), protocol: value => Boolean(value) && value !== protocol,
+    proxyEnv: value => typeof value === "object" && value !== null && proxies.some(name => { const proxy: unknown = Reflect.get(value, name); return Boolean(proxy); }),
+    ...(protocol === "https:" ? UNSUPPORTED_TLS_OPTIONS : UNSUPPORTED_NET_SOCKET_OPTIONS),
+  };
   class Agent extends EventEmitter {
     readonly protocol = protocol;
-    readonly defaultPort = protocol === "https:" ? 443 : 80;
+    readonly defaultPort = defaultPort;
     readonly options: Record<string, unknown>;
     keepAlive: boolean;
     keepAliveMsecs: number;
@@ -42,12 +55,12 @@ export function createHttpAgents(net: Pick<NodeSockets, "createConnection">, con
     readonly #pending: Pending[] = [];
     #draining = false;
     constructor(value: unknown = {}) {
-      super(); const options = record(value, "http.Agent options");
-      exactKeys(options, [], ["keepAlive", "keepAliveMsecs", "maxSockets", "maxTotalSockets", "maxFreeSockets", "scheduling", "timeout", "noDelay", ...(protocol === "https:" ? TLS_OPTION_NAMES : [])]);
+      super(); const options = copyOptions(value);
+      refuseSetOptions(options, unsupported, "http.Agent", protocol === "https:" ? "https.Agent" : "http.Agent");
       if (options["keepAlive"] !== undefined && typeof options["keepAlive"] !== "boolean") throw new TypeError("Invalid Agent keepAlive");
       if (options["scheduling"] !== undefined && options["scheduling"] !== "fifo" && options["scheduling"] !== "lifo") throw new TypeError("Invalid Agent scheduling");
       if (options["noDelay"] !== undefined && typeof options["noDelay"] !== "boolean") throw new TypeError("Invalid Agent noDelay");
-      this.options = { ...options, ...(protocol === "https:" ? tlsOptions(options) : {}) }; Object.setPrototypeOf(this.options, null);
+      this.options = protocol === "https:" ? Object.assign(options, tlsOptions(options)) : options;
       this.keepAlive = options["keepAlive"] === true;
       this.keepAliveMsecs = count(options["keepAliveMsecs"] ?? 1000, 0);
       this.maxSockets = count(options["maxSockets"] ?? Infinity, 1);

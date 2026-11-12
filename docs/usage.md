@@ -331,6 +331,48 @@ The frontend's dev server and the guest's `npm run dev` are independent. The gue
 
 The 120-second wait is a caller-selected deadline, not a performance guarantee. A developer-only shared preview can instead use the explicitly opted-in `isolation: "shared", developmentOnly: true` configuration from the design; production previews need qualified per-session isolation.
 
+### Let the preview call an API
+
+A preview page reaches only its own origin until your application allows another site. Some ways a page can reach another site are outside its Content-Security-Policy, such as navigation (links, form submissions — there is no `form-action` directive — and `window.open`), WebRTC and DNS prefetch hints. A weather widget that calls `https://api.open-meteo.com` from the page shows a failed request until then. Put this in `src/preview-sites.ts`:
+
+<!-- typecheck: usage/preview-sites.ts -->
+```ts
+import { previewSite, type PreviewHandle, type VM } from "@oxidevm/sdk";
+
+/** Exposes the app's port with the one API its pages call already allowed. */
+export function exposeWeatherApp(vm: VM): Promise<PreviewHandle> {
+  return vm.exposePort(3000, {
+    siteAccess: { kind: "sites", sites: ["api.open-meteo.com"] },
+    signal: AbortSignal.timeout(120_000),
+  });
+}
+
+/** Adds the site the user allowed, then reloads the preview so its next page may reach it. */
+export async function allowSite(
+  preview: PreviewHandle, frame: HTMLIFrameElement, allowed: readonly string[], input: string,
+): Promise<readonly string[]> {
+  const site = previewSite(input);
+  if (site === null) throw new Error(`${input} is not a site a preview can reach`);
+  const sites = [...new Set([...allowed, site])];
+  await preview.setSiteAccess({ kind: "sites", sites });
+  frame.src = preview.url.href;
+  return sites;
+}
+
+/** Offers each other site the preview's pages tried, until `signal` aborts. */
+export function offerBlockedSites(
+  preview: PreviewHandle, offer: (site: string) => void, signal: AbortSignal,
+): Promise<void> {
+  return preview.watchBlockedSites((blocked) => { offer(blocked.site); }, { signal });
+}
+```
+
+`previewSite` turns what the user typed, or a URL, into the site a preview can be given: `"https://API.open-meteo.com/v1/forecast"` becomes `"api.open-meteo.com"`. It returns `null` for addresses a preview cannot be given, such as IP addresses, `localhost` and single-label names. A page keeps the policy it loaded with, so `allowSite` reloads the frame after the change resolved. `{ kind: "any" }` allows every `https` and `wss` site and `{ kind: "none" }` takes every site back.
+
+Show each site `offerBlockedSites` reports once, with an Allow button that calls `allowSite`. A report comes from the guest's page: it is a hint for the user, never a reason to allow a site by itself. Keep the user's choices in your application, for example per workspace, not in the project's files, and pass them again when you expose the port in a later visit. Site access keeps an honest app local and shows what it tries to reach; it does not contain an app that is hostile on purpose (see the [API reference](api.md#preview-site-access)).
+
+Only the page's own requests need site access. Requests that the guest's server makes, such as a Vite `server.proxy` or a Next.js route handler, leave the VM through guest internet: connect `vm.network` to a relay, as section 5 shows.
+
 ## 5. Run your project's commands
 
 For a short command, `exec` captures its output. Arguments are separate strings:

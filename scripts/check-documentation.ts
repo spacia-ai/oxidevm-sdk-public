@@ -16,7 +16,7 @@ for (const match of guide.matchAll(/<!-- typecheck: ([^\n]+) -->\s*```ts\n([\s\S
   await mkdir(dirname(destination), { recursive: true }); await writeFile(destination, source);
   groups[source.includes('from "@oxidevm/sdk/image-builder"') ? "node" : "browser"].push(path);
 }
-const expected = ["usage/main.ts", "usage/oxidevm.config.ts", "usage/persistence.ts", "usage/streams.ts", "usage/web-app.ts", "usage/short-command.ts", "usage/project-commands.ts", "usage/network.ts", "usage/terminal.ts", "usage/system.ts", "usage/resume.ts", "usage/python-recipe.ts", "usage/python.ts", "usage/system-recipe.ts", "usage/snapshot-recipe.ts", "usage/snapshot-prepare.ts", "usage/snapshot-verify.ts", "usage/snapshot-use.ts", "images/stage.ts", "wasm/define.ts", "wasm/use.ts", "wasm/commands.ts"];
+const expected = ["usage/main.ts", "usage/oxidevm.config.ts", "usage/persistence.ts", "usage/streams.ts", "usage/web-app.ts", "usage/preview-sites.ts", "usage/short-command.ts", "usage/project-commands.ts", "usage/network.ts", "usage/terminal.ts", "usage/system.ts", "usage/resume.ts", "usage/python-recipe.ts", "usage/python.ts", "usage/system-recipe.ts", "usage/snapshot-recipe.ts", "usage/snapshot-prepare.ts", "usage/snapshot-verify.ts", "usage/snapshot-use.ts", "images/stage.ts", "wasm/define.ts", "wasm/use.ts", "wasm/commands.ts"];
 if (seen.size !== expected.length || expected.some(name => !seen.has(name))) throw new Error("Documentation modules differ from their named contract");
 await mkdir(resolve(directory, "usage/generated"), { recursive: true });
 // What `oxidevm wasm add` writes for the handles the module guide imports: the same call shape, with plausible pins.

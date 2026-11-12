@@ -13,7 +13,7 @@ import { validateSpawnSpec } from "./runtime/vm-options.js";
 import { exactKeys, integer, record } from "./runtime/decode.js";
 import { abortIfRequested } from "./engine-assets.js";
 import { adaptProcess, execProcess } from "./process.js";
-import { PreviewRoutes } from "./preview-routes.js";
+import { decodeExposeOptions, PreviewRoutes } from "./preview-routes.js";
 import { readBrowserQuota } from "./runtime/workers/browser-quota.js";
 import { validateHandoffRegistration } from "./runtime/workspace-handoff.js";
 import { checkForImageUpdate, imageUpdateSignal } from "./image-update.js";
@@ -293,10 +293,10 @@ export async function adaptVM(runtime: RuntimeVM, options: ValidatedVMOptions, i
       const process = await spawn({ command: spec.command, ...(spec.args === undefined ? {} : { args: spec.args }), ...(spec.cwd === undefined ? {} : { cwd: spec.cwd }), ...(spec.env === undefined ? {} : { env: spec.env }), ...(spec.signal === undefined ? {} : { signal: spec.signal }) });
       return execProcess(process, { ...spec, maxOutputBytes: limit });
     },
-    exposePort: async (port: number, request?: { readonly signal?: AbortSignal }) => {
-      active(); abortIfRequested(request?.signal);
+    exposePort: async (port: number, request?: Parameters<VM["exposePort"]>[1]) => {
+      active(); const exposure = decodeExposeOptions(request); abortIfRequested(exposure.signal);
       if (options.preview === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "preview infrastructure is not configured", { reason: "not-configured" });
-      return previews.expose(port, request?.signal);
+      return previews.expose(port, exposure);
     },
     listeningPorts: (request?: { readonly signal?: AbortSignal }) => { active(); return runtime.listeningPorts(request); },
     watchListeningPorts: (listener: Parameters<VM["watchListeningPorts"]>[0], request: Parameters<VM["watchListeningPorts"]>[1]) => { active(); return runtime.watchListeningPorts(listener, request); },

@@ -1,5 +1,5 @@
 import { serializeUnknownError, VMError } from "../../errors.js";
-import { type AutoSaveHint, decodeSnapshotEventMessage, type OperationRequest, type OperationResponse, PROTOCOL_VERSION, type SnapshotEventRecord } from "../../protocol.js";
+import { type AutoSaveHint, decodeSnapshotEventMessage, type OperationRequest, type OperationResponse, PROTOCOL_VERSION, type SaveReport, type SnapshotEventRecord } from "../../protocol.js";
 import { nativeCheckpointResponseDecoders, type NativeCheckpointOperations } from "../../protocol/userspace-checkpoints.js";
 import { workerClientForPort, type WorkerClient } from "../../worker-client.js";
 import { AutoSave } from "./auto-save.js";
@@ -27,7 +27,7 @@ export class UserspaceSnapshotControl {
     this.#autoSave = new AutoSave({
       now: () => performance.now(), schedule: (delay, run) => { const timer = setTimeout(run, delay); return () => clearTimeout(timer); },
       prepare: signal => this.#client.request("prepare-image",{reason:"automatic"},{signal}),
-      dirty: () => this.#client.request("dirty", undefined), save: () => this.capture(undefined, { kind: "automatic" }),
+      dirty: () => this.#client.request("dirty", undefined), save: report => this.capture(undefined, { kind: "automatic" }, report),
       collect: () => this.#client.request("collect", undefined), emit: notify,
     });
   }
@@ -48,17 +48,18 @@ export class UserspaceSnapshotControl {
     finally { if (id !== undefined) this.#requests.delete(id); }
   }
 
-  async capture(id: number | undefined, request: NativeCheckpointOperations["capture"]["request"]) {
+  /** Saves; `report` hears that the save started and how it ended: the pages, unless automatic saves decide. */
+  async capture(id: number | undefined, request: NativeCheckpointOperations["capture"]["request"], report: (event: SaveReport) => void = this.#notify) {
     const started = performance.now();
-    this.#notify({ type: "save-started", kind: request.kind });
+    report({ type: "save-started", kind: request.kind });
     try {
       const saved = await this.request(id, "capture", request);
       const ended = performance.now(), durationMilliseconds = ended - started;
-      this.#notify({ type: "save-finished", kind: request.kind, ...saved, durationMilliseconds });
+      report({ type: "save-finished", kind: request.kind, ...saved, durationMilliseconds });
       if (request.kind !== "automatic") this.#autoSave.saved(ended, durationMilliseconds, saved.pauseMilliseconds);
       return saved;
     } catch (error) {
-      this.#notify({ type: "save-failed", kind: request.kind, error: serializeUnknownError(error) });
+      report({ type: "save-failed", kind: request.kind, error: serializeUnknownError(error) });
       throw error;
     }
   }

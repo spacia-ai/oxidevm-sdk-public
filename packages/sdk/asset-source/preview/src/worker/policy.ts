@@ -2,6 +2,8 @@
 // and the worker's own error pages. The parent is the Playground origin the
 // keeper validated and handed over when it attached; with none, nothing may frame.
 
+import { siteSources, type SiteAccess } from "../site-access";
+
 /** A bare origin a keeper may name as its parent: https, or http on this machine. */
 export function isParentOrigin(value: unknown): value is string {
   if (typeof value !== "string" || !URL.canParse(value)) return false;
@@ -16,11 +18,13 @@ export function frameAncestors(parent: string | null): string {
 }
 
 /** Proxied pages: Next's development server needs eval source maps; blob workers
- * and data images belong to the application. Only the parent may frame them. */
-export function pageContentSecurityPolicy(parent: string | null): string {
-  return "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; "
-    + "worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; "
-    + `connect-src 'self' ws: wss:; frame-ancestors ${frameAncestors(parent)}; base-uri 'none'`;
+ * and data images belong to the application. Only the parent may frame them. The page may
+ * reach other hosts only as the session's site access grants (https and wss, never http or ws). */
+export function pageContentSecurityPolicy(parent: string | null, access: SiteAccess): string {
+  const sites = siteSources(access);
+  return `default-src 'self' data: blob:${sites}; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:${sites}; `
+    + `worker-src 'self' blob:; style-src 'self' 'unsafe-inline'${sites}; img-src 'self' data: blob:${sites}; font-src 'self' data:${sites}; `
+    + `connect-src 'self'${sites}; frame-ancestors ${frameAncestors(parent)}; base-uri 'none'`;
 }
 
 /** The session cannot serve: retired, replaced on the shared address, or no transport. */

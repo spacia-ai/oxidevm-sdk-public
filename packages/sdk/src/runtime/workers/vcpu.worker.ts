@@ -171,7 +171,7 @@ function initialize(): void {
 /** `run` of the core's dispatcher module over this vCPU's tables; translated modules carry no
  * dispatcher of their own. */
 function instantiateJitDispatcher(): { readonly run: CallableFunction; readonly retirePrefix: CallableFunction } {
-  const pointer = call("oxidevm_jit_dispatcher_module_ptr") >>> 0;
+  const pointer = call("oxidevm_jit_dispatcher_module_ptr");
   const length = call("oxidevm_jit_dispatcher_module_len");
   checkedMemory(pointer, length);
   const bytes = new Uint8Array(requireMemory().buffer, pointer, length).slice();
@@ -200,7 +200,7 @@ function run(request: {
   const maximumSteps = Number(request.maximumSteps);
   if (
     !Number.isInteger(generation) ||
-    generation !== Atomics.load(shared, CONTROL_GENERATION) ||
+    generation !== currentGeneration(shared) ||
     !Number.isInteger(maximumSteps) ||
     maximumSteps < 1 ||
     maximumSteps > 0xffff_ffff ||
@@ -295,7 +295,7 @@ function run(request: {
 
     const runBlock = jitDispatcher?.run;
     if (runBlock === undefined) throw new Error("vCPU JIT dispatcher is not initialized");
-    const contextPointer = call("oxidevm_vcpu_jit_context_ptr", vcpu) >>> 0;
+    const contextPointer = call("oxidevm_vcpu_jit_context_ptr", vcpu);
     checkedMemory(contextPointer, contextLength);
     const rawExit: unknown = Reflect.apply(runBlock, undefined, [
       contextPointer,
@@ -484,13 +484,13 @@ function indexedBoundary(name: string): (...args: unknown[]) => unknown {
 function readJitRecord(
   name: "action" | "module" | "result",
 ): Uint8Array<ArrayBuffer> {
-  const pointer = call(`oxidevm_vcpu_jit_${name}_ptr`, vcpu) >>> 0;
+  const pointer = call(`oxidevm_vcpu_jit_${name}_ptr`, vcpu);
   const length = call(`oxidevm_vcpu_jit_${name}_len`, vcpu);
   return new Uint8Array(checkedMemory(pointer, length));
 }
 
 function readSystemResult(): Uint8Array<ArrayBuffer> {
-  const pointer = call("oxidevm_system_vcpu_result_ptr", vcpu) >>> 0;
+  const pointer = call("oxidevm_system_vcpu_result_ptr", vcpu);
   const length = call("oxidevm_system_vcpu_result_len", vcpu);
   return new Uint8Array(checkedMemory(pointer, length));
 }
@@ -507,13 +507,18 @@ function checkedMemory(pointer: number, length: number): Uint8Array {
   return new Uint8Array(wasmMemory.buffer, pointer, length);
 }
 
+/** The core's u32 parallel generation, which the shared control words hold as an i32. */
+function currentGeneration(shared: Int32Array<SharedArrayBuffer>): number {
+  return Atomics.load(shared, CONTROL_GENERATION) >>> 0;
+}
+
 function ensureCurrent(
   shared: Int32Array<SharedArrayBuffer>,
   generation: number,
   cancellation: number,
 ): void {
   if (
-    generation !== Atomics.load(shared, CONTROL_GENERATION) ||
+    generation !== currentGeneration(shared) ||
     cancellation !== Atomics.load(shared, CONTROL_CANCELLATION) ||
     Atomics.load(shared, CONTROL_STOPPED) !== 0
   ) {
@@ -538,12 +543,21 @@ function assertStatus(status: number): void {
   if (status !== 0) throw new Error(`core operation failed with status ${status}`);
 }
 
+/** Calls a core export, which returns `u32`. Wasm hands an i32 result to JavaScript as a signed
+ * number, so a pointer above 2 GiB arrives negative; this returns the unsigned value. */
 function call(name: string, ...args: Array<number | bigint>): number {
   const operation = requireInstance().exports[name];
   if (typeof operation !== "function") throw new Error(`missing core export ${name}`);
   const result: unknown = Reflect.apply(operation, undefined, args);
-  if (typeof result !== "number") throw new Error(`invalid result from ${name}`);
-  return result;
+  if (
+    typeof result !== "number" ||
+    !Number.isInteger(result) ||
+    result < -0x8000_0000 ||
+    result > 0xffff_ffff
+  ) {
+    throw new Error(`invalid result from ${name}`);
+  }
+  return result >>> 0;
 }
 
 function requireInstance(): WebAssembly.Instance {

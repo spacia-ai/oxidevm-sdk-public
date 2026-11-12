@@ -191,10 +191,14 @@ retain it.
 
 `listeningPorts`, `watchListeningPorts` and `exposePort` use real guest listeners.
 Port admission validates 1–65535 and configured transport. Exposing a port waits
-for the guest listener and transport, then returns a route with a URL and `close`.
-Repeated exposures of the same port share an owner until the final handle closes.
-Closing a route does not stop its server. VM disposal releases owned routes.
-An aborted watch resolves; transport and callback faults reject.
+for the guest listener and transport, then returns a route with a URL,
+`setSiteAccess`, `watchBlockedSites` and `close` (see
+[Preview site access](#preview-site-access)). `exposePort(port, { signal?,
+siteAccess? })` rejects `null` options and any other option key with
+`INVALID_ARGUMENT`. Repeated exposures of the same port share an owner until the
+final handle closes. Closing a route does not stop its server. VM disposal
+releases owned routes. An aborted watch resolves; transport and callback faults
+reject.
 
 Production preview bootstrap and Service Worker transport run on a distinct
 per-session origin. Cookies and storage must remain separated between sessions.
@@ -219,6 +223,91 @@ servers work without `allowedHosts`, `allowedDevOrigins` or similar settings:
 A cookie the guest sets with `Domain=localhost` is kept as a host-only cookie of the
 session origin, and `Secure` cookies are kept as a browser on `localhost` keeps them.
 
+### Preview site access
+
+A preview page reaches only its own session origin. Its Content-Security-Policy
+admits that origin, plus `data:` and `blob:` where pages need them, and nothing
+else: `connect-src 'self'`. `fetch`, `XMLHttpRequest`, `EventSource` and
+`WebSocket` to another host fail, and so do scripts, styles, fonts, images, media
+and frames from one. Some ways a page can reach another site are outside the
+policy, such as navigation (links, form submissions — there is no `form-action`
+directive — and `window.open`), WebRTC and DNS prefetch hints. The application
+that embeds the preview decides what else the preview's pages may reach, with a
+`PreviewSiteAccess`:
+
+| Access | The session's pages may also reach |
+| --- | --- |
+| `{ kind: "none" }` | Nothing; the default |
+| `{ kind: "sites", sites }` | `https://` and `wss://` on each listed site, at most `MAX_PREVIEW_SITES` (64) |
+| `{ kind: "any" }` | Every `https:` and `wss:` origin; never `http:` or `ws:` |
+
+A site is a DNS host name with an optional port. `previewSite(value)` returns the
+canonical site of a host name, or of an `https://` or `wss://` URL: lowercase,
+punycode, one trailing dot removed and port 443 omitted, so
+`"https://API.Example.com:443/v1"` becomes `"api.example.com"`. It returns `null`
+for IP literals, `localhost` and `*.localhost`, single-label names, `*.local` and
+other schemes; `setSiteAccess` refuses those sites. A granted site joins
+`default-src`, `script-src`, `style-src`, `img-src`, `font-src` and `connect-src`;
+`worker-src`, `frame-ancestors` and `base-uri` stay as they are. The preview stays
+`Cross-Origin-Embedder-Policy: require-corp`: an image, script or stylesheet that
+a page loads from a granted site without CORS still needs
+`Cross-Origin-Resource-Policy` from that site.
+
+- `exposePort(port, { siteAccess })` applies the access to the port's session and
+  resolves once it applied. When the access cannot apply, it rejects as
+  `setSiteAccess` does and releases that exposure.
+- `preview.setSiteAccess(access, { signal? })` changes the access for pages loaded
+  after it resolves. A page keeps the policy it loaded with, so reload the
+  preview's iframe once the change resolved; a page open in another tab keeps its
+  old policy until it reloads. Repeated exposures of one port share a session and
+  its access, so the last change wins. `{ kind: "none" }` on a session that never
+  had other access sends nothing and works with every preview host.
+- `preview.watchBlockedSites(listener, { signal })` calls `listener` once for each
+  other site, at most 64 per watch, that a page of this preview reports its policy
+  blocked: a `BlockedPreviewSite` `{ site, directive }`, where `directive` is
+  `connect`, `script`, `style`, `image`, `font`, `media` or `frame`. A page reports
+  at most 32 sites. The watch hears only previews framed by this document, not a
+  preview open in a tab of its own. A report comes from the page, which runs the
+  guest's code, so it is a hint to show the user and never a grant: only
+  `setSiteAccess` grants. The watch resolves when `signal` aborts and rejects with
+  the listener's error if the listener throws, like `vm.network.watch`. It also
+  ends when its handle closes or the VM's disposal begins.
+
+`setSiteAccess`, and `exposePort` with `siteAccess`, reject with these codes:
+
+| Code | When |
+| --- | --- |
+| `INVALID_ARGUMENT` | An invalid access (an unknown kind or key, a site `previewSite` refuses, more than 64 sites) or invalid options |
+| `ABORTED` | After the handle's `close`, when `signal` aborts, or when the session ended before the change applied (`detail.reason: "retired"` when its keeper reported that) |
+| `PROTOCOL_ERROR` | While the VM is disposing or after it was disposed, or when the session's Service Worker already holds this or a newer change (`detail.reason: "stale"`) |
+| `RELAY_ERROR` | The change did not reach a preview Service Worker; `detail.reason` is `"no-worker"` when the session's keeper found none to take it, and `"no-answer"` when the keeper, which answered an earlier change of this session, did not answer this one within 10 s |
+| `FEATURE_NOT_AVAILABLE` | The preview host did not answer within 10 s, and has answered no change of this session before, because its assets predate site access (`detail.reason: "preview-host-outdated"`); update them, see the [deployment guide](deployment.md#preview-host) |
+
+A `setSiteAccess` that rejected with `RELAY_ERROR`, with `FEATURE_NOT_AVAILABLE`
+after the 10 s, or with `ABORTED` from its signal may still take effect later:
+the session's keeper re-sends the last access it received whenever it re-attaches
+the session's Service Worker. Call `setSiteAccess` again to settle the access; the
+later change wins. After `close`, `setSiteAccess` and a new `watchBlockedSites`
+reject with `ABORTED`; once the VM's disposal began, with `PROTOCOL_ERROR`.
+`watchBlockedSites` also rejects with `INVALID_ARGUMENT` without a listener
+function, or without options that hold exactly an `AbortSignal`.
+
+The preview's Service Worker keeps a session's access in memory only. When the
+browser restarts that worker, the session's keeper restores the access; a page
+loaded before that has the default policy until it reloads.
+
+A page's WebSocket to its own host still reaches the guest's server. A WebSocket
+to any other host is the browser's own, so the page's policy decides it: an
+allowed `wss:` site connects, and any other host fails and is reported.
+
+Site access keeps an honest app local until the user allows a site, and it makes
+every site the app tries visible. It is not a boundary against deliberately
+hostile guest code: that code shares its origin with the session's keeper document
+and can drive it, and it can navigate its own frame to any site (engine ADR 0030,
+D9). Requests that the guest's own server makes, such as a Vite proxy or a Next.js
+route handler, are not page requests: they still need guest internet through
+`vm.network` (the relay), and site access does not open it.
+
 ## VM restore points
 
 Both VM modes expose the common `VMStart` and `VMSnapshots` contracts, plus
@@ -239,6 +328,33 @@ descriptor (see [JavaScript acceleration](acceleration.md)).
 Restore saves the current state as a safety point by default. App data is bounded
 to 1 MiB; automatic saving starts disabled. Backup import, export and inspection
 validate format, image, machine, workspace and retained-base identity.
+
+Automatic saves report `auto-save-paused` when they stop, with the time until
+their next timed try in `retryInMilliseconds`. With `reason: "quota"`, the
+browser refused a save for space twice, with a collection in between. With
+`reason: "busy"`, the VM refused the save: `cause` is `"js-process-active"`
+while a JS process lives and `"not-quiesced"` while Linux cannot quiesce for a
+checkpoint. Check `reason` wherever a pause was taken to mean that storage is
+full.
+
+An automatic `save-started` can end with `auto-save-paused` instead of
+`save-finished` or `save-failed`: the first busy refusal reports
+`save-started`, then `auto-save-paused`. A page that clears "Saving…" only on
+`save-finished` or `save-failed` must also clear it on `auto-save-paused`. The
+busy pause is reported again when its cause changes, or after automatic saves
+report another event or any save succeeds. While it lasts, retries the VM
+refuses again report nothing; a retry that ends some other way reports its
+`save-started` and then its `save-finished` or `save-failed`. The timed retry
+comes after one minute, doubling up to fifteen. Activity, file changes and a
+hidden page still try to save during the pause, and their refusals leave the
+timed retry where it is. Named and safety captures never pause: one the VM
+refuses as busy reports its own `save-failed` and rejects to the caller with its
+`VMError`, so a page's last event can be that failure while automatic saves stay
+paused.
+
+Other failed automatic saves report `save-failed`, and each failure in a row
+doubles the interval from two minutes up to fifteen. A successful save starts
+both back-offs over.
 
 `suspend` captures consistent state and releases resources and the workspace
 lease before returning. Failed suspension leaves the VM available when the

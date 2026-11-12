@@ -422,6 +422,20 @@ describe("snapshot session page data", () => {
     expect(failed?.type === "save-failed" ? typeof failed.error.code : undefined).toBe("string");
   });
 
+  it("tells an automatic save's start and end to the report it is given instead of the pages", async () => {
+    const notices: SnapshotEventRecord[] = [], reports: SnapshotEventRecord[] = [];
+    const { client } = recordingStorage(undefined);
+    const snapshots = new SnapshotSession(machine(client, undefined, notices));
+
+    const saved = await snapshots.capture({ kind: "automatic" }, (event) => reports.push(event));
+
+    expect(reports).toEqual([
+      { type: "save-started", kind: "automatic" },
+      { type: "save-finished", kind: "automatic", snapshot: SNAPSHOT, pauseMilliseconds: saved.pauseMilliseconds, durationMilliseconds: saved.durationMilliseconds },
+    ]);
+    expect(notices).toEqual([]);
+  });
+
   it("runs a workspace flush after the save under way, and holds the next save until it ends", async () => {
     const order: string[] = [];
     const { client } = recordingStorage(undefined);

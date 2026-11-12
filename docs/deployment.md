@@ -192,6 +192,24 @@ not establish cookie/storage separation between independent production sessions.
 Loopback preview URLs printed by tests are not externally accessible application
 links.
 
+Update the preview assets together with the SDK, or before it. One preview host
+serves every SDK version, and newer preview assets accept every older SDK
+unchanged, so deploying them first is safe. Site access
+([API reference](api.md#preview-site-access)) needs this release's preview
+assets: an SDK that asks an older preview host for any access other than
+`{ kind: "none" }` rejects after 10 s with `FEATURE_NOT_AVAILABLE` and
+`detail.reason: "preview-host-outdated"`. `{ kind: "none" }` sends nothing and
+works with every preview host.
+
+These assets also give every SDK version's previews the same default at once: a
+preview page reaches only its session origin (`connect-src 'self'`). Some ways a
+page can reach another site are outside the policy, such as navigation (links,
+form submissions — there is no `form-action` directive — and `window.open`),
+WebRTC and DNS prefetch hints. Earlier assets let sockets from a preview page
+reach any host (`connect-src 'self' ws: wss:`). A page that relied on that
+reaches the other host again once its application grants the site with an SDK
+that has site access.
+
 ## Relay and validation
 
 Guest-local sockets are the default. Outbound guest internet requires an explicit

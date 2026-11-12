@@ -2,8 +2,11 @@
 // (<session>.<preview host>) serves its one session. The shared address serves the session that
 // attached last: it retires the session it replaced, for good, and sends that session's pages to
 // a "moved" page. The current session and its parent are kept in a store, so a restarted worker
-// still serves them and still frames their pages for that parent alone.
+// still serves them and still frames their pages for that parent alone. Site access is kept only
+// in memory, because the origin's pages can write the store: a restarted worker starts every
+// session with none until its keeper re-sends the grant (ADR 0030 D9).
 import { isParentOrigin } from "./policy";
+import type { SiteAccess } from "../site-access";
 import type { SessionTransport } from "./transport";
 
 const SESSION = /^[a-f0-9]{32}$/u;
@@ -26,6 +29,14 @@ export interface SessionStore {
   markRetired(key: string): Promise<void>;
 }
 
+/** A session's site access and the revision of the keeper message that set it. */
+interface SiteRecord {
+  readonly revision: number;
+  readonly access: SiteAccess;
+}
+
+const NO_SITES: SiteRecord = { revision: 0, access: { kind: "none" } };
+
 export interface CurrentSession {
   readonly session: string;
   readonly transport: SessionTransport;
@@ -40,6 +51,7 @@ export type Route =
   | { readonly kind: "none" };
 
 export type AttachResult = "attached" | "retired" | "refused";
+export type SitesResult = "applied" | "stale" | "retired";
 
 export class SessionRegistry {
   readonly #scope: WorkerScope;
@@ -47,6 +59,8 @@ export class SessionRegistry {
   readonly #store: SessionStore;
   readonly #retired = new Set<string>();
   readonly #bindings = new Map<string, string>();
+  /** Site records applied in this worker life, never stored. */
+  readonly #sites = new Map<string, SiteRecord>();
   #current: CurrentSession | null;
   #restoring: Promise<void> | undefined;
   #queue: Promise<unknown> = Promise.resolve();
@@ -90,6 +104,26 @@ export class SessionRegistry {
     });
   }
 
+  /** The access the current session's pages may use; none until a keeper applies one in this
+   * worker life. */
+  async siteAccess(): Promise<SiteAccess> {
+    await this.#restored();
+    const current = this.#current;
+    return current === null ? NO_SITES.access : this.#siteRecord(current.session).access;
+  }
+
+  /** A keeper sets its session's site access. Only the current session can be served, and a
+   * revision that is not above the one applied in this worker life is stale. */
+  setSiteAccess(session: string, revision: number, access: SiteAccess): Promise<SitesResult> {
+    return this.#serial(async () => {
+      await this.#restored();
+      if (this.#current?.session !== session || await this.#isRetired(session)) return "retired";
+      if (revision <= this.#siteRecord(session).revision) return "stale";
+      this.#sites.set(session, { revision, access });
+      return "applied";
+    });
+  }
+
   retire(session: string): Promise<void> {
     return this.#serial(() => this.#retire(session));
   }
@@ -130,6 +164,10 @@ export class SessionRegistry {
 
   async #isRetired(session: string): Promise<boolean> {
     return this.#retired.has(session) || await this.#store.isRetired(this.#retiredKey(session));
+  }
+
+  #siteRecord(session: string): SiteRecord {
+    return this.#sites.get(session) ?? NO_SITES;
   }
 
   #retiredKey(session: string): string {

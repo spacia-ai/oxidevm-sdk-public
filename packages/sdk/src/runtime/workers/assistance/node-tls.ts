@@ -1,6 +1,5 @@
 import { Duplex } from "readable-stream";
 import { Buffer } from "buffer";
-import { exactKeys, record } from "../../decode.js";
 import { VMError } from "../../errors.js";
 import { ASSISTANCE_LIMITS } from "../../protocol/assistance.js";
 import type { AsyncContext } from "./async-context.js";
@@ -8,6 +7,7 @@ import type { createNativeChildren, PipedChildHandle } from "./node-children.js"
 import type { NodeSocket } from "./node-socket.js";
 import { bindAsyncEvents, bindAsyncWritable, isEventListener, streamError } from "./node-streams.js";
 import type { ProcessScheduler } from "./process-scheduler.js";
+import { copyOptions, present, refuseSetOptions, truthy, UNSUPPORTED_CONNECT_OPTIONS, type SetTests } from "./node-connect-options.js";
 import { tlsGuestArguments } from "./node-tls-guest.js";
 import { readTlsFrame, tlsControl, tlsData, type TlsAddressInfo, type TlsControl, type TlsFrame, type TlsSecureInfo } from "./node-tls-wire.js";
 
@@ -83,11 +83,13 @@ export function createNodeTls(children: Pick<ReturnType<typeof createNativeChild
     unref(): this { this.#referenced = false; this.#release?.(); this.#release = undefined; return this; }
     connect(...args: unknown[]): this {
       if (this.#child !== undefined || this.destroyed) throw failure("ERR_SOCKET_CLOSED", "TLS socket is already connected or closed");
-      const { options, callback } = connectArguments(args);
+      const { options, timeout, callback } = connectArguments(args);
       if (callback !== undefined) this.once("secureConnect", callback);
       this.#verifyCertificate = options["rejectUnauthorized"] !== false;
       const child = children.spawnService("/usr/bin/node", tlsGuestArguments(options)); this.#child = child;
       if (this.#referenced) this.#release = retain();
+      // Node arms a truthy timeout before it connects; the helper reads this frame first, so the timer covers the handshake too.
+      if (timeout !== undefined) this.setTimeout(timeout);
       child.on("error", error => this.destroy(streamError(error)));
       child.stdin.on("error", error => this.destroy(streamError(error)));
       child.on("close", (code, signal) => {
@@ -102,8 +104,8 @@ export function createNodeTls(children: Pick<ReturnType<typeof createNativeChild
       if (typeof delay !== "number") throw new TypeError("TLS keepalive delay must be a number");
       this.#command({ kind: "keep-alive", enabled: Boolean(enabled), delay: Number.isFinite(delay) ? delay : 0 }); return this;
     }
-    setTimeout(duration: unknown, callback?: unknown): this {
-      if (typeof duration !== "number" || !Number.isFinite(duration) || duration < 0) throw failure("ERR_OUT_OF_RANGE", "TLS timeout must be a nonnegative finite number");
+    setTimeout(value: unknown, callback?: unknown): this {
+      const duration = timeoutDuration(value);
       if (callback !== undefined && !isEventListener(callback)) throw new TypeError("TLS timeout requires a callback");
       if (callback !== undefined) { if (duration === 0) this.removeListener("timeout", callback); else this.once("timeout", callback); }
       this.timeout = duration; this.#command({ kind: "timeout", duration }); return this;
@@ -209,45 +211,71 @@ export function createNodeTls(children: Pick<ReturnType<typeof createNativeChild
   }
   return { connect: (...args: unknown[]) => new TLSSocket().connect(...args), TLSSocket };
 }
-function connectArguments(args: unknown[]): { options: Record<string, unknown>; callback?: (...args: unknown[]) => void } {
+/**
+ * The arguments as Node's tls.connect normalizes them: net's normalizeArgs takes an options object, a pipe path (a string
+ * that is not a port number) or a port with an optional host; a second argument that is an object, else the third,
+ * is then assigned over them, so its port and host win over positional ones.
+ */
+function connectArguments(args: unknown[]): { options: Record<string, unknown>; timeout: number | undefined; callback?: (...args: unknown[]) => void } {
   const values = [...args]; const last = values.at(-1); const callback = isEventListener(last) ? last : undefined;
   if (callback !== undefined) values.pop();
-  let options: Record<string, unknown>;
-  if (typeof values[0] === "number" || typeof values[0] === "string") {
-    const port = values.shift(); const host = typeof values[0] === "string" ? values.shift() : "localhost";
-    if (values.length > 1) throw new TypeError("Invalid tls.connect arguments");
-    options = { ...(values.length === 0 ? {} : record(values.at(0), "TLS options")), port, host };
-  } else {
-    if (values.length !== 1) throw new TypeError("Invalid tls.connect arguments");
-    options = { ...record(values[0], "TLS options") };
-  }
-  exactKeys(options, ["port"], ["host", ...TLS_OPTION_NAMES]);
-  options["host"] ??= "localhost";
-  const host = options["host"];
+  const [first, second, third] = values;
+  const options = typeof first === "object" && first !== null ? copyOptions(first)
+    : typeof first === "string" && !(Number(first) >= 0) ? copyOptions({ path: first })
+      : copyOptions(typeof second === "string" ? { port: first, host: second } : { port: first });
+  Object.assign(options, typeof second === "object" && second !== null ? second : third);
+  refuseSetOptions(options, UNSUPPORTED_TLS_CONNECT_OPTIONS, "tls.connect", "tls.connect");
+  const host = truthy(options["host"]) ? options["host"] : "localhost";
   if (typeof host !== "string" || host.includes("\0") || Buffer.byteLength(host) > 4096) throw new TypeError("Invalid TLS host");
-  if (typeof options["port"] === "string" && /^\d+$/u.test(options["port"])) options["port"] = Number(options["port"]);
-  const port = options["port"];
+  const port = typeof options["port"] === "string" && /^\d+$/u.test(options["port"]) ? Number(options["port"]) : options["port"];
   if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) throw failure("ERR_SOCKET_BAD_PORT", "Invalid TLS port");
-  options = { host: options["host"], port, ...tlsOptions(options) };
-  return { options, ...(callback === undefined ? {} : { callback }) };
+  const timeout = truthy(options["timeout"]) ? timeoutDuration(options["timeout"]) : undefined;
+  return { options: { host, port, ...tlsOptions(options) }, timeout, ...(callback === undefined ? {} : { callback }) };
+}
+function timeoutDuration(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw failure("ERR_OUT_OF_RANGE", "TLS timeout must be a nonnegative finite number");
+  return value;
 }
 function failure(code: string, message: string): Error { return Object.assign(new Error(message), { code }); }
 function protocol(): VMError { return new VMError("PROTOCOL_ERROR", "Invalid native TLS lifecycle"); }
 
 export const TLS_OPTION_NAMES = ["ca", "servername", "rejectUnauthorized", "ALPNProtocols", "minVersion", "maxVersion"] as const;
+/**
+ * Keys tls.connect reads that the guest TLS helper does not take, each with Node's own test. https.request,
+ * https.Agent and tls.connect refuse them when set; plain http never reads them. configSecureContext reads
+ * allowPartialTrustChain, cert and key when truthy, ecdhCurve unless undefined, and the rest unless null or
+ * undefined; createSecureContext reads honorCipherOrder, secureOptions and secureProtocol when truthy; connect
+ * and TLSSocket read secureContext, session, enableTrace, pskCallback, requestOCSP and an existing socket when
+ * truthy, and checkServerIdentity and minDHSize in place of their defaults. Not here: passphrase and
+ * privateKeyEngine only qualify a key, pfx or privateKeyIdentifier; a client's requestCert is fixed; and
+ * connect never passes pskIdentityHint on.
+ */
+export const UNSUPPORTED_TLS_OPTIONS: SetTests = {
+  allowPartialTrustChain: Boolean, cert: Boolean, key: Boolean, ecdhCurve: value => value !== undefined,
+  ciphers: present, sigalgs: present, privateKeyIdentifier: present, dhparam: present, crl: present, sessionIdContext: present,
+  pfx: present, clientCertEngine: present, ticketKeys: present, sessionTimeout: present,
+  honorCipherOrder: Boolean, secureOptions: Boolean, secureProtocol: Boolean,
+  secureContext: Boolean, session: Boolean, enableTrace: Boolean, pskCallback: Boolean, requestOCSP: Boolean, socket: Boolean,
+  checkServerIdentity: present, minDHSize: present,
+};
+/** Keys tls.connect reads that the guest TLS helper does not take: the shared connection keys, a Unix socket path,
+ * the socket's abort signal, and the TLS keys. A truthy timeout it honors, as Node does. */
+const UNSUPPORTED_TLS_CONNECT_OPTIONS: SetTests = { ...UNSUPPORTED_CONNECT_OPTIONS, path: Boolean, signal: Boolean, ...UNSUPPORTED_TLS_OPTIONS };
 type Version = "TLSv1" | "TLSv1.1" | "TLSv1.2" | "TLSv1.3";
 export type TlsOptions = {
   readonly ca?: string; readonly servername?: string; readonly rejectUnauthorized?: boolean;
   readonly ALPNProtocols?: readonly string[]; readonly minVersion?: Version; readonly maxVersion?: Version;
 };
 /** Capture every supported handshake input before agent admission. The same
- * immutable values feed connection identity and the guest TLS invocation. */
+ * immutable values feed connection identity and the guest TLS invocation.
+ * Null means unset, as it does for each of these keys in Node; so does any falsy
+ * ca, which Node tests with `if (ca)`. */
 export function tlsOptions(input: Readonly<Record<string, unknown>>): TlsOptions {
   const result: { ca?: string; servername?: string; rejectUnauthorized?: boolean; ALPNProtocols?: string[]; minVersion?: Version; maxVersion?: Version } = {};
   for (const name of TLS_OPTION_NAMES) {
-    const value = input[name]; if (value === undefined) continue;
+    const value = input[name]; if (name === "ca" ? !truthy(value) : !present(value)) continue;
     if (name === "ca" || name === "servername") {
-      const text = value instanceof Uint8Array && name === "ca" ? new TextDecoder("utf-8", { fatal: true }).decode(value) : value;
+      const text = name === "ca" ? caBundle(value) : value;
       if (typeof text !== "string" || text.includes("\0") || Buffer.byteLength(text) > (name === "ca" ? 65536 : 4096)) throw new TypeError(`Invalid TLS ${name}`);
       result[name] = text;
     } else if (name === "rejectUnauthorized") {
@@ -265,4 +293,21 @@ export function tlsOptions(input: Readonly<Record<string, unknown>>): TlsOptions
     }
   }
   return result;
+}
+
+/**
+ * A ca as one PEM bundle for the guest's Node, which trusts every certificate in it: Node adds each entry of an
+ * array (addCACerts) and every PEM certificate of each entry (SecureContext::SetCACert). A truthy ca that holds no
+ * text (an empty list, a list of empty entries, an empty Buffer) makes Node trust no CA at all; it becomes a
+ * bundle without a certificate, never the empty string, which the guest's Node would read as the default roots.
+ */
+function caBundle(value: unknown): string {
+  const entries: readonly unknown[] = Array.isArray(value) ? value : [value];
+  const texts = entries.map(entry => {
+    const text = entry instanceof Uint8Array ? new TextDecoder("utf-8", { fatal: true }).decode(entry) : entry;
+    if (typeof text !== "string") throw new TypeError("Invalid TLS ca");
+    return text;
+  });
+  const joined = texts.join("\n");
+  return joined === "" ? "\n" : joined;
 }

@@ -106,7 +106,7 @@ finished Linux programs, not Docker.
 6. Run its smoke test in Chromium:
 
    ```sh
-   npm exec --package playwright@1.61.1 -- playwright install chromium
+   npm exec --package playwright@1.64.0 -- playwright install chromium
    npm exec -- oxidevm image test images/my-linux/dist --trust "$HOME/.config/oxidevm/image-author.public.json" --browser chromium --engine-dir /absolute/path/to/matching-engine-release
    ```
 

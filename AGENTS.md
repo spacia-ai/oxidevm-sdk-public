@@ -22,6 +22,7 @@ Use strict TypeScript and pnpm. Decode untrusted values from `unknown`.
 Do not add `any`, suppressed checks, or unsafe assertions.
 Keep worker, browser, and Node module graphs separate.
 Keep unsupported behavior explicit through typed errors.
+Update the documentation a change makes stale (`docs/`, the skill, READMEs and examples) in the same pull request.
 Preserve cancellation, bounds, durability, accessibility, and security checks.
 
 Run the frozen installation, production build, strict compiler projects,

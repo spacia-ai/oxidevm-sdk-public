@@ -13,7 +13,10 @@ import sys
 import tarfile
 
 
-IMAGE_VERSION = '0.0.2'
+IMAGE_VERSION = '0.0.3'
+# `import pandas` asks dateutil for UTC; without a system zone file dateutil unpacks its whole bundled tarball. pytz's
+# UTC is byte-identical to that tarball's. tzdata's slim zone files would give dateutil 2.9 a zero offset everywhere.
+ZONEINFO_LINK = ('usr/share/zoneinfo/UTC', '../../lib/python3.12/site-packages/pytz/zoneinfo/UTC')
 
 
 def digest(data):
@@ -38,6 +41,17 @@ def python_owner(name):
         if re.match(pattern, local):
             return 'SPDXRef-Package-' + package
     return None
+
+
+def unchecked_bytecode_of(base, data):
+    """True when data is the base's checked-hash bytecode with only its header flags set to unchecked-hash."""
+    return (len(base) > 16 and base[4:8] == (3).to_bytes(4, 'little') and data[4:8] == (1).to_bytes(4, 'little')
+            and data[:4] == base[:4] and data[8:] == base[8:])
+
+
+def system_link_owner(name, target):
+    """The package whose files a link the recipe adds outside site-packages exposes."""
+    return 'SPDXRef-Package-pytz' if (name, target) == (ZONEINFO_LINK[0], ZONEINFO_LINK[1].encode()) else None
 
 
 def save(path, value):
@@ -122,6 +136,10 @@ def prepare(job):
                     gcc_files[m.name] = digest(archive.extractfile(m).read())
                 elif m.issym() and m.name.startswith('usr/lib/'):
                     gcc_files[m.name] = digest(m.linkname.encode())
+    # The recipe rewrites the base's checked-hash bytecode unchecked-hash; compare it with the authenticated original.
+    with tarfile.open(job['baseArchive']) as archive:
+        base_bytecode = {safe_path(m.name.removeprefix('./')): archive.extractfile(m).read() for m in archive
+                         if m.isfile() and m.name.endswith('.pyc') and m.name.removeprefix('./').startswith('usr/lib/python3.12/')}
     rows, relations, active = [], [], set()
     for path in sorted(root.rglob('*')):
         if path.is_dir() and not path.is_symlink(): continue
@@ -129,10 +147,15 @@ def prepare(job):
         data = os.readlink(path).encode() if path.is_symlink() else path.read_bytes()
         sha = digest(data)
         previous = old_files.get(name)
-        if previous and any(c['algorithm'] == 'SHA256' and c['checksumValue'] == sha for c in previous['checksums']):
+        recorded = set() if previous is None else {c['checksumValue'] for c in previous['checksums'] if c['algorithm'] == 'SHA256'}
+        if sha in recorded:
+            selected = owners[name]
+        elif name in base_bytecode and digest(base_bytecode[name]) in recorded and unchecked_bytecode_of(base_bytecode[name], data):
             selected = owners[name]
         elif name in gcc_files and gcc_files[name] == sha:
             selected = {'SPDXRef-Package-gcc-runtime'}
+        elif path.is_symlink() and system_link_owner(name, data) in packages:
+            selected = {system_link_owner(name, data)}
         else:
             owner = python_owner(name)
             assert owner is not None and owner in packages, 'Unmapped or changed base file: ' + name
@@ -178,6 +201,19 @@ if __name__ == '__main__':
             try: safe_path(path)
             except AssertionError: pass
             else: raise AssertionError('Accepted escaping path')
+        checked = (3531).to_bytes(2, 'little') + b'\r\n' + (3).to_bytes(4, 'little') + bytes(range(8)) + b'\xe3code'
+        unchecked = checked[:4] + (1).to_bytes(4, 'little') + checked[8:]
+        assert unchecked_bytecode_of(checked, unchecked)
+        assert not unchecked_bytecode_of(checked, checked), 'Accepted bytecode that still validates its source'
+        assert not unchecked_bytecode_of(checked, unchecked[:-1] + b'x'), 'Accepted a changed code object'
+        assert not unchecked_bytecode_of(checked, unchecked[:8] + bytes(8) + unchecked[16:]), 'Accepted another source hash'
+        assert not unchecked_bytecode_of(checked, b'\0\0\r\n' + unchecked[4:]), 'Accepted another interpreter'
+        assert not unchecked_bytecode_of(checked[:4] + bytes(4) + checked[8:], unchecked), 'Accepted timestamp bytecode as the base'
+        assert not unchecked_bytecode_of(checked[:12], unchecked[:12]), 'Accepted a truncated header'
+        assert system_link_owner('usr/share/zoneinfo/UTC', b'../../lib/python3.12/site-packages/pytz/zoneinfo/UTC') == 'SPDXRef-Package-pytz'
+        assert system_link_owner('usr/share/zoneinfo', b'../lib/python3.12/site-packages/tzdata/zoneinfo') is None, 'Accepted slim zone files dateutil misreads'
+        assert system_link_owner('usr/share/zoneinfo/UTC', b'/etc/localtime') is None
+        assert system_link_owner('etc/zoneinfo/UTC', b'../../lib/python3.12/site-packages/pytz/zoneinfo/UTC') is None
     else:
         assert len(sys.argv) == 2
         prepare(json.loads(Path(sys.argv[1]).read_text()))

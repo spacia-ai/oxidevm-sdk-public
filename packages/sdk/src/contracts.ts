@@ -195,7 +195,12 @@ export interface VMBase {
   exec(spec: ExecSpec): Promise<ExecResult>;
   spawn(spec: TerminalSpawnSpec): Promise<TerminalHandle>;
   spawn(spec: PipeSpawnSpec): Promise<ProcessHandle>;
-  exposePort(port: number, options?: { readonly signal?: AbortSignal }): Promise<PreviewHandle>;
+  /**
+   * Waits for the guest listener on `port` and returns its preview route. Repeated exposures of one port share a
+   * preview session and its site access. With `siteAccess`, the route resolves once the session applied it, and
+   * rejects as `PreviewHandle.setSiteAccess` does when it cannot.
+   */
+  exposePort(port: number, options?: { readonly signal?: AbortSignal; readonly siteAccess?: PreviewSiteAccess }): Promise<PreviewHandle>;
   listeningPorts(options?: { readonly signal?: AbortSignal }): Promise<readonly ListeningPort[]>;
   watchListeningPorts(
     listener: (ports: readonly ListeningPort[]) => void,
@@ -351,10 +356,44 @@ export interface ListeningPort {
   readonly previewable: boolean;
 }
 
+/** The sites a preview page may reach besides its own origin: none, a list of canonical sites, or every https and wss origin. */
+export type PreviewSiteAccess =
+  | { readonly kind: "none" }
+  | { readonly kind: "sites"; readonly sites: readonly string[] }
+  | { readonly kind: "any" };
+
+/** Another site a preview page's Content-Security-Policy blocked, as the page reported it: a hint, never a grant. */
+export interface BlockedPreviewSite {
+  /** The canonical site, as `previewSite` returns it. */
+  readonly site: string;
+  readonly directive: "connect" | "script" | "style" | "image" | "font" | "media" | "frame";
+}
+
 export interface PreviewHandle {
   readonly port: number;
   readonly url: URL;
   readonly isolation: "per-session" | "shared";
+  /**
+   * Sets the sites the preview's pages may reach besides their own origin, for pages loaded after it resolves.
+   * Exposures of one port share a session, so the last change wins. Rejects with INVALID_ARGUMENT for an invalid
+   * access or options; ABORTED after `close`, when `signal` aborts, or when the session ended before the change
+   * applied; PROTOCOL_ERROR while the VM is disposing or once it is disposed, and when the session's Service Worker
+   * already holds this or a newer change (`detail.reason` "stale"); RELAY_ERROR when no worker took it, including a
+   * change left unanswered for 10 s by a keeper that answered an earlier one (`detail.reason` "no-answer"); and
+   * FEATURE_NOT_AVAILABLE (`detail.reason` "preview-host-outdated") when the preview host leaves the change
+   * unanswered for 10 s and has answered none before. A change that rejected with RELAY_ERROR or
+   * FEATURE_NOT_AVAILABLE, or whose `signal` aborted, may still apply later, when the session's keeper reconnects
+   * its worker.
+   */
+  setSiteAccess(access: PreviewSiteAccess, options?: { readonly signal?: AbortSignal }): Promise<void>;
+  /**
+   * Calls `listener` once for each other site, at most 64, that a page of this preview framed by this document
+   * reports its policy blocked. Reports come from the preview page, so they are untrusted and grant nothing.
+   * Resolves when `signal` aborts, the handle closes or the VM's disposal begins. Rejects with INVALID_ARGUMENT
+   * without a listener function and exactly an AbortSignal option, ABORTED after `close`, PROTOCOL_ERROR while the
+   * VM is disposing or once it is disposed, and with the listener's error if it throws.
+   */
+  watchBlockedSites(listener: (blocked: BlockedPreviewSite) => void, options: { readonly signal: AbortSignal }): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -482,6 +521,12 @@ export type SnapshotEvent =
     }
   | { readonly type: "save-failed"; readonly kind: SnapshotKind; readonly error: VMError }
   | { readonly type: "auto-save-paused"; readonly reason: "quota"; readonly retryInMilliseconds: number }
+  | {
+      readonly type: "auto-save-paused";
+      readonly reason: "busy";
+      readonly cause: "js-process-active" | "not-quiesced";
+      readonly retryInMilliseconds: number;
+    }
   | { readonly type: "restore-progress"; readonly completedBytes: number; readonly totalBytes: number };
 
 export interface VMSnapshots {

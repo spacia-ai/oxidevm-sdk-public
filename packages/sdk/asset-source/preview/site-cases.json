@@ -1,0 +1,7 @@
+[["api.open-meteo.com","api.open-meteo.com"],["API.Open-Meteo.COM","api.open-meteo.com"],
+ ["https://api.open-meteo.com/v1/forecast?x=1","api.open-meteo.com"],["wss://realtime.example.com/socket","realtime.example.com"],
+ ["api.example.com:443","api.example.com"],["https://api.example.com:443","api.example.com"],["api.example.com:8443","api.example.com:8443"],
+ ["bücher.example","xn--bcher-kva.example"],["api.example.com.","api.example.com"],
+ ["",null],["localhost",null],["app.localhost",null],["127.0.0.1",null],["8.8.8.8",null],["[::1]",null],["intranet",null],
+ ["printer.local",null],["http://api.example.com",null],["ws://x.example.com",null],["https://user:pw@api.example.com",null],
+ ["*.example.com",null],["api.example.com/path",null],["api.example.com:0",null],["api.example.com:65536",null]]

@@ -1,10 +1,45 @@
 import { describe, expect, it } from "vitest";
 
-import { VMError } from "../../errors.js";
+import { serializeUnknownError, VMError } from "../../errors.js";
+import type { SaveReport } from "../../protocol.js";
 import { AutoSave, type AutoSaveEvent, type AutoSaveHost } from "./auto-save.js";
 
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
+const SNAPSHOT = { id: "123e4567-e89b-42d3-a456-426614174001", createdAt: "2026-11-11T10:00:00.000Z" };
+
+/** How the JS process driver refuses a save while a JS process lives. */
+const JS_PROCESS_ACTIVE = new VMError("FEATURE_NOT_AVAILABLE", "Snapshots and suspend cannot capture a live JS process", { reason: "js-process-active" });
+/** How the engine refuses to begin a checkpoint while the workspace is not quiesced. */
+const NOT_QUIESCED = new VMError("PROTOCOL_ERROR", "Native checkpoint could not begin", {
+  reason: "checkpoint-begin-rejected", phase: "initial-round", domain: "runtime", owner: "workspace",
+  nativeReason: 1, scalar0: 0, scalar1: 0, nativeCauses: ["not-quiesced"],
+});
+/** The refusal the Playground reported on 2026-11-11: a stale host dispatch hint, not a busy VM. */
+const HOST_REFERENCE = new VMError("PROTOCOL_ERROR", "Native checkpoint could not begin", {
+  reason: "checkpoint-begin-rejected", phase: "owner-read", domain: "runtime", owner: "host",
+  nativeReason: 2, scalar0: 0, scalar1: 0, nativeCauses: ["reference"],
+});
+/** A checkpoint refusal whose detail does not decode: its causes are a string, not a list. */
+const GARBLED_NOT_QUIESCED = new VMError("PROTOCOL_ERROR", "Native checkpoint could not begin", {
+  reason: "checkpoint-begin-rejected", phase: "initial-round", domain: "runtime", owner: "workspace",
+  nativeReason: 1, scalar0: 0, scalar1: 0, nativeCauses: "not-quiesced",
+});
+
+type Pause = Extract<AutoSaveEvent, { readonly type: "auto-save-paused" }>;
+
+function busy(cause: "js-process-active" | "not-quiesced", retryInMilliseconds: number): Pause {
+  return { type: "auto-save-paused", reason: "busy", cause, retryInMilliseconds };
+}
+
+function quota(retryInMilliseconds: number): Pause {
+  return { type: "auto-save-paused", reason: "quota", retryInMilliseconds };
+}
+
+/** How long each save waited after the one before it, the first after the start. */
+function gaps(saves: readonly number[]): number[] {
+  return saves.map((at, index) => at - (saves[index - 1] ?? 0));
+}
 
 /** A fake clock and timer queue that runs due timers as time advances. */
 class FakeClock {
@@ -60,7 +95,10 @@ function harness(overrides: Partial<Script> = {}) {
     dirty: true, pauseMilliseconds: 100, durationMilliseconds: 500, full: false, collectionFrees: false, failure: undefined, ...overrides,
   };
   const saves: number[] = [];
-  const events: AutoSaveEvent[] = [];
+  /** The pauses automatic saves reported. */
+  const events: Pause[] = [];
+  /** What the pages heard of the saves themselves. */
+  const reports: SaveReport[] = [];
   let collections = 0;
   let refusals = 0;
   let release: (() => void) | undefined;
@@ -71,23 +109,35 @@ function harness(overrides: Partial<Script> = {}) {
     now: () => clock.now,
     schedule: (delay, run) => clock.schedule(delay, run),
     dirty: () => script.dirty,
-    save: async () => {
+    // Reports as the control worker's saves do: the start, then how the save ended.
+    save: async (report) => {
       saves.push(clock.now);
-      if (holding) await new Promise<void>((resolve) => { release = resolve; });
-      if (script.failure !== undefined) throw script.failure;
-      if (script.full) {
-        refusals += 1;
-        throw new VMError("QUOTA_EXCEEDED", "storage is full", { phase: "write-out" });
+      report({ type: "save-started", kind: "automatic" });
+      try {
+        if (holding) await new Promise<void>((resolve) => { release = resolve; });
+        if (script.failure !== undefined) throw script.failure;
+        if (script.full) {
+          refusals += 1;
+          throw new VMError("QUOTA_EXCEEDED", "storage is full", { phase: "write-out" });
+        }
+        clock.now += script.durationMilliseconds;
+        const { pauseMilliseconds, durationMilliseconds } = script;
+        report({ type: "save-finished", kind: "automatic", snapshot: SNAPSHOT, pauseMilliseconds, durationMilliseconds });
+        return { pauseMilliseconds };
+      } catch (error) {
+        report({ type: "save-failed", kind: "automatic", error: serializeUnknownError(error) });
+        throw error;
       }
-      clock.now += script.durationMilliseconds;
-      return { pauseMilliseconds: script.pauseMilliseconds };
     },
     collect: async () => {
       collections += 1;
       if (holdingCollection) await new Promise<void>((resolve) => { collectionWaiters.push(resolve); });
       if (script.collectionFrees) script.full = false;
     },
-    emit: (event) => events.push(event),
+    emit: (event) => {
+      if (event.type === "auto-save-paused") events.push(event);
+      else reports.push(event);
+    },
   };
   const autoSave = new AutoSave(host);
   autoSave.configure({ enabled: true });
@@ -96,6 +146,7 @@ function harness(overrides: Partial<Script> = {}) {
     script,
     saves,
     events,
+    reports,
     autoSave,
     collections: () => collections,
     refusals: () => refusals,
@@ -396,13 +447,193 @@ describe("automatic saves", () => {
 
   it("neither collects nor pauses when a save fails for another reason", async () => {
     const failure = new VMError("STORAGE_ERROR", "snapshot storage did not answer seal-capture in time", { reason: "storage-timeout" });
-    const { clock, saves, events, collections } = harness({ failure });
+    const { clock, saves, events, reports, collections } = harness({ failure });
 
-    await clock.advance(4 * MINUTE);
+    await clock.advance(6 * MINUTE);
 
-    expect(saves).toEqual([2 * MINUTE, 4 * MINUTE]);
+    // The failed save at 2 min doubles the wait before the next one.
+    expect(saves).toEqual([2 * MINUTE, 6 * MINUTE]);
     expect(collections()).toBe(0);
     expect(events).toEqual([]);
+    expect(reports.filter((report) => report.type === "save-failed")).toHaveLength(2);
+  });
+
+  it("pauses automatic saves once on a busy refusal and backs off", async () => {
+    const { clock, saves, events, reports } = harness({ failure: JS_PROCESS_ACTIVE });
+
+    await clock.advance(2 * MINUTE);
+    await clock.advance(MINUTE);
+    await clock.advance(2 * MINUTE);
+
+    // Refused at 2 min, saves try again 60 s later and then 120 s after that.
+    expect(saves).toEqual([2 * MINUTE, 3 * MINUTE, 5 * MINUTE]);
+    expect(events).toEqual([busy("js-process-active", MINUTE)]);
+    expect(reports.filter((report) => report.type === "save-failed")).toEqual([]);
+    // The pause ends the first try's start; the tries after it report nothing while the VM stays busy.
+    expect(reports).toEqual([{ type: "save-started", kind: "automatic" }]);
+    await clock.advance(4 * MINUTE - 1);
+    expect(saves).toHaveLength(3);
+    await clock.advance(1);
+    expect(saves).toEqual([2 * MINUTE, 3 * MINUTE, 5 * MINUTE, 9 * MINUTE]);
+    expect(events).toHaveLength(1);
+  });
+
+  it("pauses for a checkpoint that is not quiesced, retrying at most every fifteen minutes", async () => {
+    const { clock, saves, events, reports } = harness({ failure: NOT_QUIESCED });
+
+    for (const minutes of [2, 1, 2, 4, 8, 15, 15]) await clock.advance(minutes * MINUTE);
+
+    expect(gaps(saves)).toEqual([2, 1, 2, 4, 8, 15, 15].map((minutes) => minutes * MINUTE));
+    expect(events).toEqual([busy("not-quiesced", MINUTE)]);
+    expect(reports.filter((report) => report.type === "save-failed")).toEqual([]);
+    expect(reports).toEqual([{ type: "save-started", kind: "automatic" }]);
+  });
+
+  it("keeps the timed busy retry when a hint's save is refused as busy", async () => {
+    const { clock, saves, events, autoSave } = harness({ failure: JS_PROCESS_ACTIVE });
+    await clock.advance(2 * MINUTE);
+
+    // Files change and the page is hidden during the pause; the VM refuses both of their saves.
+    autoSave.hint("files-changed");
+    await clock.advance(15 * SECOND);
+    autoSave.hint("hidden");
+    await clock.advance(45 * SECOND);
+    // The timed retry still comes 60 s after the refusal at 2 min, and the next one 120 s later.
+    expect(saves).toEqual([2 * MINUTE, 2 * MINUTE + 10 * SECOND, 2 * MINUTE + 15 * SECOND, 3 * MINUTE]);
+    await clock.advance(2 * MINUTE - 1);
+    expect(saves).toHaveLength(4);
+    await clock.advance(1);
+    expect(saves.at(-1)).toBe(5 * MINUTE);
+    expect(events).toEqual([busy("js-process-active", MINUTE)]);
+  });
+
+  it("pauses until the timed save, in whole milliseconds, when a hint's save is the first refused as busy", async () => {
+    const { clock, saves, events, autoSave } = harness({ failure: JS_PROCESS_ACTIVE });
+    // The control worker's clock has fractions of a millisecond.
+    await clock.advance(30 * SECOND + 0.5);
+    autoSave.hint("files-changed");
+    await clock.advance(10 * SECOND);
+
+    // The timed save stays at 2 min, 79.5 s away, and the pause reports it rounded up.
+    expect(events).toEqual([busy("js-process-active", 80 * SECOND)]);
+    await clock.advance(80 * SECOND - 0.5);
+    expect(saves).toEqual([40 * SECOND + 0.5, 2 * MINUTE]);
+    // That refusal of the timed save starts the doubling: the next comes 60 s later.
+    await clock.advance(MINUTE);
+    expect(saves.at(-1)).toBe(3 * MINUTE);
+  });
+
+  it("counts a checkpoint refusal whose detail does not decode as an ordinary failure", async () => {
+    const { clock, saves, events, reports } = harness({ failure: GARBLED_NOT_QUIESCED });
+
+    await clock.advance(6 * MINUTE);
+
+    expect(saves).toEqual([2 * MINUTE, 6 * MINUTE]);
+    expect(events).toEqual([]);
+    expect(reports.filter((report) => report.type === "save-failed")).toHaveLength(2);
+  });
+
+  it("reports a save that succeeds after a busy pause, and starts the busy retry over", async () => {
+    const { clock, saves, script, events, reports } = harness({ failure: JS_PROCESS_ACTIVE });
+    await clock.advance(2 * MINUTE);
+
+    script.failure = undefined;
+    await clock.advance(MINUTE);
+    // The retry reports its start once it has got past the refusal.
+    expect(reports).toEqual([
+      { type: "save-started", kind: "automatic" },
+      { type: "save-started", kind: "automatic" },
+      { type: "save-finished", kind: "automatic", snapshot: SNAPSHOT, pauseMilliseconds: 100, durationMilliseconds: 500 },
+    ]);
+
+    script.failure = JS_PROCESS_ACTIVE;
+    await clock.advance(2 * MINUTE + 500);
+    expect(saves).toEqual([2 * MINUTE, 3 * MINUTE, 5 * MINUTE + 500]);
+    expect(events).toEqual([busy("js-process-active", MINUTE), busy("js-process-active", MINUTE)]);
+    expect(reports.at(-1)).toEqual({ type: "save-started", kind: "automatic" });
+  });
+
+  it("reports a busy pause again once its cause changes or a save ends otherwise", async () => {
+    const { clock, script, events, reports } = harness({ failure: JS_PROCESS_ACTIVE });
+    await clock.advance(2 * MINUTE);
+
+    script.failure = NOT_QUIESCED;
+    await clock.advance(MINUTE);
+    expect(events).toEqual([busy("js-process-active", MINUTE), busy("not-quiesced", 2 * MINUTE)]);
+
+    script.failure = HOST_REFERENCE;
+    await clock.advance(2 * MINUTE);
+    // A try that fails otherwise reports its start with its failure.
+    expect(reports.slice(1)).toMatchObject([
+      { type: "save-started", kind: "automatic" },
+      { type: "save-failed", kind: "automatic", error: { code: "PROTOCOL_ERROR", detail: { owner: "host" } } },
+    ]);
+
+    // Only a success starts the busy retry over: the failure at 5 min waits four minutes.
+    script.failure = JS_PROCESS_ACTIVE;
+    await clock.advance(4 * MINUTE);
+    expect(events.at(-1)).toEqual(busy("js-process-active", 4 * MINUTE));
+    expect(reports.at(-1)).toEqual({ type: "save-started", kind: "automatic" });
+  });
+
+  it("backs off automatic saves after repeated failures and resets after a success", async () => {
+    const { clock, saves, script, events, reports } = harness({ failure: HOST_REFERENCE });
+
+    for (const minutes of [2, 4, 8, 15]) await clock.advance(minutes * MINUTE);
+    script.failure = undefined;
+    await clock.advance(15 * MINUTE);
+    await clock.advance(2 * MINUTE);
+
+    // Failures at 2, 6, 14 and 29 min; the save at 44 min succeeds in 500 ms and the next follows two
+    // minutes after it ends.
+    expect(gaps(saves)).toEqual([2 * MINUTE, 4 * MINUTE, 8 * MINUTE, 15 * MINUTE, 15 * MINUTE, 2 * MINUTE + 500]);
+    expect(reports.filter((report) => report.type === "save-failed")).toHaveLength(4);
+    expect(events).toEqual([]);
+  });
+
+  it("pauses for space and for a busy VM in turn, reporting each pause", async () => {
+    const { clock, saves, script, events } = harness({ full: true });
+    await clock.advance(2 * MINUTE);
+    expect(events).toEqual([quota(MINUTE)]);
+
+    script.failure = JS_PROCESS_ACTIVE;
+    await clock.advance(MINUTE);
+    expect(events).toEqual([quota(MINUTE), busy("js-process-active", MINUTE)]);
+
+    // Still full once the process ends: the quota retry carries on doubling.
+    script.failure = undefined;
+    await clock.advance(MINUTE);
+    expect(saves).toEqual([2 * MINUTE, 2 * MINUTE, 3 * MINUTE, 4 * MINUTE, 4 * MINUTE]);
+    expect(events).toEqual([quota(MINUTE), busy("js-process-active", MINUTE), quota(2 * MINUTE)]);
+  });
+
+  it("stops retrying a busy pause when automatic saves are turned off, and pauses afresh when on again", async () => {
+    const { clock, saves, events, reports, autoSave } = harness({ failure: JS_PROCESS_ACTIVE });
+    await clock.advance(2 * MINUTE);
+
+    autoSave.configure({ enabled: false });
+    await clock.advance(30 * MINUTE);
+    expect(saves).toEqual([2 * MINUTE]);
+
+    autoSave.configure({ enabled: true });
+    await clock.advance(2 * MINUTE);
+    expect(saves).toEqual([2 * MINUTE, 34 * MINUTE]);
+    expect(events).toEqual([busy("js-process-active", MINUTE), busy("js-process-active", 2 * MINUTE)]);
+    expect(reports).toEqual([{ type: "save-started", kind: "automatic" }, { type: "save-started", kind: "automatic" }]);
+  });
+
+  it("ends a busy pause when a named save succeeds", async () => {
+    const { clock, saves, script, events, autoSave } = harness({ failure: JS_PROCESS_ACTIVE });
+    await clock.advance(2 * MINUTE + 30 * SECOND);
+
+    autoSave.saved(clock.now, 500, 100);
+    await clock.advance(2 * MINUTE);
+    expect(saves).toEqual([2 * MINUTE, 4 * MINUTE + 30 * SECOND]);
+    expect(events).toEqual([busy("js-process-active", MINUTE), busy("js-process-active", MINUTE)]);
+
+    script.failure = undefined;
+    await clock.advance(MINUTE);
+    expect(saves).toHaveLength(3);
   });
 
   it("does nothing until enabled, and stops when disabled", async () => {

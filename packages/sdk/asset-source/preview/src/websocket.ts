@@ -1,4 +1,5 @@
 import { reportServerDelivery } from "./navigation-timing";
+import { websocketRoute } from "./websocket-route";
 
 // The page's WebSocket bridge: sockets travel to the guest listener through
 // this origin's Service Worker, which holds the session transport. No owner
@@ -9,6 +10,8 @@ const controller: ServiceWorker = controllerValue;
 // This worker served the page, so its timing entry reads as the server response it is
 // (navigation-timing.ts). Every page loads this script before its own.
 reportServerDelivery({ resource: globalThis.PerformanceResourceTiming, navigation: globalThis.PerformanceNavigationTiming });
+
+const NativeWebSocket = globalThis.WebSocket;
 
 class PortWebSocket extends EventTarget {
   static readonly CONNECTING = 0;
@@ -37,7 +40,7 @@ class PortWebSocket extends EventTarget {
   constructor(url: string | URL, protocols: string | string[] = []) {
     super();
     const target = new URL(url, location.href);
-    if ((target.protocol !== "ws:" && target.protocol !== "wss:") || target.hostname !== location.hostname || target.username !== "" || target.password !== "" || target.hash !== "") throw new DOMException("Unsafe preview WebSocket URL", "SecurityError");
+    if (websocketRoute(target, location) !== "bridge") throw new DOMException("Unsafe preview WebSocket URL", "SecurityError");
     const requested = typeof protocols === "string" ? [protocols] : [...protocols];
     if (requested.length > 16 || new Set(requested).size !== requested.length || requested.some((value) => !/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/.test(value))) throw new DOMException("Invalid WebSocket protocol", "SyntaxError");
     this.url = target.href;
@@ -54,15 +57,13 @@ class PortWebSocket extends EventTarget {
 
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
     if (this.readyState !== PortWebSocket.OPEN) throw new DOMException("WebSocket is not open", "InvalidStateError");
+    const text = typeof data === "string";
+    // The message is the bytes as they are now, as with the browser's own WebSocket: a caller may
+    // reuse its buffer once send() returns (noVNC does). Only a Blob, which cannot change, is read
+    // when its turn in the queue comes.
+    const message = data instanceof Blob ? data : messageBytes(data);
     this.#sendQueue = this.#sendQueue.then(async () => {
-      const text = typeof data === "string";
-      const bytes = text
-        ? new TextEncoder().encode(data)
-        : data instanceof Blob
-          ? new Uint8Array(await data.arrayBuffer())
-          : ArrayBuffer.isView(data)
-            ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice()
-            : new Uint8Array(data).slice();
+      const bytes = message instanceof Blob ? new Uint8Array(await message.arrayBuffer()) : message;
       if (bytes.byteLength > 16 * 1024 * 1024) throw new DOMException("WebSocket message is too large", "QuotaExceededError");
       const sequence = this.#next++;
       this.#pending.set(sequence, bytes.byteLength);
@@ -126,6 +127,12 @@ class PortWebSocket extends EventTarget {
   }
 }
 
+/** A private copy of a text or binary message's bytes. */
+function messageBytes(data: string | ArrayBufferLike | ArrayBufferView): Uint8Array<ArrayBuffer> {
+  if (typeof data === "string") return new TextEncoder().encode(data);
+  return ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice() : new Uint8Array(data).slice();
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -139,4 +146,25 @@ function exactKeys(value: Record<string, unknown>, expected: readonly string[]):
   return keys.length === expected.length && keys.every((key) => expected.includes(key));
 }
 
-Object.defineProperty(globalThis, "WebSocket", { configurable: false, writable: false, value: PortWebSocket });
+// Sockets to other hosts go to the browser's own WebSocket, so the page CSP is the only decision
+// point: an allowed site connects and a blocked one fails. Validation errors stay the bridge's.
+function nativeProtocols(value: unknown): string | string[] | undefined {
+  if (typeof value === "string") return value;
+  return Array.isArray(value) && value.every((item): item is string => typeof item === "string") ? value : undefined;
+}
+
+const RoutedWebSocket = new Proxy(PortWebSocket, {
+  construct(target, args: unknown[], newTarget): object {
+    const [url, protocols] = args;
+    if (typeof url === "string" || url instanceof URL) {
+      if (websocketRoute(url, location) === "native") {
+        return new NativeWebSocket(url, nativeProtocols(protocols));
+      }
+    }
+    const instance: unknown = Reflect.construct(target, args, newTarget);
+    if (typeof instance !== "object" || instance === null) throw new TypeError("WebSocket construction failed");
+    return instance;
+  },
+});
+
+Object.defineProperty(globalThis, "WebSocket", { configurable: false, writable: false, value: RoutedWebSocket });
