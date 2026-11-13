@@ -86,3 +86,16 @@ it("stops admission after a failure and drains every other in-flight read", asyn
   await rejected;
   expect(started).toHaveLength(8);
 });
+
+it("admits as many objects as a wider byte window holds", async () => {
+  const release = Promise.withResolvers<undefined>();
+  let count = 0, peak = 0;
+  const reading = readStorageObjects(Array.from({ length: 12 }, () => ({ bytes: 4 * 1024 ** 2 })), async () => {
+    count++; peak = Math.max(peak, count);
+    await release.promise;
+    count--;
+  }, undefined, 6, 6 * 4 * 1024 ** 2);
+  try { await vi.waitFor(() => expect(count).toBe(6), { timeout: 100 }); }
+  finally { release.resolve(undefined); await reading; }
+  expect(peak).toBe(6);
+});

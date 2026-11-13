@@ -18,6 +18,11 @@ import { packAcquisitionFailure, packMiss, type RootfsPackMiss, type RootfsPackS
 interface Reads { readonly files: Map<string,File>; readonly checked:Set<string>; readonly verifiedBlobs:Set<string>; readonly buffers:Map<string,Uint8Array<ArrayBuffer>>; readonly lock?:RootfsReadLock }
 function reads(): Reads {return {files:new Map(),checked:new Set(),verifiedBlobs:new Set(),buffers:new Map()};}
 type Writer=(scope:Scope,name:string,bytes:Uint8Array<ArrayBuffer>)=>Promise<void>;
+/**
+ * Packs an install checks or downloads at once. Each is at most 4 MiB and a request's wait for its
+ * first byte dominates its time, so an image is bound by bandwidth only with several in flight.
+ */
+const PACK_DOWNLOADS = 6;
 
 /** Packed bodies are immutable; a restore retains verified File snapshots only for its transaction. */
 export class RootfsPackCache {
@@ -136,7 +141,7 @@ export class RootfsPackCache {
       }
       active(signal); await journal?.(chunk.sha256);
       complete+=chunk.bytes;progress?.(Math.min(complete,total),total,"verify",totals());
-    },signal,2);
+    },signal,PACK_DOWNLOADS,PACK_DOWNLOADS*ROOTFS_PACK_BYTES);
     await this.#verifyIndex(index,rootfsClosure(manifest),scoped,signal);
     active(signal); await this.#publish(index,digest); await journal?.();this.#indexes.set(digest,index);progress?.(total,total,"commit",totals());return true;
   }

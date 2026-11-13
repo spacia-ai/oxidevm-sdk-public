@@ -5,15 +5,19 @@ import { isBackupError } from "./snapshot-archive/errors.js";
 import { gunzipExact } from "./snapshot-archive/gzip.js";
 import { MAX_STORED_OVERHEAD_BYTES } from "./snapshot-archive/manifest.js";
 import { type ShippedExpectation, shippedError, type ShippedManifest, verifyShippedManifest } from "./snapshot-archive/shipped.js";
-import { rebuildChunk, type ShippedImageRange } from "./snapshot-archive/shipped-transport.js";
+import { literalChunkIndices, rebuildChunk, type ShippedImageRange } from "./snapshot-archive/shipped-transport.js";
+import { orderedDownloads } from "./ordered-downloads.js";
 import { sha256Hex } from "./snapshot-content.js";
 import type { SnapshotImport } from "./snapshot-import.js";
-import { SNAPSHOT_CHUNK_BYTES, USERSPACE_SNAPSHOT_SCHEMA, type ObjectRef } from "./snapshot-manifest.js";
+import { SNAPSHOT_CHUNK_BYTES, USERSPACE_SNAPSHOT_SCHEMA, type ChunkRef, type ObjectRef } from "./snapshot-manifest.js";
 import type { SnapshotStore } from "./snapshot-store.js";
 import type {ShippedInstallIdentity} from "../protocol/shipped-source.js";
 
-/** Chunk downloads in flight at once. */
-const PARALLEL_FETCHES = 4;
+/**
+ * Chunk downloads in flight at once. Chunks are at most 1 MiB and a request's wait for its first
+ * byte dominates its time, so a start is bound by bandwidth only with several in flight.
+ */
+const PARALLEL_FETCHES = 8;
 /** Tries per chunk before the install gives up on it. */
 const ATTEMPTS = 3;
 const PROGRESS_INTERVAL_MILLISECONDS = 100;
@@ -37,7 +41,7 @@ export interface ShippedInstallRun {
 
 /**
  * Installs the shipped restore point `listing` of a profile (ADR 0014, Release 2): its manifest,
- * pinned by the profile's hash and signed by the trusted key, then its chunks, four at a time,
+ * pinned by the profile's hash and signed by the trusted key, then its chunks, eight at a time,
  * each decompressed to its size and checked against its hash before it is stored, and tried up to
  * three times. A chunk the store already holds is not fetched again, so a retried install
  * fetches only what is missing; a chunk that never verifies is never stored. The restore point
@@ -64,8 +68,9 @@ export async function installShipped(
 
   const transaction = await run.enqueue(() => store.beginImport(shipped.snapshot, "shipped", source === undefined ? {} : {preserveId:true,shippedSource:source}));
   try {
-    await storeChunks(transaction, shipped.objects, listing, run,source===undefined?undefined:listing.bytes);
-    if (shipped.transport !== undefined) await rebuildShippedPayloads(transaction, shipped, listing, run);
+    const downloaded = downloadMeter(run, listing.bytes);
+    await storeChunks(transaction, shipped.objects, listing, run, downloaded, source===undefined?undefined:listing.bytes);
+    if (shipped.transport !== undefined) await rebuildShippedPayloads(transaction, shipped, listing, run, downloaded);
     throwIfCancelled(run.signal);
     const committed = await run.enqueue(() => transaction.commit());
     const listed = (await run.enqueue(() => store.list())).find((info) => info.ref.id === committed.id);
@@ -78,7 +83,7 @@ export async function installShipped(
 }
 
 /**
- * Stores every object the restore point needs, four workers at a time. A worker that fails an
+ * Stores every object the restore point needs, eight workers at a time. A worker that fails an
  * object moves on, so what can be stored is stored for a later retry; the first failure is
  * thrown once every worker has finished.
  */
@@ -87,11 +92,10 @@ async function storeChunks(
   objects: readonly ObjectRef[],
   listing: ManagedImageSnapshot,
   run: ShippedInstallRun,
+  downloaded: (bytes: number) => void,
   maximumVerifiedBytes?:number,
 ): Promise<void> {
-  const report = throttled(run);
   let next = 0;
-  let downloaded = 0;
   let verifiedBytes=0;
   let failure: Error | undefined;
   const worker = async (): Promise<void> => {
@@ -100,10 +104,7 @@ async function storeChunks(
       if (ref === undefined || !transaction.needs(ref) || run.signal.aborted) continue;
       try {
         if (await run.enqueue(() => transaction.adopt(ref))) continue;
-        const content = await fetchVerified(ref, new URL(`chunks/${ref.sha256}.gz`, listing.manifest.url), run, (bytes) => {
-          downloaded += bytes;
-          report(downloaded, listing.bytes);
-        });
+        const content = await fetchVerified(ref, new URL(`chunks/${ref.sha256}.gz`, listing.manifest.url), run, downloaded);
         verifiedBytes+=content.storedBytes;
         if(maximumVerifiedBytes!==undefined&&verifiedBytes>maximumVerifiedBytes)throw shippedError("damaged","The prepared state exceeds its declared download bound");
         await run.enqueue(() => transaction.put(ref, content.data));
@@ -119,29 +120,37 @@ async function storeChunks(
 /**
  * Stores the payload chunks of a start that leaves its image files out: each is rebuilt from the
  * downloaded literal chunks and the prepared image's files, then checked against the hash its
- * signed manifest names. A chunk the store already holds is neither rebuilt nor downloaded.
+ * signed manifest names. A chunk the store already holds is neither rebuilt nor downloaded. The
+ * literal chunks the rebuild reads are downloaded in its order, eight ahead of it.
  */
 export async function rebuildShippedPayloads(
   transaction: Pick<SnapshotImport, "needs" | "adopt" | "put">,
   shipped: ShippedManifest,
   listing: ManagedImageSnapshot,
   run: ShippedInstallRun,
+  downloaded: (bytes: number) => void = downloadMeter(run, listing.bytes),
 ): Promise<void> {
   const transport = shipped.transport;
   if (transport === undefined || shipped.snapshot.schema !== USERSPACE_SNAPSHOT_SCHEMA) return;
   const readImageFile = run.readImageFile;
   if (readImageFile === undefined) throw shippedError("unavailable", "this browser cannot read the image files the shipped start leaves out");
-  const report = throttled(run);
-  let downloaded = 0;
+  const rebuilt: ChunkRef[] = [], planned = new Set<string>();
+  for (const chunk of shipped.snapshot.payloads.chunks) {
+    throwIfCancelled(run.signal);
+    if (planned.has(chunk.sha256) || !transaction.needs(chunk) || await run.enqueue(() => transaction.adopt(chunk))) continue;
+    planned.add(chunk.sha256); rebuilt.push(chunk);
+  }
+  const order = [...new Set(rebuilt.flatMap(chunk => literalChunkIndices(chunk, transport)))];
+  const downloads = orderedDownloads(order, async (index, signal) => {
+    const ref = transport.literal.chunks[index];
+    if (ref === undefined) throw shippedError("damaged", "the shipped start reads past its literal stream");
+    return (await fetchVerified(ref, new URL(`chunks/${ref.sha256}.gz`, listing.manifest.url), { ...run, signal }, downloaded)).data;
+  }, PARALLEL_FETCHES, run.signal);
   const literal = new Map<number, Uint8Array<ArrayBuffer>>();
   const literalChunk = async (index: number): Promise<Uint8Array<ArrayBuffer>> => {
     const cached = literal.get(index);
     if (cached !== undefined) return cached;
-    const ref = transport.literal.chunks[index];
-    if (ref === undefined) throw shippedError("damaged", "the shipped start reads past its literal stream");
-    const content = (await fetchVerified(ref, new URL(`chunks/${ref.sha256}.gz`, listing.manifest.url), run, (bytes) => {
-      downloaded += bytes; report(downloaded, listing.bytes);
-    })).data;
+    const content = await downloads.take(index);
     // Chunks are rebuilt in order, so the stream is read forward: keep the last two.
     literal.set(index, content); for (const key of literal.keys()) if (key < index - 1) literal.delete(key);
     return content;
@@ -167,12 +176,15 @@ export async function rebuildShippedPayloads(
     }
     return image.bytes.subarray(offset, offset + length);
   };
-  for (const chunk of shipped.snapshot.payloads.chunks) {
-    throwIfCancelled(run.signal);
-    if (!transaction.needs(chunk) || await run.enqueue(() => transaction.adopt(chunk))) continue;
-    const bytes = await rebuildChunk(chunk, transport, readLiteral, readImage);
-    if ((await sha256Hex(bytes)) !== chunk.sha256) throw shippedError("damaged", "a rebuilt shipped start chunk differs from its signed hash");
-    await run.enqueue(() => transaction.put(chunk, bytes));
+  try {
+    for (const chunk of rebuilt) {
+      throwIfCancelled(run.signal);
+      const bytes = await rebuildChunk(chunk, transport, readLiteral, readImage);
+      if ((await sha256Hex(bytes)) !== chunk.sha256) throw shippedError("damaged", "a rebuilt shipped start chunk differs from its signed hash");
+      await run.enqueue(() => transaction.put(chunk, bytes));
+    }
+  } finally {
+    await downloads.close();
   }
 }
 
@@ -253,9 +265,14 @@ async function fetchOrUnavailable(run: ShippedInstallRun, url: URL, maxBytes: nu
   }
 }
 
-function throttled(run: ShippedInstallRun): (completedBytes: number, totalBytes: number) => void {
-  let reportedAt = -Infinity;
-  return (completedBytes, totalBytes) => {
+/**
+ * Counts the bytes an install downloads, across its objects and its literal chunks, and reports
+ * the sum against `totalBytes` at most every 100 ms, and always once it reaches the total.
+ */
+function downloadMeter(run: ShippedInstallRun, totalBytes: number): (bytes: number) => void {
+  let completedBytes = 0, reportedAt = -Infinity;
+  return (bytes) => {
+    completedBytes += bytes;
     const now = run.now();
     if (completedBytes < totalBytes && now - reportedAt < PROGRESS_INTERVAL_MILLISECONDS) return;
     reportedAt = now;

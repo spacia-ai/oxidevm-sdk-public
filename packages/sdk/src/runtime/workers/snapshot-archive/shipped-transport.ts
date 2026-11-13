@@ -112,6 +112,29 @@ export async function rebuildChunk(
   return output;
 }
 
+/**
+ * The literal chunks `rebuildChunk` reads for original payload chunk `chunk`, ascending. A
+ * chunk's literal bytes are one contiguous run of the literal stream, so an installer can fetch
+ * them before the rebuild asks for them.
+ */
+export function literalChunkIndices(chunk: ChunkRef, transport: ShippedTransport): number[] {
+  const start = chunk.index * SNAPSHOT_CHUNK_BYTES;
+  const from = literalOffset(start, transport.images), to = literalOffset(start + chunk.bytes, transport.images);
+  const indices: number[] = [];
+  if (to > from) for (let index = Math.floor(from / SNAPSHOT_CHUNK_BYTES); index <= Math.floor((to - 1) / SNAPSHOT_CHUNK_BYTES); index++) indices.push(index);
+  return indices;
+}
+
+/** Where payload stream offset `position` falls in the literal stream: image bytes before it removed. */
+function literalOffset(position: number, images: readonly ShippedImageRange[]): number {
+  let removed = 0;
+  for (const range of images) {
+    if (range.offset >= position) break;
+    removed += Math.min(range.bytes, position - range.offset);
+  }
+  return position - removed;
+}
+
 function place(output: Uint8Array, at: number, bytes: Uint8Array): Promise<void> {
   if (at + bytes.length > output.length) invalid();
   output.set(bytes, at);
