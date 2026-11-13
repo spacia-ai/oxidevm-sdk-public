@@ -30,11 +30,23 @@ export async function openExecutionFrame<Result>(url: URL, bootstrap: (port: Mes
   channel.port1.start();
   const abort = () => ready.reject(new VMError("ABORTED", "Execution startup was aborted"));
   signal?.addEventListener("abort", abort, { once: true });
-  const timer = setTimeout(() => ready.reject(new VMError("CORE_LOAD_FAILED", "Execution bootstrap exceeded ten seconds")), EXECUTION_BOOTSTRAP_MS);
+  const timer = setTimeout(() => ready.reject(bootstrapTimeout(url.origin, sent)), EXECUTION_BOOTSTRAP_MS);
   try {
     if (signal?.aborted === true) abort(); else document.body.append(frame);
     const receipt = await ready.promise; channel.port1.onmessage = null; channel.port1.onmessageerror = null;
     return { frame, port: channel.port1, receipt, dispose };
   } catch (error) { dispose(); throw error; }
   finally { clearTimeout(timer); signal?.removeEventListener("abort", abort); frame.onload = null; frame.onerror = null; }
+}
+
+/**
+ * The bootstrap deadline as a typed failure that names the execution origin. A browser fires `load`, not `error`,
+ * for a document its own `frame-ancestors` policy refuses, and drops the bootstrap message, so a refused document
+ * and a slow one both end here; the ancestors (where the browser exposes them) tell the two apart for the reader.
+ */
+function bootstrapTimeout(origin: string, loaded: boolean): VMError {
+  const ancestors = "ancestorOrigins" in location ? { ancestors: Array.from(location.ancestorOrigins) } : {};
+  return loaded
+    ? new VMError("CORE_LOAD_FAILED", `Execution document at ${origin} loaded but did not answer its bootstrap within ten seconds. A document refused by its Content-Security-Policy frame-ancestors looks the same: every ancestor of this page must be permitted to frame ${origin}`, { reason: "execution-document-silent", origin, ...ancestors })
+    : new VMError("CORE_LOAD_FAILED", `Execution document at ${origin} did not load within ten seconds`, { reason: "execution-document-not-loaded", origin, ...ancestors });
 }

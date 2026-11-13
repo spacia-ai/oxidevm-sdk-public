@@ -1,5 +1,17 @@
 # SDK migration
 
+## Execution bootstrap deadline: typed reasons
+
+A missed execution bootstrap deadline keeps its code, `CORE_LOAD_FAILED`, and gains a
+stable `detail.reason`. `execution-document-silent` means the execution frame loaded
+and never answered, which is also how a browser reports a document refused by its
+`frame-ancestors` policy. `execution-document-not-loaded` means the frame never
+loaded. Both carry `detail.origin` and, where the browser exposes
+`location.ancestorOrigins`, `detail.ancestors`. The message changed from "Execution
+bootstrap exceeded ten seconds" and now names the execution origin; match on
+`detail.reason`, not on the text. The deadline, the protocol and every other failure
+are unchanged. See [JavaScript acceleration](acceleration.md).
+
 ## Explicit image projects
 
 `ProjectConfig` accepts an optional `image` location, manifest SHA-256, and author

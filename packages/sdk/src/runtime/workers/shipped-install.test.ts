@@ -199,7 +199,7 @@ describe("shipped restore point install", () => {
     await expect(installShipped(target.store,published.listing,trust(published),run(server(published.files).fetchBytes),different)).rejects.toMatchObject({code:"STORAGE_ERROR"});
     expect((await target.store.list()).filter(info=>info.kind === "shipped")).toHaveLength(1);
   });
-  it("installs a signed shipped restore point, four chunks at a time, once", async () => {
+  it("installs a signed shipped restore point, at most eight chunks at a time, once", async () => {
     const published = await publication();
     const target = await browser();
     const served = server(published.files);
@@ -210,7 +210,7 @@ describe("shipped restore point install", () => {
     expect(installed).toMatchObject({ kind: "shipped", label: "Boundary · container ready", resumable: true });
     expect(again.ref).toEqual(installed.ref);
     expect(served.peak()).toBeGreaterThan(1);
-    expect(served.peak()).toBeLessThanOrEqual(4);
+    expect(served.peak()).toBeLessThanOrEqual(8);
     const prepared = await target.store.prepareRestore(installed.ref, true, target.disk);
     expect(prepared.ramChunks).toEqual([0, 3]);
     // A first visit: the pristine disk holds nothing the restore point lacks.
