@@ -1,6 +1,6 @@
 /*!
  * Portions adapted from Node.js v24.18.1 lib/util.js, lib/internal/util.js
- * and lib/internal/process/warning.js; modified for OxideVM's process owner.
+ * and lib/internal/process/warning.js; modified for OXVM's process owner.
  * Copyright Node.js contributors. All rights reserved.
  * Copyright Joyent, Inc. and other Node contributors. All rights reserved.
  *
@@ -27,6 +27,8 @@ import { VMError } from "../../errors.ts";
 import { nodeAssert } from "./node-assert.ts";
 import { nodeUtilTypes, exactPromiseUtilTypes } from "./node-util-types.ts";
 import { createStyleText } from "./node-util-style.js";
+import { invalidArgType } from "./node-arg-type.ts";
+import { parseDotenv } from "./node-dotenv.ts";
 import type { NodeProcess } from "./node-process.ts";
 import { unavailableNodeApi } from "./node-capability.js";
 
@@ -169,7 +171,7 @@ export function createNodeUtil(process: Pick<NodeProcess, "noDeprecation" | "emi
     const modify = setting === undefined || Boolean(setting);
     let warned = false;
     function deprecated(this: unknown, ...args: unknown[]): unknown {
-      if (!process.noDeprecation && !warned) {
+      if (!(process.noDeprecation ?? false) && !warned) {
         warned = true;
         if (warningCode === "ExperimentalWarning") process.emitWarning(message, warningCode, deprecated);
         else if (warningCode === undefined) process.emitWarning(message, "DeprecationWarning", deprecated);
@@ -198,6 +200,10 @@ export function createNodeUtil(process: Pick<NodeProcess, "noDeprecation" | "emi
     aborted: () => unavailableNodeApi("util.aborted"),
     styleText: createStyleText(() => Reflect.get(nodeUtil.inspect, "colors"), process, value => nodeUtil.inspect(value)),
     toUSVString: (value: unknown): string => String(value).toWellFormed(),
+    parseEnv: function parseEnv(content: unknown): Record<string, string> {
+      if (typeof content !== "string") throw invalidArgType("content", "string", content, (value, options) => nodeUtil.inspect(value, options));
+      return parseDotenv(content);
+    },
     isDeepStrictEqual: (left: unknown, right: unknown): boolean => { try { nodeAssert.deepStrictEqual(left, right); return true; } catch { return false; } },
   };
 }

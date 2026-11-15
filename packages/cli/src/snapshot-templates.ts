@@ -1,6 +1,6 @@
 import {join,relative,resolve} from "node:path";
-import {VMError,type RuntimeMode,type TrustedImageKey} from "@oxidevm/sdk";
-import {inspectImage,loadImageReference} from "@oxidevm/sdk/image-builder";
+import {VMError,type RuntimeMode,type TrustedImageKey} from "@oxvm/sdk";
+import {inspectImage,loadImageReference} from "@oxvm/sdk/image-builder";
 import {newDirectory,file} from "./template-files.js";
 const send=`async function send(process: SnapshotProcess, input: string): Promise<void> {
   const writer = process.stdin.getWriter();
@@ -9,7 +9,7 @@ const send=`async function send(process: SnapshotProcess, input: string): Promis
 }
 `;
 export function preparationSource(mode:RuntimeMode):string {
-  return `import type { PrepareSnapshot, SnapshotProcess } from "@oxidevm/sdk";
+  return `import type { PrepareSnapshot, SnapshotProcess } from "@oxvm/sdk";
 ${send}
 const prepare: PrepareSnapshot = async ({ vm, start }) => {
   await vm.workspace.writeText("/welcome.txt", "Prepared workspace\\n");
@@ -24,7 +24,7 @@ export default prepare;
 `;
 }
 export function verificationSource():string {
-  return `import type { VerifySnapshot, SnapshotProcess } from "@oxidevm/sdk";
+  return `import type { VerifySnapshot, SnapshotProcess } from "@oxvm/sdk";
 ${send}
 function proof(value: unknown): { token: string; pid: number } {
   if (typeof value !== "object" || value === null || Object.keys(value).length !== 2
@@ -55,26 +55,26 @@ export async function initializeSnapshot(directory:string,options:{name:string;m
     mode=image.mode;
   }
   await newDirectory(directory);
-  const files=["oxidevm.snapshot.ts","prepare.ts","verify.ts","tsconfig.snapshot.json","README.md",".gitignore"];
+  const files=["oxvm.snapshot.ts","prepare.ts","verify.ts","tsconfig.snapshot.json","README.md",".gitignore"];
   const image=options.imageDir===undefined?"default":relative(directory,resolve(options.imageDir));
-  const recipe=`import type { SnapshotRecipe } from "@oxidevm/sdk/image-builder";
+  const recipe=`import type { SnapshotRecipe } from "@oxvm/sdk/image-builder";
 export default {
   name: ${JSON.stringify(options.name)}, mode: ${JSON.stringify(mode)}, image: ${JSON.stringify(image)},
   workload: { module: "./prepare.ts" }, verify: { module: "./verify.ts" },
 } satisfies SnapshotRecipe;
 `;
-  await file(directory,"oxidevm.snapshot.ts",recipe);await file(directory,"prepare.ts",preparationSource(mode));await file(directory,"verify.ts",verificationSource());
+  await file(directory,"oxvm.snapshot.ts",recipe);await file(directory,"prepare.ts",preparationSource(mode));await file(directory,"verify.ts",verificationSource());
   await file(directory,"tsconfig.snapshot.json",JSON.stringify({compilerOptions:{target:"ES2024",module:"ESNext",moduleResolution:"Bundler",lib:["ES2024","DOM","DOM.Iterable"],types:[],strict:true,noUncheckedIndexedAccess:true,exactOptionalPropertyTypes:true,verbatimModuleSyntax:true,noEmit:true,skipLibCheck:false},include:["prepare.ts","verify.ts"]},null,2)+"\n");
   await file(directory,".gitignore","dist/\n*.pem\n*.oxvm\n*.owners/\n*.building-*/\n*.previous-*/\n*.publication.json*\n");
   await file(directory,"README.md",`# Prepared ${options.name}
 
 The Node recipe selects inputs. Preparation and verification run in the browser and import only the public SDK; Node globals are unavailable. Workspace API paths are relative to /workspace.
 
-Create a separate snapshot key: \`oxidevm image keygen --out snapshot-author.pem\` (public companion: snapshot-author.public.json).
-Run \`oxidevm snapshot build oxidevm.snapshot.ts --signing-key snapshot-author.pem${options.imageDir===undefined?"":" --image-trust <image-author.public.json>"}\`.
-Run \`oxidevm snapshot test dist --trust snapshot-author.public.json\`. Type-check browser scripts with \`tsc -p tsconfig.snapshot.json\`; check the recipe in your project's strict Node configuration.
+Create a separate snapshot key: \`oxvm image keygen --out snapshot-author.pem\` (public companion: snapshot-author.public.json).
+Run \`oxvm snapshot build oxvm.snapshot.ts --signing-key snapshot-author.pem${options.imageDir===undefined?"":" --image-trust <image-author.public.json>"}\`.
+Run \`oxvm snapshot test dist --trust snapshot-author.public.json\`. Type-check browser scripts with \`tsc -p tsconfig.snapshot.json\`; check the recipe in your project's strict Node configuration.
 
 The verifier reattaches the original shell and proves its in-memory token and PID. It never initializes that token again. Keep image key A separate from snapshot key B. Signed bundles are development-only; signing does not grant guest or engine redistribution rights.
 `);
-  return {directory,recipePath:join(directory,"oxidevm.snapshot.ts"),name:options.name,mode,files};
+  return {directory,recipePath:join(directory,"oxvm.snapshot.ts"),name:options.name,mode,files};
 }

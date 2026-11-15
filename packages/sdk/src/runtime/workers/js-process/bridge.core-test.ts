@@ -278,7 +278,7 @@ it("sends with MSG_NOSIGNAL (sendto, 44) so a closed peer is EPIPE and the worke
   }
 });
 
-// The documentation states this number (docs/js-process.md, docs/wasm-modules.md and `oxidevm wasm doctor`), so it is measured here:
+// The documentation states this number (docs/js-process.md, docs/wasm-modules.md and `oxvm wasm doctor`), so it is measured here:
 // JS processes, worker threads, esbuild runs, command interceptors and native addons all draw on one host command lane.
 it("admits 32 JS processes at once and refuses the 33rd as a quota error, because the host command lane holds 32 requests", async () => {
   const bytes = new Uint8Array(await readFile(engineModulePath("oxidevm_userspace.wasm")));

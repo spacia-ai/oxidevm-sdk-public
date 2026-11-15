@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 import { runCLI } from "./run.js";
 
 vi.mock("./starter.generated.js", async () => {
-  const { getSDKRelease } = await import("@oxidevm/sdk/image-builder");
+  const { getSDKRelease } = await import("@oxvm/sdk/image-builder");
   const sdk = getSDKRelease(), engine = sdk.engineRelease.slice("sha256:".length), digest = "d".repeat(64);
   const compliance = { url: `https://cdn.oxidevm.dev/engine/${engine}/compliance/${digest}/compliance.json`, bytes: 100, sha256: digest };
   return { starterRelease: { schemaVersion: 2, sdkVersion: sdk.sdkVersion, engineRelease: engine, engineCompliance: compliance,
@@ -23,7 +23,7 @@ it("normal init creates a hosted starter without downloading engine, image or co
     expect(fetch).not.toHaveBeenCalled();
     const skills: unknown = JSON.parse(await readFile(join(root, "app/AGENT_SKILLS.json"), "utf8"));
     expect(skills).toMatchObject({ schemaVersion: 1, repository: "https://github.com/spacia-ai/oxidevm-skills" });
-    for (const skill of ["oxidevm-sdk", "oxidevm-starter", "oxidevm-debugging"]) {
+    for (const skill of ["oxvm-sdk", "oxvm-starter", "oxvm-debugging"]) {
       const canonical = await readFile(join(root, "app/.agents/skills", skill, "SKILL.md"), "utf8");
       expect(await readFile(join(root, "app/.claude/skills", skill, "SKILL.md"), "utf8")).toBe(canonical);
     }

@@ -15,6 +15,7 @@ let root: string;
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "oxidevm-engine-source-"));
   vi.stubEnv("OXIDEVM_ENGINE_DIR", undefined);
+  vi.stubEnv("OXVM_ENGINE_DIR", undefined);
   vi.stubEnv("OXIDEVM_DOWNLOAD_TOKEN", undefined);
   vi.stubEnv("GH_TOKEN", undefined);
 });
@@ -114,6 +115,18 @@ describe("resolveEngineDirectory", () => {
     const failure = resolveEngineDirectory({ cacheDir: join(root, "cache") }, localOnly);
     await expect(failure).rejects.toMatchObject({ code: "CORE_LOAD_FAILED" });
     await expect(failure).rejects.toThrow("oxidevm_core.wasm");
+  });
+
+  it("accepts the canonical engine directory and refuses conflicting aliases unless a directory is explicit", async () => {
+    const current = join(root, "current"), legacy = join(root, "legacy");
+    await writeSyntheticRelease(current, release); await writeSyntheticRelease(legacy, release);
+    vi.stubEnv("OXVM_ENGINE_DIR", current);
+    await expect(resolveEngineDirectory({}, localOnly)).resolves.toBe(current);
+    vi.stubEnv("OXIDEVM_ENGINE_DIR", legacy);
+    await expect(resolveEngineDirectory({}, localOnly)).rejects.toMatchObject({ code: "INVALID_ARGUMENT", message: "OXVM_ENGINE_DIR and OXIDEVM_ENGINE_DIR differ; set one value or pass --engine-dir" });
+    await expect(resolveEngineDirectory({ engineDir: current }, localOnly)).resolves.toBe(current);
+    vi.stubEnv("OXIDEVM_ENGINE_DIR", current);
+    await expect(resolveEngineDirectory({}, localOnly)).resolves.toBe(current);
   });
 
   it("names every source when nothing supplies the release and no download token is set", async () => {

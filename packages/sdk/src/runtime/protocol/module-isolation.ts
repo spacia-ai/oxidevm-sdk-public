@@ -1,7 +1,7 @@
 import { VMError } from "../errors.js";
 
 // The closed reasons a browser cannot run modules in isolation (engine ADR 0028). They are DOM-free so the Node side
-// (`oxidevm wasm test`'s report) shares them with the module frame's protocol, which owns the frame's messages.
+// (`oxvm wasm test`'s report) shares them with the module frame's protocol, which owns the frame's messages.
 
 /** Why modules cannot run in this browser (`FEATURE_NOT_AVAILABLE`, `reason: "wasm-module-isolation-unavailable"`). */
 export const MODULE_ISOLATION_CAPABILITIES = [

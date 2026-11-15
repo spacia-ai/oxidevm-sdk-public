@@ -1,4 +1,4 @@
-import type { WasmBuildResult } from "@oxidevm/sdk/image-builder";
+import type { WasmBuildResult } from "@oxvm/sdk/image-builder";
 import { describe, expect, it } from "vitest";
 import { releasePlan, shellWord } from "./wasm-release.js";
 
@@ -28,7 +28,7 @@ describe("releasePlan", () => {
     expect(plan.steps[2]).toContain("sha256sum --check SHA256SUMS");
     expect(plan.steps[2]).toContain(`must be the release id, ${SHA}.`);
     expect(plan.steps[3]).toContain("gh release edit v1.2.3 --draft=false");
-    expect(plan.steps[4]).toContain("oxidevm wasm add github:OWNER/REPO@v1.2.3");
+    expect(plan.steps[4]).toContain("oxvm wasm add github:OWNER/REPO@v1.2.3");
   });
 
   it("names the repository in every gh command and in the install line when given", () => {

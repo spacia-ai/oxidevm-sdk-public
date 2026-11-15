@@ -8,7 +8,7 @@ import { probeHandle, probeTargets, refusedEndpoints } from "../../wasm/conforma
 import { spawnModule, stopModule } from "../../wasm/spawn.js";
 import { moduleReach } from "../../wasm/reach.js";
 
-// The page of `oxidevm wasm test`: it runs the property catalog in a real Userspace VM and writes
+// The page of `oxvm wasm test`: it runs the property catalog in a real Userspace VM and writes
 // `{ "properties": [...] }`, `{ "refusal": {...} }` (the module could not run here at all) or `{ "error": {...} }` into #oxidevm-qualification for the Node side to decode.
 const output = document.createElement("pre"); output.id = "oxidevm-qualification"; document.body.append(output);
 const MAX_STDERR_CHARS = 64 * 1024;

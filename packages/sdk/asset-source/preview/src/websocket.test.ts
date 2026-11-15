@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
-const HOST = "0123456789abcdef0123456789abcdef.oxvm.dev";
+const HOST = "0123456789abcdef0123456789abcdef.tabvm.dev";
 const posts: { readonly message: unknown }[] = [];
 const natives: { readonly url: unknown; readonly protocols: unknown }[] = [];
 

@@ -1,6 +1,6 @@
-import { createVM, type ImageRef, type ProcessHandle } from "@oxidevm/sdk";
-import { createAccelerationProfile, type AccelerationProfileOptions } from "@oxidevm/sdk/image-builder";
-import { configureJSProcessTrace, readJSProcessTrace, type AccelerationEnvironmentRejection } from "@oxidevm/sdk/diagnostics";
+import { createVM, type ImageRef, type ProcessHandle } from "@oxvm/sdk";
+import { createAccelerationProfile, type AccelerationProfileOptions } from "@oxvm/sdk/image-builder";
+import { configureJSProcessTrace, readJSProcessTrace, type AccelerationEnvironmentRejection } from "@oxvm/sdk/diagnostics";
 
 export const profileMetadata: (options: AccelerationProfileOptions) => Promise<{ readonly path: string; readonly bytes: Uint8Array }> = createAccelerationProfile;
 

@@ -76,6 +76,6 @@ export function normalizeBuildkitSBOM(scanBytes: Uint8Array, policyBytes: Uint8A
   const originalCreators = Array.isArray(creators) ? Array.from<unknown>(creators).map(value => text(value, "scanner creator")) : [];
   if (!Number.isSafeInteger(epoch) || epoch < 0 || epoch > 253402300799) return invalid("source epoch exceeds the SPDX timestamp range");
   return new TextEncoder().encode(JSON.stringify({ spdxVersion: "SPDX-2.3", SPDXID: "SPDXRef-DOCUMENT", dataLicense: "CC0-1.0", name: "oxidevm-final-image",
-    documentNamespace: `https://oxidevm.dev/spdx/${hash(JSON.stringify(inventory))}`, creationInfo: { creators: [...originalCreators, "Tool: oxidevm-sdk-0.1.0-alpha.0"], created: new Date(epoch * 1000).toISOString() },
+    documentNamespace: `https://oxvm.dev/spdx/${hash(JSON.stringify(inventory))}`, creationInfo: { creators: [...originalCreators, "Tool: oxvm-sdk-0.1.0-alpha.0"], created: new Date(epoch * 1000).toISOString() },
     packages: [...packages.values()], files, relationships: files.map(file => ({ spdxElementId: ownership.get(file.fileName), relationshipType: "CONTAINS", relatedSpdxElement: file.SPDXID })) }));
 }

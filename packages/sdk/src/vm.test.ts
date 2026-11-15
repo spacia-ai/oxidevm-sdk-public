@@ -90,7 +90,7 @@ describe("creation-time relay networking", () => {
     native.open.mockReset();
     native.open.mockImplementation(() => {
       const channel = new MessageChannel(); nativeChannels.push(channel);
-      return Promise.resolve({ status: "open" as const, port: channel.port1, dispose: () => { channel.port1.close(); channel.port2.close(); } });
+      return Promise.resolve({ status: "open" as const, port: channel.port1, operationSet: 0, dispose: () => { channel.port1.close(); channel.port2.close(); } });
     });
     vi.stubGlobal("Worker", vi.fn());
     vi.stubGlobal("location", new URL("https://app.example.test/editor/"));
@@ -126,15 +126,18 @@ describe("creation-time relay networking", () => {
       const created = fake.created.at(-1);
       if (commandInterceptors === "off") {
         expect(created).not.toHaveProperty("nativeExecutionPort");
+        expect(created).not.toHaveProperty("nativeOperationSet");
         expect(created).not.toHaveProperty("interceptors");
       } else {
         expect(created).toHaveProperty("nativeExecutionPort");
+        // The execution origin's served operation set travels with its port (ADR 0026, 2.8).
+        expect(created).toHaveProperty("nativeOperationSet", 0);
         expect(created).toHaveProperty("interceptors");
       }
       await vm.dispose();
     }
     expect(native.open).toHaveBeenCalledTimes(2);
-    expect(native.open).toHaveBeenCalledWith("/oxidevm/runtime/", undefined);
+    expect(native.open).toHaveBeenCalledWith("/oxvm/runtime/", undefined);
   });
 
   it("reports unavailable automatic acceleration before creating the VM", async () => {

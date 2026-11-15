@@ -65,9 +65,12 @@ it("forks with the resolved entry, inherited execArgv and env, and reports the c
   expect(inherit.stdout).toBeNull(); expect(inherit.stdin).toBeNull();
   expect(child.stdout).not.toBeNull();
   expect(child.spawnargs).toEqual(["/usr/local/bin/oxidevm-node", "/workspace/app/server.js", "--port", "3000"]);
-  for (const options of [{ serialization: "advanced" }, { execPath: "/usr/bin/node" }, { stdio: ["pipe", "pipe", "pipe"] }, { stdio: ["ignore", "pipe", "pipe", "ipc"] }, { uid: 0 }, { execArgv: ["--inspect"] }]) {
+  for (const options of [{ serialization: "advanced" }, { execPath: "/usr/bin/node" }, { stdio: ["pipe", "pipe", "pipe"] }, { stdio: ["ignore", "pipe", "pipe", "ipc"] }, { uid: 0 }, { execArgv: ["--inspect"] }, { execArgv: ["-r"] }]) {
     expect(() => runtime.fork("./x.js", options)).toThrow();
   }
+  // A child may carry the execution options the runtime implements (ADR 0026, 1.11).
+  runtime.fork("./x.js", { execArgv: ["-r", "dotenv/config", "--no-warnings", "-C", "dev"] });
+  expect(requests.at(-1)?.execArgv).toEqual(["-r", "dotenv/config", "--no-warnings", "-C", "dev"]);
   expect(runtime.hasPending).toBe(true);
 });
 

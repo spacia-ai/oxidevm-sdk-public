@@ -6,8 +6,8 @@ import { nativeProcessBuild } from "./runtime-build.js";
 import { nodeInspector } from "../assistance/node-inspector.js";
 
 const profiles = {
-  node: { runtime: "node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab" },
-  bun: { runtime: "bun", runtimeSHA256: "500e6edbf321ddf490adcc55a6a01639993a07924616ab67492e1256c15557e2" },
+  node: { runtime: "node", runtimeBuild: null, runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab" },
+  bun: { runtime: "bun", runtimeBuild: null, runtimeSHA256: "500e6edbf321ddf490adcc55a6a01639993a07924616ab67492e1256c15557e2" },
 } as const;
 
 function descriptor(input: PropertyDescriptor | undefined) {

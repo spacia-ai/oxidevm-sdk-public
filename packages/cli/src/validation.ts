@@ -1,4 +1,4 @@
-import { VMError } from "@oxidevm/sdk";
+import { VMError } from "@oxvm/sdk";
 export function object(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new VMError("PROTOCOL_ERROR", `${label} must be an object`);
   return Object.fromEntries(Object.entries(value));

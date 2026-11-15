@@ -1,4 +1,5 @@
 import type { JsProcessWorkers } from "./js-process/driver.js";
+import type { UserspaceRuntimeProbes } from "./userspace-runtime-probes.js";
 import type { ProcessAttachmentState } from "./userspace-worker-attachments.js";
 import type { CoreRunExit } from "../core-abi.js";
 import type { UserspaceRunResult } from "../userspace-abi.js";
@@ -24,6 +25,7 @@ export interface RuntimeState {
   rootPersistence?: UserspaceRootPersistence;
   workspacePersistence?: UserspaceWorkspacePersistence;
   jsProcesses?: JsProcessWorkers;
+  runtimeProbes?: UserspaceRuntimeProbes;
   hostService?: UserspaceHostService;
   pendingResult: UserspaceRunResult | undefined;
   /** The output generation an interactive run slice last ended for (`userspace-run-slices.ts`). */

@@ -96,7 +96,7 @@ export async function resolveLocked(entry: LockedModule, context: ResolveContext
   }
   const resolution = await resolveSource(declaredSource(entry.source), context, entry.release);
   if (resolution.release.id !== entry.release || sha256Hex(resolution.release.manifestBytes) !== entry.manifestSha256) {
-    lockMismatch(`${entry.source.kind === "github" ? `${entry.source.repository}@${entry.source.tag}` : entry.source.path} no longer matches the release that was locked: run "oxidevm wasm add" again to review and re-lock it`);
+    lockMismatch(`${entry.source.kind === "github" ? `${entry.source.repository}@${entry.source.tag}` : entry.source.path} no longer matches the release that was locked: run "oxvm wasm add" again to review and re-lock it`);
   }
   if (entry.source.kind === "github" && resolution.source.kind === "github" && resolution.source.commit !== entry.source.commit) {
     lockMismatch(`tag ${entry.source.tag} of ${entry.source.repository} now points at a different commit than the one that was locked`);

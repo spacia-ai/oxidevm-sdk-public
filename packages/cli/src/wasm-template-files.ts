@@ -9,7 +9,7 @@ export function commandFor(id: string): string | undefined {
   return id.startsWith(RESERVED_COMMAND_PREFIX) ? undefined : id;
 }
 
-/** The name `oxidevm wasm stage` exports a module's handle under: `my-tool` becomes `myTool`. */
+/** The name `oxvm wasm stage` exports a module's handle under: `my-tool` becomes `myTool`. */
 export function handleName(id: string): string {
   return id.replace(/-([a-z0-9])/gu, (_match, character: string) => character.toUpperCase());
 }
@@ -86,7 +86,7 @@ export function addCommandSource(id: string, command: string | undefined): strin
       const name = ${JSON.stringify(id)};`
     : `      // Name the command as the caller typed it (perhaps a path, or a link to it); io.args never holds argv[0].
       const name = io.invocation.kind === "command" ? io.invocation.argv0 : ${JSON.stringify(id)};`;
-  return `import type { BaseHost, CommandHooks, Host } from "@oxidevm/sdk/wasm";
+  return `import type { BaseHost, CommandHooks, Host } from "@oxvm/sdk/wasm";
 import { parseOperands } from "./operands.ts";
 
 /**
@@ -150,7 +150,7 @@ describe(${JSON.stringify(`the ${command} command`)}, () => {
 `;
   return `import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { testHost, type TestHostInputs } from "@oxidevm/sdk/wasm/testing";
+import { testHost, type TestHostInputs } from "@oxvm/sdk/wasm/testing";
 import definition from "../module.ts";
 
 type Invocation = NonNullable<TestHostInputs["invocation"]>;
@@ -255,17 +255,17 @@ dist/
 `;
 
 /**
- * A CLI that needs a private registry (it writes an `.npmrc`) generates projects whose @oxidevm packages a GitHub runner
+ * A CLI that needs a private registry (it writes an `.npmrc`) generates projects whose @oxvm packages a GitHub runner
  * cannot install, so an automatic run would fail on every push. Its workflows start on request, and say so.
  */
-const MANUAL_NOTE = `# This workflow starts on request only. The @oxidevm packages of the CLI that generated this project are on a private registry
+const MANUAL_NOTE = `# This workflow starts on request only. The @oxvm packages of the CLI that generated this project are on a private registry
 # that GitHub's runners cannot reach, so an automatic run would fail on every push. Give it the push (and pull_request, or tag)
 # trigger of the public template once the packages install from a registry the runner can reach.
 `;
 const MANUAL_TRIGGER = "on:\n  workflow_dispatch:\n";
 
 /**
- * The Playwright version \`oxidevm wasm test\` drives, which is the SDK's own dependency. The template declares the same
+ * The Playwright version \`oxvm wasm test\` drives, which is the SDK's own dependency. The template declares the same
  * version so \`pnpm exec playwright install\` fetches the browser build that version expects; a test keeps them equal.
  */
 export const TEMPLATE_PLAYWRIGHT = "1.64.0";
@@ -354,7 +354,7 @@ export function noticeFile(id: string): string {
   return `${id}
 Copyright (c) <year> <copyright holder>
 
-An OxideVM WebAssembly module. Replace this file with the copyright and attribution notices of this module and of every program
+A OXVM WebAssembly module. Replace this file with the copyright and attribution notices of this module and of every program
 or library whose code or binaries it ships; the Apache License asks a redistributor to keep the NOTICE files of the works it
 redistributes. Keep the license texts of shipped binaries in this repository too, and name the files in license.notices.
 `;
@@ -380,15 +380,15 @@ Each name in \`commands\` becomes a program: once an application turns it on for
 export function agentsFile(id: string, shape: TemplateShape): string {
   return `# ${id}: instructions for coding agents
 
-This repository is an OxideVM WebAssembly module. \`module.ts\` holds the whole definition: a literal \`manifest\` and the \`adapter\` that runs the WebAssembly inside a Userspace JS process.
+This repository is a OXVM WebAssembly module. \`module.ts\` holds the whole definition: a literal \`manifest\` and the \`adapter\` that runs the WebAssembly inside a Userspace JS process.
 
 - Edit \`module.ts\`, \`src/\` and \`test/\`. Never edit \`dist/\`; \`pnpm run build\` writes it.
 - Keep the manifest a literal. The build reads it without running code, so it cannot call functions or use variables.
 - Declare in \`requires.host\` only what the adapter uses. The adapter's \`host\` has exactly those members, and the type checker enforces it.
-- Import types from \`@oxidevm/sdk/wasm\` with \`import type\`; the only value import is \`defineModule\`. The adapter ships as one self-contained file.
+- Import types from \`@oxvm/sdk/wasm\` with \`import type\`; the only value import is \`defineModule\`. The adapter ships as one self-contained file.
 - No \`any\`, no \`@ts-ignore\`, no non-null assertions. Treat everything from outside (arguments, bytes, WebAssembly exports) as \`unknown\` and check it.
 - Artifacts are files in this repository named by \`from\`. Pin upstream binaries by hash where they come from, and keep their licenses and notices in this repository.
-- Verify with \`pnpm run check\` (types, lint, and \`oxidevm wasm build --check\`), then \`pnpm test\`, then \`pnpm run test:conformance\` (\`oxidevm wasm test\` in a real browser).
+- Verify with \`pnpm run check\` (types, lint, and \`oxvm wasm build --check\`), then \`pnpm test\`, then \`pnpm run test:conformance\` (\`oxvm wasm test\` in a real browser).
 - Release by tag: \`pnpm run release\` prints the steps.
 ${shape.kind === "command" ? COMMAND_RULES : ""}${NETWORK_RULES}`;
 }
@@ -408,8 +408,8 @@ The module declares no commands: command names that start with \`${RESERVED_COMM
 The module declares the command \`${command}\`. An application that installed it turns the command on for one Userspace VM, and from then on any program in that VM can run it:
 
 \`\`\`ts
-import { enableModuleCommands } from "@oxidevm/sdk/wasm";
-import { ${handleName(id)} } from "./oxidevm.modules.generated";
+import { enableModuleCommands } from "@oxvm/sdk/wasm";
+import { ${handleName(id)} } from "./oxvm.modules.generated";
 
 const commands = await enableModuleCommands(vm, ${handleName(id)});
 // A terminal in the VM now runs \`${skeleton ? command : `${command} 2 3`}\`${skeleton ? " like any other program" : ", which prints 5"}.
@@ -439,14 +439,14 @@ export function readmeFile(id: string, shape: TemplateShape, reach: TemplateReac
     : "A service module listens on the sockets its manifest declares and serves clients until it is stopped.";
   return `# ${id}
 
-An [OxideVM](https://oxidevm.dev) WebAssembly module (${shape.kind}). ${run}
+A [OXVM](https://oxvm.dev) WebAssembly module (${shape.kind}). ${run}
 
 ## Use it
 
-In an OxideVM application:
+In a OXVM application:
 
 \`\`\`sh
-oxidevm wasm add github:OWNER/REPO@v0.1.0
+oxvm wasm add github:OWNER/REPO@v0.1.0
 \`\`\`
 
 The command shows what the module declares and asks before installing it.
@@ -457,7 +457,7 @@ ${shape.kind === "command" ? shellSection(id, shape.command, shape.skeleton) : "
 pnpm install
 pnpm run check   # types, lint, and the same checks the build makes
 pnpm test        # unit tests of your own code
-pnpm run test:conformance   # oxidevm wasm test: the runner's contract, in Chromium
+pnpm run test:conformance   # oxvm wasm test: the runner's contract, in Chromium
 pnpm run build   # writes dist/: module.json, adapter.mjs, your artifacts and SHA256SUMS
 \`\`\`
 

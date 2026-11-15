@@ -156,7 +156,7 @@ describe("buildModule", () => {
       const dir = await project({});
       const result = await buildModule(dir);
       expect(result.findings[0]).toMatchObject({ severity: "error", code: "module-source", file: "module.ts" });
-      expect(result.findings[0]?.message).toContain("oxidevm wasm init");
+      expect(result.findings[0]?.message).toContain("oxvm wasm init");
     });
 
     it("refuses a module file that is a symbolic link", async () => {

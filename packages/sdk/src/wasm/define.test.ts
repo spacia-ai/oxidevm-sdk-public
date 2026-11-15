@@ -260,7 +260,7 @@ export function consumerContract(running: ModuleProcess<typeof service.manifest>
 }
 
 const pins = { release: "0".repeat(64), adapter: { url: "/a.mjs", sha256: "1".repeat(64), bytes: 1 }, artifacts: {} };
-/** What `oxidevm wasm stage` generates for a module with commands: module.json as a literal. */
+/** What `oxvm wasm stage` generates for a module with commands: module.json as a literal. */
 const generated = moduleHandle({
   schemaVersion: 1, id: "py", version: "1.0.0", abi: "raw", adapter: { api: 1, sha256: "1".repeat(64), bytes: 1 }, artifacts: [],
   process: { kind: "command" }, commands: ["python", "python3"], requires: { host: [] }, license: { spdx: "MIT" },

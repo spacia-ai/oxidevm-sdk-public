@@ -8,7 +8,7 @@ import { hookOf, importAdapter, moduleSource, projects } from "./author.test-sup
 
 const project = projects();
 /** An import of, or a call to, the SDK left in the output (esbuild's own comment naming the stub is not one). */
-const SDK_IMPORT = /(?:\bfrom\s*|\bimport\s*\(?\s*)["']@oxidevm\/sdk/u;
+const SDK_IMPORT = /(?:\bfrom\s*|\bimport\s*\(?\s*)["']@oxvm\/sdk/u;
 
 async function failureOf(run: () => Promise<unknown>): Promise<readonly Finding[]> {
   try { await run(); } catch (error) { if (error instanceof BuildFailure) return error.findings; throw error; }
@@ -37,7 +37,7 @@ describe("bundleAdapter", () => {
 
   it("erases type-only imports from the SDK and bundles relative imports", async () => {
     const dir = await project({
-      "module.ts": moduleSource({ imports: `import type { Connection } from "@oxidevm/sdk/wasm";\nimport { greet } from "./src/greet.ts";\ndeclare const unused: Connection | undefined;\nvoid unused;\n`, adapter: `() => ({ main: () => (greet() === "hi" ? 0 : 1) })` }),
+      "module.ts": moduleSource({ imports: `import type { Connection } from "@oxvm/sdk/wasm";\nimport { greet } from "./src/greet.ts";\ndeclare const unused: Connection | undefined;\nvoid unused;\n`, adapter: `() => ({ main: () => (greet() === "hi" ? 0 : 1) })` }),
       "src/greet.ts": `export const greet = (): string => "hi";\n`,
     });
     const bundle = await bundleAdapter(dir, "module.ts");
@@ -47,14 +47,14 @@ describe("bundleAdapter", () => {
   });
 
   it("refuses a value import from the SDK other than defineModule, naming it and its line", async () => {
-    const dir = await project({ "module.ts": moduleSource({ imports: `import { MODULE_EXIT } from "@oxidevm/sdk/wasm";\n`, adapter: `() => ({ main: () => MODULE_EXIT.adapterMax })` }) });
+    const dir = await project({ "module.ts": moduleSource({ imports: `import { MODULE_EXIT } from "@oxvm/sdk/wasm";\n`, adapter: `() => ({ main: () => MODULE_EXIT.adapterMax })` }) });
     const [only, ...rest] = await failureOf(() => bundleAdapter(dir, "module.ts"));
     expect(rest).toEqual([]);
     expect(only).toMatchObject({ severity: "error", code: "adapter-bundle", file: "module.ts", line: 2 });
     expect(only?.message).toContain("MODULE_EXIT");
   });
 
-  it.each(["@oxidevm/sdk", "@oxidevm/sdk/image-builder", "@oxidevm/sdk/wasm/kit"])("refuses the SDK entry %s and says how to import types", async entry => {
+  it.each(["@oxvm/sdk", "@oxvm/sdk/image-builder", "@oxvm/sdk/wasm/kit"])("refuses the SDK entry %s and says how to import types", async entry => {
     const dir = await project({ "module.ts": moduleSource({ imports: `import { thing } from ${JSON.stringify(entry)};\n`, adapter: `() => ({ main: () => (thing ? 0 : 1) })` }) });
     const [only] = await failureOf(() => bundleAdapter(dir, "module.ts"));
     expect(only?.message).toContain(`"${entry}" cannot be bundled into an adapter`);
@@ -78,7 +78,7 @@ describe("bundleAdapter", () => {
   });
 
   it("fails with a located finding when the module has a syntax error", async () => {
-    const dir = await project({ "module.ts": `import { defineModule } from "@oxidevm/sdk/wasm";\nexport default defineModule({ manifest: ;\n` });
+    const dir = await project({ "module.ts": `import { defineModule } from "@oxvm/sdk/wasm";\nexport default defineModule({ manifest: ;\n` });
     const [only] = await failureOf(() => bundleAdapter(dir, "module.ts"));
     expect(only).toMatchObject({ code: "adapter-bundle", file: "module.ts", line: 2 });
   });
@@ -174,7 +174,7 @@ describe("bundleAdapter", () => {
   });
 
   it("does not start when the signal is already aborted, so even a module that would fail to bundle reports the abort", async () => {
-    const dir = await project({ "module.ts": `import { defineModule } from "@oxidevm/sdk/wasm";\nexport default defineModule({ manifest: ;\n` });
+    const dir = await project({ "module.ts": `import { defineModule } from "@oxvm/sdk/wasm";\nexport default defineModule({ manifest: ;\n` });
     const controller = new AbortController();
     controller.abort();
     await expect(bundleAdapter(dir, "module.ts", controller.signal)).rejects.toMatchObject({ code: "ABORTED" });

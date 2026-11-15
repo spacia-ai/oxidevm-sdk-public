@@ -9,6 +9,7 @@ import { commitAdd, DECLARATION_FILE, LOCK_FILE, loadModulesProject, previewAdd,
 import { buildReleaseFiles } from "./release.test-support.js";
 import type { ResolveContext } from "./resolve.js";
 import { STAGE_ROOT } from "./stage.js";
+import { doctorModules } from "./doctor.js";
 
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))); });
@@ -22,6 +23,31 @@ async function project(trusted: readonly string[] = []): Promise<{ readonly dir:
   return { dir, context: (stub, offline = false) => ({ projectDir: dir, cache, fetchImpl: stub.fetchImpl, offline }) };
 }
 const source = "github:acme/tool-module@v1.0.0";
+
+it("reads canonical module declarations", async () => {
+  const dir = await temporary();
+  await writeFile(join(dir, "oxvm.modules.json"), encodeModulesDeclaration({ schemaVersion: 1, trusted: ["acme"], modules: [] }));
+  expect((await loadModulesProject(dir)).declaration.trusted).toEqual(["acme"]);
+});
+
+it("refuses mixed module project layouts before staging", async () => {
+  const dir = await temporary();
+  await writeFile(join(dir, "oxvm.modules.json"), encodeModulesDeclaration({ schemaVersion: 1, trusted: [], modules: [] }));
+  await writeFile(join(dir, "oxidevm.modules.lock.json"), '{"schemaVersion":1,"modules":{}}');
+  await expect(loadModulesProject(dir)).rejects.toMatchObject({ code: "INVALID_ARGUMENT", detail: { reason: "project-file-conflict" } });
+});
+
+it("keeps legacy module filenames and staging paths when adding a module", async () => {
+  const dir = await temporary(), cache = new BlobCache(await temporary());
+  await writeFile(join(dir, "oxidevm.modules.json"), encodeModulesDeclaration({ schemaVersion: 1, trusted: ["acme"], modules: [] }));
+  const context: ResolveContext = { projectDir: dir, cache, fetchImpl: githubStub(base()).fetchImpl, offline: false };
+  const added = await commitAdd(dir, await previewAdd(dir, source, context), context);
+  expect(added.stage.generatedFile).toBe(join(dir, "src/oxidevm.modules.generated.ts"));
+  expect(added.stage.staged[0]?.directory).toContain(join(dir, ".oxidevm/modules"));
+  expect(await readFile(join(dir, "oxidevm.modules.lock.json"), "utf8")).toContain('"tool"');
+  await expect(readFile(join(dir, "oxvm.modules.lock.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  expect((await doctorModules(dir)).result).toBe("passed");
+});
 
 describe("previewing an add", () => {
   it("asks about a source nobody trusts and not about one the project trusts", async () => {
@@ -49,7 +75,7 @@ describe("recording an add", () => {
     expect(loaded.lock.modules["tool"]).toMatchObject({ version: "1.0.0", release: preview.card.release, capabilities: ["files.sync"], source: { kind: "github", repository: "acme/tool-module", tag: "v1.0.0" } });
     expect(await readVendoredManifest(p.dir, "tool")).toEqual(release.manifest);
     expect((await readdir(join(p.dir, STAGE_ROOT, "tool", preview.card.release))).sort()).toEqual(["SHA256SUMS", "adapter.mjs", "adapter.mjs.bin", "module.json", "tool.wasm"]);
-    expect(await readFile(join(p.dir, "src/oxidevm.modules.generated.ts"), "utf8")).toContain("export const tool = moduleHandle(");
+    expect(await readFile(join(p.dir, "src/oxvm.modules.generated.ts"), "utf8")).toContain("export const tool = moduleHandle(");
     expect(await readFile(join(p.dir, LOCK_FILE), "utf8")).not.toMatch(/\d{4}-\d{2}-\d{2}T/u);
   });
 
@@ -141,24 +167,24 @@ describe("an add that cannot be staged", () => {
     const stub = githubStub(base()), p = await project();
     // An author's own file where the generated handles would go: staging must refuse to overwrite it.
     await mkdir(join(p.dir, "src"), { recursive: true });
-    await writeFile(join(p.dir, "src/oxidevm.modules.generated.ts"), "export const mine = 1;\n");
+    await writeFile(join(p.dir, "src/oxvm.modules.generated.ts"), "export const mine = 1;\n");
     const declaration = await readFile(join(p.dir, DECLARATION_FILE));
     const preview = await previewAdd(p.dir, source, p.context(stub));
     await expect(commitAdd(p.dir, preview, p.context(stub))).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
     expect((await readdir(p.dir)).sort()).toEqual([DECLARATION_FILE, "src"]);
     expect(await readFile(join(p.dir, DECLARATION_FILE))).toEqual(declaration);
-    expect(await readFile(join(p.dir, "src/oxidevm.modules.generated.ts"), "utf8")).toBe("export const mine = 1;\n");
+    expect(await readFile(join(p.dir, "src/oxvm.modules.generated.ts"), "utf8")).toBe("export const mine = 1;\n");
   });
 
   it("refuses a second module whose JavaScript name collides with an installed one, and leaves the project as it was", async () => {
     const first = githubStub(buildReleaseFiles({ id: "a-1", artifacts: { "tool.wasm": wasm }, host: ["files.sync"] }), { repo: "a-1" }), p = await project();
     await commitAdd(p.dir, await previewAdd(p.dir, "github:acme/a-1@v1.0.0", p.context(first)), p.context(first));
-    const lock = await readFile(join(p.dir, LOCK_FILE)), declaration = await readFile(join(p.dir, DECLARATION_FILE)), generated = await readFile(join(p.dir, "src/oxidevm.modules.generated.ts"));
+    const lock = await readFile(join(p.dir, LOCK_FILE)), declaration = await readFile(join(p.dir, DECLARATION_FILE)), generated = await readFile(join(p.dir, "src/oxvm.modules.generated.ts"));
     const second = githubStub(buildReleaseFiles({ id: "a1", artifacts: { "tool.wasm": wasm }, host: ["files.sync"] }), { repo: "a1" });
     await expect(commitAdd(p.dir, await previewAdd(p.dir, "github:acme/a1@v1.0.0", p.context(second)), p.context(second))).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
     expect(await readFile(join(p.dir, LOCK_FILE))).toEqual(lock);
     expect(await readFile(join(p.dir, DECLARATION_FILE))).toEqual(declaration);
-    expect(await readFile(join(p.dir, "src/oxidevm.modules.generated.ts"))).toEqual(generated);
+    expect(await readFile(join(p.dir, "src/oxvm.modules.generated.ts"))).toEqual(generated);
     // Nothing of the refused module reached the project, not even its committed manifest or its staged files.
     expect((await readdir(join(p.dir, "modules"))).sort()).toEqual(["a-1"]);
     expect((await readdir(join(p.dir, STAGE_ROOT))).sort()).toEqual(["a-1"]);

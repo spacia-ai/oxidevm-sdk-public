@@ -1,11 +1,12 @@
 import { expect, it } from "vitest";
-import { decodeCapturedNativeFrame, decodeNativeFrame, encodeNativeFrame, NATIVE_MAX_FRAME, type NativeFrame } from "./codec.js";
+import { decodeCapturedNativeFrame, decodeNativeFrame, encodeNativeFrame, NATIVE_MAX_FRAME, type NativeFrame, servedOperationSet } from "./codec.js";
+import { NATIVE_OPERATION_SET } from "./versions.js";
 import { JS_MAILBOX_BYTES } from "../../js-process/codec.js";
 
 it("carries a large native payload without increasing Linux mailbox transfer bounds", () => {
   const frame: NativeFrame = { kind: 3, sequence: 1, scope: 1n, environment: 0n, operation: "napi_create_string_utf8", status: 0, args: [], bytes: new Uint8Array(JS_MAILBOX_BYTES + 1).fill(120) };
   const encoded = encodeNativeFrame(frame);
-  expect(new DataView(encoded.buffer).getUint32(8, true)).toBe(16);
+  expect(new DataView(encoded.buffer).getUint32(8, true)).toBe(17);
   // A process whose host helper speaks bridge 15 (no `bridge` row in its profile) writes and reads version 15 frames.
   const fifteen = encodeNativeFrame(frame, 15);
   expect(new DataView(fifteen.buffer).getUint32(8, true)).toBe(15);
@@ -16,7 +17,7 @@ it("carries a large native payload without increasing Linux mailbox transfer bou
   expect(fields).toEqual(expected);
   expect(payload.byteLength).toBe(expectedPayload.byteLength);
   expect(payload.every((byte, index) => byte === expectedPayload[index])).toBe(true);
-  for (const version of [12, 13, 14, 15, 17]) {
+  for (const version of [12, 13, 14, 15, 16, 18]) {
     const wrongVersion = encoded.slice(4); new DataView(wrongVersion.buffer).setUint32(4, version, true);
     expect(() => decodeNativeFrame(wrongVersion)).toThrow(/version/u);
   }
@@ -45,4 +46,9 @@ it("decodes historical frames only through the explicit captured-version boundar
   expect(() => decodeCapturedNativeFrame(bytes, 14)).toThrow(/version/u);
   new DataView(bytes.buffer).setUint32(4, 12, true);
   expect(() => decodeCapturedNativeFrame(bytes, 13)).toThrow(/version/u);
+});
+
+it("serves no host newer than this origin's operation set (ADR 0026, 2.8)", () => {
+  expect(() => { servedOperationSet(NATIVE_OPERATION_SET); }).not.toThrow();
+  expect(() => { servedOperationSet(NATIVE_OPERATION_SET + 1); }).toThrow(/operation set/u);
 });

@@ -1,6 +1,6 @@
 /*!
  * Portions adapted from Node.js v24.18.1 lib/async_hooks.js and
- * lib/internal/errors.js; modified for OxideVM's existing resource owners.
+ * lib/internal/errors.js; modified for OXVM's existing resource owners.
  * Copyright Node.js contributors. All rights reserved.
  * Copyright Joyent, Inc. and other Node contributors. All rights reserved.
  *
@@ -21,6 +21,7 @@
  * IN THE SOFTWARE.
  */
 import type { AsyncContext } from "./async-context.ts";
+import { invalidArgType } from "./node-arg-type.ts";
 import type { AsyncHook, AsyncScope } from "./async-resources.js";
 
 const TypeError = globalThis.TypeError;
@@ -32,51 +33,19 @@ type ResourceUtilities = {
   readonly format: (pattern: string, value: unknown) => string;
   readonly inspect: (value: unknown, options: { readonly depth: -1 }) => string;
 };
-const safeInteger = Number.isSafeInteger, negativeZero = Object.is, stringify = JSON.stringify;
+const safeInteger = Number.isSafeInteger;
 function callable(value: unknown): value is Callback { return typeof value === "function"; }
 function intrinsic(value: unknown): Callback {
   if (!callable(value)) throw new TypeError("Missing async resource intrinsic");
   return value;
 }
 const functionBind = intrinsic(read(Function.prototype, "bind")), unshift = intrinsic(read(Array.prototype, "unshift"));
-function text(value: unknown): string {
-  if (typeof value === "symbol") throw new TypeError("Cannot convert a Symbol value to a string");
-  return String(value);
-}
 function property(value: unknown, key: string): unknown {
   if (value === null || value === undefined) throw new TypeError(`Cannot read properties of ${String(value)} (reading '${key}')`);
   const boxed: unknown = Object(value);
   if (typeof boxed !== "object" && typeof boxed !== "function" || boxed === null) throw new TypeError("Invalid async resource option");
   return read(boxed, key);
 }
-function received(value: unknown, inspect: ResourceUtilities["inspect"]): string {
-  if (value === null || value === undefined) return String(value);
-  if (typeof value === "function") return `function ${text(read(value, "name"))}`;
-  if (typeof value === "object") {
-    const hasConstructor = Boolean(read(value, "constructor"));
-    if (hasConstructor) {
-      const constructor: unknown = read(value, "constructor");
-      if (typeof constructor !== "object" && typeof constructor !== "function" || constructor === null) {
-        throw new TypeError(`Cannot use 'in' operator to search for 'name' in ${String(constructor)}`);
-      }
-      if ("name" in constructor) return `an instance of ${text(property(read(value, "constructor"), "name"))}`;
-    }
-    return inspect(value, { depth: -1 });
-  }
-  if (typeof value === "string") {
-    const shortened = value.length > 28 ? `${value.slice(0, 25)}...` : value;
-    return `type string (${shortened.includes("'") ? stringify(shortened) : `'${shortened}'`})`;
-  }
-  if (typeof value === "bigint") return `type bigint (${String(value)}n)`;
-  if (typeof value === "number") return `type number (${negativeZero(value, -0) ? "-0" : String(value)})`;
-  if (typeof value === "boolean") return `type boolean (${String(value)})`;
-  if (typeof value === "symbol") return `type symbol (${String(value)})`;
-  throw new TypeError("Invalid async resource argument type");
-}
-function invalid(name: string, expected: string, value: unknown, inspect: ResourceUtilities["inspect"]): TypeError {
-  return Object.assign(new TypeError(`The "${name}" argument must be of type ${expected}. Received ${received(value, inspect)}`), { code: "ERR_INVALID_ARG_TYPE" });
-}
-
 export interface NodeAsyncResource {
   runInAsyncScope(fn: unknown, thisArg?: unknown, ...args: unknown[]): unknown;
   bind(fn: unknown, thisArg?: unknown): (...args: unknown[]) => unknown;
@@ -104,7 +73,7 @@ export function createNodeAsyncHooks(context: AsyncContext, utilities: ResourceU
     #scope: AsyncScope;
     readonly #run: <Result>(callback: () => Result) => Result;
     constructor(type: unknown, options?: unknown) {
-      if (typeof type !== "string") throw invalid("type", "string", type, inspect);
+      if (typeof type !== "string") throw invalidArgType("type", "string", type, inspect);
       let trigger: unknown = context.resources.current.id, manual = false;
       if (typeof options === "number") trigger = options;
       else if (options !== undefined) {
@@ -129,7 +98,7 @@ export function createNodeAsyncHooks(context: AsyncContext, utilities: ResourceU
       }));
     }
     bind(fn: unknown, thisArg?: unknown): (...args: unknown[]) => unknown {
-      if (!callable(fn)) throw invalid("fn", "function", fn, inspect);
+      if (!callable(fn)) throw invalidArgType("fn", "function", fn, inspect);
       const invoke = (receiver: unknown, args: unknown[]): unknown => {
         apply(unshift, args, [fn, receiver]);
         const callback: unknown = read(this, "runInAsyncScope");

@@ -6,7 +6,7 @@ import {decodeSnapshotRecipe,resolveSnapshotRecipe} from "./snapshot-recipe.js";
 const roots:string[]=[];
 afterEach(async()=>{await Promise.all(roots.splice(0).map(root=>rm(root,{recursive:true,force:true})));});
 async function fixture(){
-  const root=await mkdtemp(join(tmpdir(),"oxidevm snapshot "));roots.push(root);
+  const root=await mkdtemp(join(tmpdir(),"oxvm snapshot "));roots.push(root);
   await writeFile(join(root,"prepare.ts"),"export default async function () { return null; }");
   await writeFile(join(root,"verify.ts"),"export default async function () {}");
   return root;

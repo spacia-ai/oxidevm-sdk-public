@@ -31,7 +31,7 @@ export interface Release {
   readonly served: ReadonlyMap<string, Uint8Array<ArrayBuffer>>;
 }
 
-/** Hashes real bytes into a manifest, pins and served-file table, the way `oxidevm wasm build` and `stage` will. */
+/** Hashes real bytes into a manifest, pins and served-file table, the way `oxvm wasm build` and `stage` will. */
 export async function buildRelease(spec: ReleaseSpec): Promise<Release> {
   const adapterBytes = encoder.encode(spec.adapter);
   const artifacts = spec.artifacts ?? {};

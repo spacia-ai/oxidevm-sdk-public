@@ -24,7 +24,7 @@ it("publishes independently reproduced candidates with their complete reviewed e
     await writeFile(join(root, "root/workspace/hello"), "owned fixture\n");
     const key = await generateImageKey(join(root, "author.pem"));
     const packageId = "SPDXRef-Owned-Fixture";
-    const notice = "MIT License\nCopyright 2026 OxideVM fixture authors\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, subject to inclusion of this notice. THE SOFTWARE IS PROVIDED AS IS.";
+    const notice = "MIT License\nCopyright 2026 OXVM fixture authors\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, subject to inclusion of this notice. THE SOFTWARE IS PROVIDED AS IS.";
     await writeFile(join(root, "sbom.json"), JSON.stringify({ spdxVersion: "SPDX-2.3", dataLicense: "CC0-1.0", SPDXID: "SPDXRef-DOCUMENT",
       packages: [{ SPDXID: packageId, name: "owned-fixture", versionInfo: "1", licenseConcluded: "MIT" }],
       files: [{ SPDXID: "SPDXRef-Hello", fileName: "workspace/hello", checksums: [{ algorithm: "SHA256", checksumValue: hash("owned fixture\n") }] }],

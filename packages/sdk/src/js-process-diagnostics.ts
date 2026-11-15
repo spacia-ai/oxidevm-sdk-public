@@ -42,14 +42,28 @@ const rejectionCodes = [
   [37, "remembered-failure"], [38, "placement-override"],
   [39, "image-code-unavailable"], [40, "image-code-untrusted"],
   [41, "module-command-unregistered"], [42, "module-command-concurrency"],
+  // Trace 19 (ADR 0026 release R2): what the static gate or a trial load found for an add-on.
+  [43, "addon-not-node-api"], [44, "addon-glibc"], [45, "addon-unresolved-symbol"], [46, "addon-library-unavailable"],
+  [47, "addon-trial-failed"], [48, "addon-trial-timeout"], [49, "addon-trial-deferred"],
+  // The host speaks a newer Node-API operation set than the execution origin serves (ADR 0026, 2.8).
+  [50, "host-protocol-unsupported"],
+  // A runtime binary in no catalog row: being probed, of another family, or its probe failed (1.5).
+  [51, "runtime-probe-pending"], [52, "runtime-family-unsupported"], [53, "runtime-probe-failed"],
+  // The add-on names a pinned Node-API function the host does not provide; such a name is looked up at run time.
+  [54, "addon-names-unserved"],
 ] as const;
+/** Reasons that name the add-on that decided them (OXJT 19). */
+const addonReasons: ReadonlySet<AccelerationRejectionReason> = new Set<AccelerationRejectionReason>(["addon-unqualified", "dependency-metadata-invalid", "addon-not-node-api", "addon-glibc", "addon-unresolved-symbol", "addon-library-unavailable", "addon-trial-failed", "addon-trial-timeout", "addon-trial-deferred", "addon-names-unserved", "native-promise-predicate-unavailable", "native-error-predicate-unavailable"]);
 export type AccelerationRejectionReason = typeof rejectionCodes[number][1];
 const rejectionReasons: ReadonlyMap<number, AccelerationRejectionReason> = new Map(rejectionCodes);
+/** Trace 19: the add-on that placed a launch in Linux, and the symbol, library or trial outcome it lacks
+ * (empty when none is named). */
+export interface AccelerationAddonObservation { readonly path: string; readonly detail: string }
 /** The newest reason code of each trace version that has placements. */
-const lastReason: ReadonlyMap<number, number> = new Map([[15, 38], [16, 40], [17, 42], [18, 42]]);
+const lastReason: ReadonlyMap<number, number> = new Map([[15, 38], [16, 40], [17, 42], [18, 42], [19, 54]]);
 /** A module command runs in Linux for its own reasons (41, 42), a full command table (36) or the command context gate (1-10). */
 const moduleCommandReasons: ReadonlySet<number> = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 36, 41, 42]);
-type LinuxPlacement = { readonly placement: "linux"; readonly reason: AccelerationRejectionReason; readonly environment: AccelerationEnvironmentRejection | null };
+type LinuxPlacement = { readonly placement: "linux"; readonly reason: AccelerationRejectionReason; readonly environment: AccelerationEnvironmentRejection | null; readonly addon: AccelerationAddonObservation | null };
 export type JSProcessPlacementEvent = {
   readonly ordinal: bigint; readonly pid: ProcessId; readonly parentPid: ProcessId | null; readonly entry: string | null; readonly tid: number; readonly addressSpaceId: bigint;
   readonly profile: NativeProcessProfile["identity"] | null;
@@ -117,7 +131,7 @@ export function decodeJSProcessTrace(bytes: Uint8Array): JSProcessTrace {
   const r = new Reader(bytes);
   if (new TextDecoder().decode(r.raw(4)) !== "OXJT") protocol("JS trace magic mismatch");
   const version = r.u32();
-  if (version < 15 || version > 18) protocol("JS trace version mismatch");
+  if (version < 15 || version > 19) protocol("JS trace version mismatch");
   const dropped = r.u64(), count = r.u32(), placementCount = r.u32(), failureCount = r.u32(), refusalCount = version < 18 ? 0 : r.u32(), events: JSProcessTraceEvent[] = [], placements: JSProcessPlacementEvent[] = [];
   if (count + placementCount + failureCount + refusalCount > 4096) protocol("JS trace exceeds capacity");
   const ordinals = new Set<bigint>();
@@ -134,7 +148,7 @@ export function decodeJSProcessTrace(bytes: Uint8Array): JSProcessTrace {
     if (ordinal <= previous || ordinals.has(ordinal) || addressSpaceId === 0n || subject > (version < 17 ? 1 : 2) || placement > 2 || placement !== 0 && (placement === 2) !== (subject === 2)) protocol("Invalid command placement identity");
     previous = ordinal; ordinals.add(ordinal);
     const common = { ordinal, pid, tid, addressSpaceId };
-    placements.push(subject === 2 ? modulePlacement(r, common, placement) : nativePlacement(r, version, { ...common, subject: subject === 0 ? "node" : "bun", runtime: subject === 0 ? "node" : "bun" }, placement));
+    placements.push(subject === 2 ? modulePlacement(r, version, common, placement) : nativePlacement(r, version, { ...common, subject: subject === 0 ? "node" : "bun", runtime: subject === 0 ? "node" : "bun" }, placement));
   }
   const failures = decodeLateFailures(r, failureCount, ordinals), refusals = decodeRefusals(r, refusalCount, ordinals); r.end();
   return { dropped, events, placements, failures, refusals };
@@ -160,13 +174,15 @@ function nativePlacement(r: Reader, version: number, common: PlacementIdentity &
     const metadata = placementMetadata(r, version);
     if (code === 41 || code === 42) protocol("A module command reason names a node or bun launch");
     if (metadata.environment !== null && reason !== "unsupported-environment") protocol("Environment detail has an unrelated rejection reason");
+    if (metadata.addon !== null && !addonReasons.has(reason)) protocol("Add-on detail has an unrelated rejection reason");
     return { ...common, ...metadata, placement: "linux", reason };
   }
   const generation = r.u64(), incarnationId = r.u64(), dependencyGeneration = r.u64(), basisCode = r.u8();
-  if (generation === 0n || incarnationId === 0n || dependencyGeneration === 0n || dependencyGeneration >= 1n << 62n || basisCode > 1) protocol("Invalid browser placement identity");
-  const basis = basisCode === 0 ? "qualified" as const : "no-addons" as const;
-  const { environment, ...metadata } = placementMetadata(r, version);
-  if (environment !== null) protocol("Admitted process carries an environment rejection");
+  if (generation === 0n || incarnationId === 0n || dependencyGeneration === 0n || dependencyGeneration >= 1n << 62n || basisCode > (version < 19 ? 1 : 3)) protocol("Invalid browser placement identity");
+  // Trace 19: a trial load vouched for an add-on (verified), or the launch is a trial load itself.
+  const basis = basisCode === 0 ? "qualified" as const : basisCode === 1 ? "no-addons" as const : basisCode === 2 ? "verified" as const : "trial" as const;
+  const { environment, addon, ...metadata } = placementMetadata(r, version);
+  if (environment !== null || addon !== null) protocol("Admitted process carries a rejection detail");
   if (metadata.profile === null) protocol("Admitted process has no capability profile");
   const entry = metadata.entry;
   if (entry !== null && !entry.startsWith("/workspace/")
@@ -174,18 +190,18 @@ function nativePlacement(r: Reader, version: number, common: PlacementIdentity &
   return { ...common, ...metadata, placement: "browser", generation, incarnationId, dependencyGeneration, basis };
 }
 
-/** Trace 17 only (subject 2 is refused earlier): a module command's stub ran in Linux or as its page module. */
-function modulePlacement(r: Reader, identity: PlacementIdentity, placement: number): JSProcessPlacementEvent {
+/** Trace 17 and later (subject 2 is refused earlier): a module command's stub ran in Linux or as its page module. */
+function modulePlacement(r: Reader, version: number, identity: PlacementIdentity, placement: number): JSProcessPlacementEvent {
   const common = { ...identity, subject: "module-command" as const, runtime: null };
   if (placement === 0) {
-    const [code, reason] = linuxReason(r, 17);
-    const { environment, ...metadata } = placementMetadata(r, 17);
-    if (!moduleCommandReasons.has(code) || environment !== null || metadata.profile !== null || metadata.entry === null) protocol("Invalid module command placement");
+    const [code, reason] = linuxReason(r, version);
+    const { environment, ...metadata } = placementMetadata(r, version);
+    if (!moduleCommandReasons.has(code) || environment !== null || metadata.addon !== null || metadata.profile !== null || metadata.entry === null) protocol("Invalid module command placement");
     return { ...common, ...metadata, placement: "linux", reason, environment };
   }
   const generation = r.u64(), incarnationId = r.u64(), registration = r.u32();
-  const { environment, ...metadata } = placementMetadata(r, 17), name = metadata.entry?.slice("/usr/local/bin/".length) ?? "";
-  if (generation === 0n || incarnationId === 0n || registration === 0 || environment !== null || metadata.profile !== null
+  const { environment, addon, ...metadata } = placementMetadata(r, version), name = metadata.entry?.slice("/usr/local/bin/".length) ?? "";
+  if (generation === 0n || incarnationId === 0n || registration === 0 || environment !== null || addon !== null || metadata.profile !== null
     || !isModuleCommandName(name) || metadata.entry !== moduleCommandPath(name)) protocol("Invalid module command placement");
   return { ...common, ...metadata, placement: "browser-module", generation, incarnationId, registration };
 }
@@ -232,7 +248,7 @@ function refusalDestination(family: number, port: number, address: Uint8Array): 
   return protocol("Invalid refused destination");
 }
 
-function placementMetadata(r: Reader, version: number): Pick<JSProcessPlacementEvent, "parentPid" | "entry" | "profile" | "codeRoots"> & { readonly environment: AccelerationEnvironmentRejection | null } {
+function placementMetadata(r: Reader, version: number): Pick<JSProcessPlacementEvent, "parentPid" | "entry" | "profile" | "codeRoots"> & { readonly environment: AccelerationEnvironmentRejection | null; readonly addon: AccelerationAddonObservation | null } {
   const parent = r.u32(), entry = r.text(4095), identity = r.text(255), tag = r.u8();
   if (identity !== "" && identity !== "node24-bun1-v1" && identity !== "native-parity-fixture-v1") protocol("Invalid placement capability profile");
   if (entry !== "" && (!entry.startsWith("/") || /[\0\r\n]/u.test(entry) || entry.split("/").slice(1).some(part => part === "" || part === "." || part === ".."))) protocol("Invalid placement entry");
@@ -243,5 +259,8 @@ function placementMetadata(r: Reader, version: number): Pick<JSProcessPlacementE
     environment = { variable, category };
   }
   const codeRoots = version < 16 ? undefined : readNativeRoots(r).map(root => ({ kind: root.kind, path: root.path, contentSHA256: root.kind === "image" ? root.sha256 : null }));
-  return { parentPid: parent === 0 ? null : decodeProcessId(parent), entry: entry === "" ? null : entry, profile: identity === "" ? null : identity, environment, ...(codeRoots === undefined ? {} : { codeRoots }) };
+  // Trace 19 ends each row with the deciding add-on and what it lacks; an empty path means none decided.
+  const path = version < 19 ? "" : r.text(4095), detail = version < 19 ? "" : r.text(4095);
+  if (path === "" ? detail !== "" : !path.startsWith("/") || /[\0\r\n]/u.test(path) || !/^[ -~]*$/u.test(detail)) protocol("Invalid placement add-on detail");
+  return { parentPid: parent === 0 ? null : decodeProcessId(parent), entry: entry === "" ? null : entry, profile: identity === "" ? null : identity, environment, addon: path === "" ? null : { path, detail }, ...(codeRoots === undefined ? {} : { codeRoots }) };
 }

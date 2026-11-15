@@ -24,9 +24,9 @@ async function victim(): Promise<string> {
 const listing = async (directory: string): Promise<string[]> => (await readdir(directory, { recursive: true })).sort();
 
 const LAYOUTS: readonly (readonly [string, (project: string, target: string) => Promise<void>])[] = [
-  [".oxidevm", async (project, target) => { await symlink(target, join(project, ".oxidevm")); }],
-  [".oxidevm/modules", async (project, target) => { await mkdir(join(project, ".oxidevm")); await symlink(target, join(project, STAGE_ROOT)); }],
-  [".oxidevm/modules/<id>", async (project, target) => { await mkdir(join(project, STAGE_ROOT), { recursive: true }); await symlink(target, join(project, STAGE_ROOT, "tool")); }],
+  [".oxvm", async (project, target) => { await symlink(target, join(project, ".oxvm")); }],
+  [".oxvm/modules", async (project, target) => { await mkdir(join(project, ".oxvm")); await symlink(target, join(project, STAGE_ROOT)); }],
+  [".oxvm/modules/<id>", async (project, target) => { await mkdir(join(project, STAGE_ROOT), { recursive: true }); await symlink(target, join(project, STAGE_ROOT, "tool")); }],
   ["modules", async (project, target) => { await symlink(target, join(project, VENDOR_ROOT)); }],
   ["modules/<id>", async (project, target) => { await mkdir(join(project, VENDOR_ROOT)); await symlink(target, join(project, VENDOR_ROOT, "tool")); }],
   ["src, which holds the generated file", async (project, target) => { await symlink(target, join(project, "src")); }],
@@ -46,7 +46,7 @@ describe("staging in a project that contains symbolic links", () => {
 
   it("refuses a symlinked staging root even when no module is installed, which is the case that used to delete everything", async () => {
     const project = await temporary(), target = await victim();
-    await mkdir(join(project, ".oxidevm"));
+    await mkdir(join(project, ".oxvm"));
     await symlink(target, join(project, STAGE_ROOT));
     const before = await listing(target);
     await expect(stageModules(new Map(), { projectDir: project })).rejects.toMatchObject({ code: "PERMISSION_DENIED" });

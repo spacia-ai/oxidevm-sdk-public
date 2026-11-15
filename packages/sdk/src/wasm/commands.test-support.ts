@@ -9,7 +9,7 @@ import type { OwnedModuleCommands } from "../vm-adapter.js";
 import type { LaunchPins } from "./handle.js";
 import type { Release } from "./runner/fixtures.test-support.js";
 
-/** The pins `oxidevm wasm stage` generates for a release's handle. */
+/** The pins `oxvm wasm stage` generates for a release's handle. */
 export function pinsOf(release: Release): LaunchPins {
   return { release: release.descriptor.release, adapter: release.descriptor.adapter, artifacts: release.descriptor.artifacts };
 }

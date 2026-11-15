@@ -56,7 +56,7 @@ export function decodeAdmissionRecord(record: Uint8Array): LicenseStatus {
       if (record.length !== 3 || rejected === undefined) break;
       { const required = rejected === "self-host-requires-license" || rejected === "public-requires-license";
         throw new VMError("PERMISSION_DENIED", required
-          ? "this public origin needs an OxideVM license token (runtime.license); register at https://accounts.oxidevm.dev/"
+          ? "this public origin needs a OXVM license token (runtime.license); register at https://accounts.oxvm.dev/"
           : `the license token does not admit this origin (${rejected})`, { reason: required ? "license-required" : "license-invalid", rejected }); }
     case 2: {
       if (record.length < 38 || rejected !== undefined) break;

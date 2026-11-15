@@ -1,4 +1,4 @@
-import { BRIDGE_NAMESPACE, PREVIEW1_NAMESPACE, isPreview1Name } from "./imports.js";
+import { BRIDGE_NAMESPACE, LEGACY_BRIDGE_NAMESPACE, PREVIEW1_NAMESPACE, isPreview1Name } from "./imports.js";
 
 /** A program the profile refuses before any of its code runs; `reason` names the first offending import or export. */
 export class AdmissionError extends Error {
@@ -18,10 +18,11 @@ export function admitProgram(module: WebAssembly.Module, bridgeNames: ReadonlySe
       if (!isPreview1Name(entry.name)) throw new AdmissionError(`imports ${where}, which WASI Preview1 does not define`);
       continue;
     }
-    const major = /^oxidevm_bridge_v(\d+)$/u.exec(entry.module);
-    if (major !== null && entry.module !== BRIDGE_NAMESPACE) throw new AdmissionError(`imports ${where}: bridge ABI major ${major[1] ?? "?"} is not supported (this module serves ${BRIDGE_NAMESPACE})`);
-    if (entry.module === BRIDGE_NAMESPACE) {
-      if (!bridgeNames.has(entry.name)) throw new AdmissionError(`imports ${where}, which ${BRIDGE_NAMESPACE} does not define`);
+    const major = /^(?:oxvm|oxidevm)_bridge_v(\d+)$/u.exec(entry.module);
+    const knownBridge = entry.module === BRIDGE_NAMESPACE || entry.module === LEGACY_BRIDGE_NAMESPACE;
+    if (major !== null && !knownBridge) throw new AdmissionError(`imports ${where}: bridge ABI major ${major[1] ?? "?"} is not supported (this module serves ${BRIDGE_NAMESPACE})`);
+    if (knownBridge) {
+      if (!bridgeNames.has(entry.name)) throw new AdmissionError(`imports ${where}, which ${entry.module} does not define`);
       continue;
     }
     throw new AdmissionError(`imports from the unknown namespace ${entry.module} (${where})`);

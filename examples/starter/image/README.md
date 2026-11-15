@@ -74,10 +74,13 @@ Supply these inputs outside Git before preparation:
 
 | Variable | Required input |
 | --- | --- |
-| `OXIDEVM_PANDAS_BASE_ROOTFS` | Exact rootfs archive named and hashed in `python-inputs.lock.json` |
-| `OXIDEVM_PANDAS_BASE_BUNDLE` | Complete signed, distribution-qualified base bundle matching that lock's manifest digest |
-| `OXIDEVM_PANDAS_BASE_TRUST` | Independently retained base-author public trust file |
-| `OXIDEVM_IMAGE_SIGNING_KEY` | Your own external private key, only when creating a signed development bundle |
+| `OXVM_PANDAS_BASE_ROOTFS` | Exact rootfs archive named and hashed in `python-inputs.lock.json` |
+| `OXVM_PANDAS_BASE_BUNDLE` | Complete signed, distribution-qualified base bundle matching that lock's manifest digest |
+| `OXVM_PANDAS_BASE_TRUST` | Independently retained base-author public trust file |
+| `OXVM_IMAGE_SIGNING_KEY` | Your own external private key, only when creating a signed development bundle |
+
+The matching `OXIDEVM_*` names remain valid. Different values under both names
+fail without printing their values. Set one name or the same value under both names.
 
 Do not replace missing inputs with similarly named files or skip the checks.
 If the exact base is unavailable, this particular rebuild is blocked. Use the
@@ -99,9 +102,9 @@ The image rejects libquadmath, libgfortran and OpenBLAS. The compiler and Python
 build tools stay outside the final image. GCC runtime libraries retain their
 explicit Runtime Library Exception and original source materials.
 
-Supply the exact qualified base archive through `OXIDEVM_PANDAS_BASE_ROOTFS`.
+Supply the exact qualified base archive through `OXVM_PANDAS_BASE_ROOTFS`.
 Supply its signed bundle and independent trust file through
-`OXIDEVM_PANDAS_BASE_BUNDLE` and `OXIDEVM_PANDAS_BASE_TRUST`. Preparation rejects
+`OXVM_PANDAS_BASE_BUNDLE` and `OXVM_PANDAS_BASE_TRUST`. Preparation rejects
 changed base identities and archives. The base's component sources retain their
 upstream archives, Alpine recipes, patches, build inputs and notices.
 
@@ -112,7 +115,7 @@ node examples/starter/image/compliance.ts
 
 Preparation downloads and hash-checks the recorded inputs. Compliance writes
 `.cache/candidate/rootfs`, `evidence/` and `recipe.json`. If
-`OXIDEVM_IMAGE_SIGNING_KEY` is set, it also writes a development `bundle/` and
+`OXVM_IMAGE_SIGNING_KEY` is set, it also writes a development `bundle/` and
 `RESULT.json`. These paths are relative to this recipe directory. Each candidate
 needs a fresh output directory; retain previous evidence separately before
 rebuilding. The original published recipe and image identities remain immutable.
@@ -125,7 +128,7 @@ bytes against the pinned APK payloads. It maps new Python files to the pinned
 source builds. Unknown files fail. SPDX, CycloneDX, notices, source mappings,
 license texts and checksums come from that same inventory.
 
-Set `OXIDEVM_IMAGE_SIGNING_KEY` to prepare a signed development bundle in the
+Set `OXVM_IMAGE_SIGNING_KEY` to prepare a signed development bundle in the
 private candidate directory. A development bundle cannot pass distribution
 checks. Distribution requires the existing image builder's independent rebuild,
 complete material validation, browser checks, and separate human reviews.
@@ -174,7 +177,7 @@ The source-built executables also contain GCC 15.2.0-r5 runtime objects
 recipes and complete license texts. They are not the build-only GCC compiler.
 The exception is recorded explicitly. Human review must confirm its conditions.
 
-The image configures OxideVM virtual DNS at `192.0.2.1`. Verify DNS and HTTPS through the enabled browser network path. Keep this configuration when selecting or rebuilding the runtime closure.
+The image configures OXVM virtual DNS at `192.0.2.1`. Verify DNS and HTTPS through the enabled browser network path. Keep this configuration when selecting or rebuilding the runtime closure.
 
 ## Hashing and scripting builds
 

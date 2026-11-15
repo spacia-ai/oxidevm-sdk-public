@@ -1,5 +1,17 @@
-import type { UserspaceRunResult } from "../userspace-abi.js";
+import { decodeUserspacePendingWork, type UserspaceRunResult } from "../userspace-abi.js";
 import { integer } from "../decode.js";
+import { callUserspaceU32 } from "./userspace-exports.js";
+
+export function userspaceExecutionPending(
+  runtime: { readonly instance: Pick<WebAssembly.Instance, "exports"> } | undefined,
+  attachments: number,
+): boolean {
+  if (runtime === undefined) return false;
+  if (attachments !== 0) return true;
+  const live = callUserspaceU32(runtime.instance, "oxidevm_userspace_live_process_count");
+  return nativeExecutionPending(live, live === 0 ? callUserspaceU32(runtime.instance, "oxidevm_userspace_detached_io_pending") : 0)
+    || decodeUserspacePendingWork(callUserspaceU32(runtime.instance, "oxidevm_userspace_pending_work")).hostRequest;
+}
 
 export function nativeExecutionPending(liveProcesses: unknown, detachedIo: unknown = 0): boolean {
   const live = integer(liveProcesses, "Userspace live process count", 0, 0xffff_ffff);

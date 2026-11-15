@@ -195,7 +195,7 @@ function decodeRuntimeVMOptions(value: unknown): RuntimeVMOptions {
   exactKeys(
     options,
     ["mode", "workspaceId", "memoryMiB", "network"],
-    ["relayUrl", "relayPolicy", "previewOrigin", "previewIsolation", "userspaceWasmUrl", "userspaceSharedWasmUrl", "limits", "ephemeral", "workspaceInUse", "initialUser", "rootPersistence", "interceptors", "nativeExecutionPort"],
+    ["relayUrl", "relayPolicy", "previewOrigin", "previewIsolation", "userspaceWasmUrl", "userspaceSharedWasmUrl", "limits", "ephemeral", "workspaceInUse", "initialUser", "rootPersistence", "interceptors", "nativeExecutionPort", "nativeOperationSet"],
   );
   const userspaceWasmUrl = optionalString(options["userspaceWasmUrl"], "userspaceWasmUrl");
   const userspaceSharedWasmUrl = optionalString(
@@ -205,6 +205,8 @@ function decodeRuntimeVMOptions(value: unknown): RuntimeVMOptions {
   const limits = decodeUserspaceLimits(options["limits"]);
   const nativeExecutionPort = options["nativeExecutionPort"];
   if (nativeExecutionPort !== undefined && !(nativeExecutionPort instanceof MessagePort)) throw new VMError("INVALID_ARGUMENT", "Native execution port must be a MessagePort");
+  const nativeOperationSet = options["nativeOperationSet"] === undefined ? undefined : integer(options["nativeOperationSet"], "native operation set", 0, 0xffff);
+  if (nativeOperationSet !== undefined && nativeExecutionPort === undefined) throw new VMError("INVALID_ARGUMENT", "A native operation set needs a native execution port");
   const initialUser = options["initialUser"];
   const rootPersistence = options["rootPersistence"];
   if (initialUser !== undefined && initialUser !== "user" && initialUser !== "root") {
@@ -223,6 +225,7 @@ function decodeRuntimeVMOptions(value: unknown): RuntimeVMOptions {
     ...(userspaceSharedWasmUrl === undefined ? {} : { userspaceSharedWasmUrl }),
     ...(limits === undefined ? {} : { limits }),
     ...(nativeExecutionPort === undefined ? {} : { nativeExecutionPort }),
+    ...(nativeOperationSet === undefined ? {} : { nativeOperationSet }),
     ...(options["interceptors"] === undefined ? {} : { interceptors: decodeCommandInterceptors(options["interceptors"]) }),
     ...(initialUser === undefined ? {} : { initialUser }),
     ...(rootPersistence === undefined ? {} : { rootPersistence }),

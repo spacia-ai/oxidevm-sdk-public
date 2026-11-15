@@ -1,0 +1,1404 @@
+{
+ "schemaVersion": 1,
+ "source": "tests/fixtures/assistance/node-dotenv.cjs run under the pinned Node through its musl loader (ADR 0026: Vite 8 imports util.parseEnv by name)",
+ "node": {
+  "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+  "version": "v24.18.1"
+ },
+ "recorderSHA256": "5c071b84a2ac6b6dca357431def335f61501b1ce581a7b95f45118176ed82d5a",
+ "function": {
+  "name": "parseEnv",
+  "length": 1,
+  "prototype": "object"
+ },
+ "rows": [
+  {
+   "label": "empty",
+   "input": "",
+   "entries": [],
+   "keys": 0,
+   "plain": true
+  },
+  {
+   "label": "one",
+   "input": "A=1",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "two",
+   "input": "A=1\nB=2",
+   "entries": [
+    [
+     "A",
+     "1"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "crlf",
+   "input": "A=1\r\nB=2\r\n",
+   "entries": [
+    [
+     "A",
+     "1"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "lone-cr",
+   "input": "A=1\rB=2",
+   "entries": [
+    [
+     "A",
+     "1B=2"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "spaced",
+   "input": "  A = 1  \n",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "tabs",
+   "input": "\tA=1\t\n\tB=\t2\t",
+   "entries": [
+    [
+     "A",
+     "1"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "blank-lines",
+   "input": "\n\n\nA=1\n\n\nB=2\n\n",
+   "entries": [
+    [
+     "A",
+     "1"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "leading-trailing",
+   "input": "  \n  A=1  \n  ",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "export",
+   "input": "export A=1",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "export-spaces",
+   "input": "export   A=1",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "export-glued",
+   "input": "exportA=1",
+   "entries": [
+    [
+     "exportA",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "export-empty-value",
+   "input": "export A=\nB=2",
+   "entries": [
+    [
+     "B",
+     "2"
+    ],
+    [
+     "export A",
+     ""
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "export-only",
+   "input": "export =x",
+   "entries": [
+    [
+     "export",
+     "x"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "export-twice",
+   "input": "export export A=1",
+   "entries": [
+    [
+     "export A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "export-tab",
+   "input": "export\tA=1",
+   "entries": [
+    [
+     "export\tA",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "empty-value-eof",
+   "input": "A=",
+   "entries": [
+    [
+     "A",
+     ""
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "empty-value-line",
+   "input": "A=\nB=2",
+   "entries": [
+    [
+     "A",
+     ""
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "space-value-line",
+   "input": "A= \nB=2",
+   "entries": [
+    [
+     "A",
+     "B=2"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "tab-value-line",
+   "input": "A=\t\nB=2",
+   "entries": [
+    [
+     "A",
+     "B=2"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "empty-key",
+   "input": "=1\nB=2",
+   "entries": [
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "empty-key-equals",
+   "input": "=a=b\nC=1",
+   "entries": [
+    [
+     "C",
+     "1"
+    ],
+    [
+     "a",
+     "b"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "empty-key-empty-value",
+   "input": "=\n",
+   "entries": [
+    [
+     "",
+     ""
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "spaces-key-empty-value",
+   "input": "   =\nA=1",
+   "entries": [
+    [
+     "",
+     ""
+    ],
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "no-equals",
+   "input": "KEY",
+   "entries": [],
+   "keys": 0,
+   "plain": true
+  },
+  {
+   "label": "no-equals-line",
+   "input": "KEY\nA=1",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "comment",
+   "input": "# comment\nA=1",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "indented-comment",
+   "input": "  # comment\nA=1",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "indented-comment-equals",
+   "input": "  # a=b\nC=1",
+   "entries": [
+    [
+     "C",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "comment-eof",
+   "input": "A=1\n# c",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "inline-comment",
+   "input": "A=1 # comment",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "glued-comment",
+   "input": "A=1#comment",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "comment-next-line",
+   "input": "A=1 # c\nB=2",
+   "entries": [
+    [
+     "A",
+     "1"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "hash-value",
+   "input": "A=#hash",
+   "entries": [
+    [
+     "A",
+     ""
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "url-fragment",
+   "input": "URL=http://x/#frag\nB=2",
+   "entries": [
+    [
+     "B",
+     "2"
+    ],
+    [
+     "URL",
+     "http://x/"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "double",
+   "input": "A=\"quoted value\"",
+   "entries": [
+    [
+     "A",
+     "quoted value"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "single",
+   "input": "A='single'",
+   "entries": [
+    [
+     "A",
+     "single"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "backtick",
+   "input": "A=`back`",
+   "entries": [
+    [
+     "A",
+     "back"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "double-escaped-newline",
+   "input": "A=\"multi\\nline\"",
+   "entries": [
+    [
+     "A",
+     "multi\nline"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "single-escaped-newline",
+   "input": "A='no\\nexpand'",
+   "entries": [
+    [
+     "A",
+     "no\\nexpand"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "backtick-escaped-newline",
+   "input": "A=`no\\nexpand`",
+   "entries": [
+    [
+     "A",
+     "no\\nexpand"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "double-real-newline",
+   "input": "A=\"real\nnewline\"\nB=2",
+   "entries": [
+    [
+     "A",
+     "real\nnewline"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "single-real-newline",
+   "input": "A='real\nnewline'\nB=2",
+   "entries": [
+    [
+     "A",
+     "real\nnewline"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "double-unterminated",
+   "input": "A=\"unterminated\nB=2",
+   "entries": [
+    [
+     "A",
+     "\"unterminated"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "single-unterminated-eof",
+   "input": "A='unterminated",
+   "entries": [
+    [
+     "A",
+     "'unterminated"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "backtick-unterminated",
+   "input": "A=`x\nB=2",
+   "entries": [
+    [
+     "A",
+     "`x"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "double-trailing",
+   "input": "A=\"x\" trailing\nB=2",
+   "entries": [
+    [
+     "A",
+     "x"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "double-escaped-quote",
+   "input": "A=\"x\\\"y\"",
+   "entries": [
+    [
+     "A",
+     "x\\"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "double-hash",
+   "input": "A=\"#notcomment\"",
+   "entries": [
+    [
+     "A",
+     "#notcomment"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "double-then-comment",
+   "input": "A=\"x\"#c\nB=2",
+   "entries": [
+    [
+     "A",
+     "x"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "single-then-indented",
+   "input": "A='x'\n  B=2",
+   "entries": [
+    [
+     "A",
+     "x"
+    ],
+    [
+     "B",
+     "2"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "double-then-indented-comment",
+   "input": "A=\"x\"\n  # c=d\n",
+   "entries": [
+    [
+     "# c",
+     "d"
+    ],
+    [
+     "A",
+     "x"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "double-spaces",
+   "input": "A=\"  spaced  \"",
+   "entries": [
+    [
+     "A",
+     "  spaced  "
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "unquoted-spaces",
+   "input": "A=  spaced value  ",
+   "entries": [
+    [
+     "A",
+     "spaced value"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "empty-double",
+   "input": "A=\"\"",
+   "entries": [
+    [
+     "A",
+     ""
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "empty-single",
+   "input": "A=''",
+   "entries": [
+    [
+     "A",
+     ""
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "adjacent-quotes",
+   "input": "A=\"a\"\"b\"",
+   "entries": [
+    [
+     "A",
+     "a"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "double-only-newlines",
+   "input": "A=\"\\n\\n\"",
+   "entries": [
+    [
+     "A",
+     "\n\n"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "double-backslash-n",
+   "input": "A=\"\\\\n\"",
+   "entries": [
+    [
+     "A",
+     "\\\n"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "double-crlf-inside",
+   "input": "A=\"line1\r\nline2\"",
+   "entries": [
+    [
+     "A",
+     "line1\nline2"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "mixed-quote",
+   "input": "A=\"x'",
+   "entries": [
+    [
+     "A",
+     "\"x'"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "quote-in-middle",
+   "input": "A=x\"y\"",
+   "entries": [
+    [
+     "A",
+     "x\"y\""
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "equals-in-value",
+   "input": "A=b=c",
+   "entries": [
+    [
+     "A",
+     "b=c"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "equals-spaced",
+   "input": "A = = b",
+   "entries": [
+    [
+     "A",
+     "= b"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "sorted",
+   "input": "B=2\nA=1\nC=3",
+   "entries": [
+    [
+     "A",
+     "1"
+    ],
+    [
+     "B",
+     "2"
+    ],
+    [
+     "C",
+     "3"
+    ]
+   ],
+   "keys": 3,
+   "plain": true
+  },
+  {
+   "label": "duplicate",
+   "input": "A=1\nA=2",
+   "entries": [
+    [
+     "A",
+     "2"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "duplicate-order",
+   "input": "B=1\nA=2\nB=3",
+   "entries": [
+    [
+     "A",
+     "2"
+    ],
+    [
+     "B",
+     "3"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "integer-keys",
+   "input": "10=a\n2=b\nb=c\na=d\n-1=e\n01=f",
+   "entries": [
+    [
+     "2",
+     "b"
+    ],
+    [
+     "10",
+     "a"
+    ],
+    [
+     "-1",
+     "e"
+    ],
+    [
+     "01",
+     "f"
+    ],
+    [
+     "a",
+     "d"
+    ],
+    [
+     "b",
+     "c"
+    ]
+   ],
+   "keys": 6,
+   "plain": true
+  },
+  {
+   "label": "proto",
+   "input": "__proto__=x\nconstructor=y\ntoString=z",
+   "entries": [
+    [
+     "constructor",
+     "y"
+    ],
+    [
+     "toString",
+     "z"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "unicode-order",
+   "input": "ü=1\nz=2\n😀=3\n=4\nZ=5",
+   "entries": [
+    [
+     "Z",
+     "5"
+    ],
+    [
+     "z",
+     "2"
+    ],
+    [
+     "ü",
+     "1"
+    ],
+    [
+     "",
+     "4"
+    ],
+    [
+     "😀",
+     "3"
+    ]
+   ],
+   "keys": 5,
+   "plain": true
+  },
+  {
+   "label": "lone-surrogate",
+   "input": "A=\ud800\nB=\udc00x",
+   "entries": [
+    [
+     "A",
+     "�"
+    ],
+    [
+     "B",
+     "�x"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "lone-surrogate-key",
+   "input": "\ud800=1",
+   "entries": [
+    [
+     "�",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "nul",
+   "input": "A=x\u0000y\n\u0000=z",
+   "entries": [
+    [
+     "\u0000",
+     "z"
+    ],
+    [
+     "A",
+     "x\u0000y"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "form-feed",
+   "input": "A=\fx\f\nB=\u000by",
+   "entries": [
+    [
+     "A",
+     "\fx\f"
+    ],
+    [
+     "B",
+     "\u000by"
+    ]
+   ],
+   "keys": 2,
+   "plain": true
+  },
+  {
+   "label": "only-spaces",
+   "input": "   \t \n ",
+   "entries": [],
+   "keys": 0,
+   "plain": true
+  },
+  {
+   "label": "only-comment",
+   "input": "#",
+   "entries": [],
+   "keys": 0,
+   "plain": true
+  },
+  {
+   "label": "equals-only",
+   "input": "=",
+   "entries": [
+    [
+     "",
+     ""
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "newline-equals",
+   "input": "\n=\n",
+   "entries": [
+    [
+     "",
+     ""
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "key-spaces-inside",
+   "input": "MY KEY=1",
+   "entries": [
+    [
+     "MY KEY",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "unicode-value",
+   "input": "A=zażółć 😀",
+   "entries": [
+    [
+     "A",
+     "zażółć 😀"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "windows-final",
+   "input": "A=\"x\"\r\n",
+   "entries": [
+    [
+     "A",
+     "x"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "value-then-eof-spaces",
+   "input": "A=1   ",
+   "entries": [
+    [
+     "A",
+     "1"
+    ]
+   ],
+   "keys": 1,
+   "plain": true
+  },
+  {
+   "label": "many",
+   "input": "K39=v0\nK38=v1\nK37=v2\nK36=v3\nK35=v4\nK34=v5\nK33=v6\nK32=v7\nK31=v8\nK30=v9\nK29=v10\nK28=v11\nK27=v12\nK26=v13\nK25=v14\nK24=v15\nK23=v16\nK22=v17\nK21=v18\nK20=v19\nK19=v20\nK18=v21\nK17=v22\nK16=v23\nK15=v24\nK14=v25\nK13=v26\nK12=v27\nK11=v28\nK10=v29\nK09=v30\nK08=v31\nK07=v32\nK06=v33\nK05=v34\nK04=v35\nK03=v36\nK02=v37\nK01=v38\nK00=v39",
+   "entries": [
+    [
+     "K00",
+     "v39"
+    ],
+    [
+     "K01",
+     "v38"
+    ],
+    [
+     "K02",
+     "v37"
+    ],
+    [
+     "K03",
+     "v36"
+    ],
+    [
+     "K04",
+     "v35"
+    ],
+    [
+     "K05",
+     "v34"
+    ],
+    [
+     "K06",
+     "v33"
+    ],
+    [
+     "K07",
+     "v32"
+    ],
+    [
+     "K08",
+     "v31"
+    ],
+    [
+     "K09",
+     "v30"
+    ],
+    [
+     "K10",
+     "v29"
+    ],
+    [
+     "K11",
+     "v28"
+    ],
+    [
+     "K12",
+     "v27"
+    ],
+    [
+     "K13",
+     "v26"
+    ],
+    [
+     "K14",
+     "v25"
+    ],
+    [
+     "K15",
+     "v24"
+    ],
+    [
+     "K16",
+     "v23"
+    ],
+    [
+     "K17",
+     "v22"
+    ],
+    [
+     "K18",
+     "v21"
+    ],
+    [
+     "K19",
+     "v20"
+    ],
+    [
+     "K20",
+     "v19"
+    ],
+    [
+     "K21",
+     "v18"
+    ],
+    [
+     "K22",
+     "v17"
+    ],
+    [
+     "K23",
+     "v16"
+    ],
+    [
+     "K24",
+     "v15"
+    ],
+    [
+     "K25",
+     "v14"
+    ],
+    [
+     "K26",
+     "v13"
+    ],
+    [
+     "K27",
+     "v12"
+    ],
+    [
+     "K28",
+     "v11"
+    ],
+    [
+     "K29",
+     "v10"
+    ],
+    [
+     "K30",
+     "v9"
+    ],
+    [
+     "K31",
+     "v8"
+    ],
+    [
+     "K32",
+     "v7"
+    ],
+    [
+     "K33",
+     "v6"
+    ],
+    [
+     "K34",
+     "v5"
+    ],
+    [
+     "K35",
+     "v4"
+    ],
+    [
+     "K36",
+     "v3"
+    ],
+    [
+     "K37",
+     "v2"
+    ],
+    [
+     "K38",
+     "v1"
+    ],
+    [
+     "K39",
+     "v0"
+    ]
+   ],
+   "keys": 40,
+   "plain": true
+  },
+  {
+   "label": "no-argument",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received undefined"
+   }
+  },
+  {
+   "label": "undefined",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received undefined"
+   }
+  },
+  {
+   "label": "null",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received null"
+   }
+  },
+  {
+   "label": "number",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received type number (1)"
+   }
+  },
+  {
+   "label": "negative-zero",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received type number (-0)"
+   }
+  },
+  {
+   "label": "nan",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received type number (NaN)"
+   }
+  },
+  {
+   "label": "bigint",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received type bigint (1n)"
+   }
+  },
+  {
+   "label": "boolean",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received type boolean (true)"
+   }
+  },
+  {
+   "label": "symbol",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received type symbol (Symbol(x))"
+   }
+  },
+  {
+   "label": "object",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received an instance of Object"
+   }
+  },
+  {
+   "label": "array",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received an instance of Array"
+   }
+  },
+  {
+   "label": "string-object",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received an instance of String"
+   }
+  },
+  {
+   "label": "null-prototype",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received [Object: null prototype] {}"
+   }
+  },
+  {
+   "label": "function",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received function named"
+   }
+  },
+  {
+   "label": "buffer",
+   "error": {
+    "name": "TypeError",
+    "code": "ERR_INVALID_ARG_TYPE",
+    "message": "The \"content\" argument must be of type string. Received an instance of Buffer"
+   }
+  }
+ ]
+}

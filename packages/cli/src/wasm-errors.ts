@@ -1,4 +1,4 @@
-import { VMError } from "@oxidevm/sdk";
+import { VMError } from "@oxvm/sdk";
 
 /** The stable reason of a module failure (`wasm-…`), the only detail that is safe and useful to print. */
 export function wasmFailureDetail(error: unknown): Readonly<Record<string, unknown>> | undefined {

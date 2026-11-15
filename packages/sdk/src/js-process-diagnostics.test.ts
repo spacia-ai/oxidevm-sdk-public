@@ -39,7 +39,7 @@ it("reports profile placement and native rejection without fabricating a JS inca
     .u64(1n).u32(10).u32(10).u64(9n).u8(1).u8(0).u32(11).u32(1).path("").path("").u8(0)
     .u64(2n).u32(11).u32(11).u64(10n).u8(0).u8(1).u64(2n).u64(3n).u64(8n).u8(1).u32(10).path("/workspace/main.cjs").path("node24-bun1-v1").u8(0).finish();
   expect(decodeJSProcessTrace(bytes).placements).toEqual([
-    { ordinal: 1n, pid: 10, parentPid: 1, entry: null, environment: null, tid: 10, addressSpaceId: 9n, subject: "bun", runtime: "bun", profile: null, placement: "linux", reason: "unsupported-invocation" },
+    { ordinal: 1n, pid: 10, parentPid: 1, entry: null, environment: null, addon: null, tid: 10, addressSpaceId: 9n, subject: "bun", runtime: "bun", profile: null, placement: "linux", reason: "unsupported-invocation" },
     { ordinal: 2n, pid: 11, parentPid: 10, entry: "/workspace/main.cjs", tid: 11, addressSpaceId: 10n, subject: "node", runtime: "node", profile: "node24-bun1-v1", placement: "browser", generation: 2n, incarnationId: 3n, dependencyGeneration: 8n, basis: "no-addons" },
   ]);
 });
@@ -136,7 +136,10 @@ it("reports each late fast-path failure Rust remembered, in the trace's one ordi
     { ordinal: 2n, pid: decodeProcessId(42), session: decodeProcessId(40), generation: 2n, incarnationId: 3n, kind: "unavailable-builtin", detail: "node:sqlite" },
   ]);
   expect(decodeJSProcessTrace(failure(4, "", 0)).failures[0]).toMatchObject({ kind: "eval-worker", session: null });
-  for (const bytes of [failure(0, "x"), failure(5, "x"), failure(9, "x"), failure(1, "a\nb"), failure(1, "x", 40, 1n), failure(1, "x").subarray(0, -1)]) {
+  expect(decodeJSProcessTrace(failure(5, "signal 11")).failures[0]).toMatchObject({ kind: "host-crash", detail: "signal 11" });
+  expect(decodeJSProcessTrace(failure(7, "9437184 of 8388608 bytes")).failures[0]).toMatchObject({ kind: "shared-buffer-budget", detail: "9437184 of 8388608 bytes" });
+  // Trials report initializer errors (6) as verdicts; they are never trace failures.
+  for (const bytes of [failure(0, "x"), failure(6, "x"), failure(9, "x"), failure(1, "a\nb"), failure(1, "x", 40, 1n), failure(1, "x").subarray(0, -1)]) {
     expect(() => decodeJSProcessTrace(bytes)).toThrow();
   }
 });
@@ -165,9 +168,9 @@ it("reads a module command's browser placement with its registration and its Lin
     { subject: 2, tag: 0, fields: linuxReason(36) },
   )).placements).toEqual([
     { ordinal: 1n, pid: 42, parentPid: 20, entry: "/usr/local/bin/typst", tid: 42, addressSpaceId: 9n, subject: "module-command", runtime: null, profile: null, codeRoots: [], placement: "browser-module", generation: 7n, incarnationId: 8n, registration: 3 },
-    { ordinal: 2n, pid: 42, parentPid: 20, entry: "/usr/local/bin/typst", tid: 42, addressSpaceId: 9n, subject: "module-command", runtime: null, profile: null, codeRoots: [], placement: "linux", reason: "module-command-concurrency", environment: null },
-    { ordinal: 3n, pid: 42, parentPid: 20, entry: "/tmp/copied-stub", tid: 42, addressSpaceId: 9n, subject: "module-command", runtime: null, profile: null, codeRoots: [], placement: "linux", reason: "module-command-unregistered", environment: null },
-    { ordinal: 4n, pid: 42, parentPid: 20, entry: "/usr/local/bin/typst", tid: 42, addressSpaceId: 9n, subject: "module-command", runtime: null, profile: null, codeRoots: [], placement: "linux", reason: "command-capacity", environment: null },
+    { ordinal: 2n, pid: 42, parentPid: 20, entry: "/usr/local/bin/typst", tid: 42, addressSpaceId: 9n, subject: "module-command", runtime: null, profile: null, codeRoots: [], placement: "linux", reason: "module-command-concurrency", environment: null, addon: null },
+    { ordinal: 3n, pid: 42, parentPid: 20, entry: "/tmp/copied-stub", tid: 42, addressSpaceId: 9n, subject: "module-command", runtime: null, profile: null, codeRoots: [], placement: "linux", reason: "module-command-unregistered", environment: null, addon: null },
+    { ordinal: 4n, pid: 42, parentPid: 20, entry: "/usr/local/bin/typst", tid: 42, addressSpaceId: 9n, subject: "module-command", runtime: null, profile: null, codeRoots: [], placement: "linux", reason: "command-capacity", environment: null, addon: null },
   ]);
   // The command context gate's reasons reach a module command too.
   for (const [code, reason] of [[1, "unsupported-security"], [4, "mount-namespace"], [10, "user-namespace"]] as const) {
@@ -269,5 +272,49 @@ it("refuses trace 18 refusals Rust cannot record", () => {
   expect(() => decodeJSProcessTrace(trace18([refusal({ ordinal: 1n })], 1))).toThrow();
   expect(() => decodeJSProcessTrace(trace18([refusal(), refusal()]))).toThrow();
   expect(() => decodeJSProcessTrace(trace18([refusal()]).subarray(0, -1))).toThrow();
-  expect(() => decodeJSProcessTrace(new Writer().raw(new TextEncoder().encode("OXJT")).u32(19).u64(0n).u32(0).u32(0).u32(0).u32(0).finish())).toThrow("version mismatch");
+  expect(() => decodeJSProcessTrace(new Writer().raw(new TextEncoder().encode("OXJT")).u32(20).u64(0n).u32(0).u32(0).u32(0).u32(0).finish())).toThrow("version mismatch");
+});
+
+/** A trace 19 placement of a node launch: no roots, then the deciding add-on and what it lacks. */
+function placement19(tag: number, fields: (writer: Writer) => Writer, addon = "", detail = "", profile = "node24-bun1-v1") {
+  const writer = new Writer().raw(new TextEncoder().encode("OXJT")).u32(19).u64(0n).u32(0).u32(1).u32(0).u32(0)
+    .u64(1n).u32(10).u32(10).u64(9n).u8(0).u8(tag);
+  return fields(writer).u32(1).path("/workspace/app/main.cjs").path(profile).u8(0).u32(0).path(addon).path(detail).finish();
+}
+
+it("pins the add-on and runtime probe reasons of trace 19 to their Rust codes (ADR 0026 release R2)", () => {
+  const codes = {
+    43: "addon-not-node-api", 44: "addon-glibc", 45: "addon-unresolved-symbol", 46: "addon-library-unavailable", 47: "addon-trial-failed",
+    48: "addon-trial-timeout", 49: "addon-trial-deferred", 50: "host-protocol-unsupported", 51: "runtime-probe-pending",
+    52: "runtime-family-unsupported", 53: "runtime-probe-failed", 54: "addon-names-unserved",
+  } as const;
+  for (const [code, reason] of Object.entries(codes)) {
+    expect(decodeJSProcessTrace(placement19(0, linuxReason(Number(code)), "", "", "")).placements[0]).toMatchObject({ placement: "linux", reason, addon: null });
+  }
+  expect(() => decodeJSProcessTrace(placement19(0, linuxReason(55), "", "", ""))).toThrow();
+  // Trace 18 has no such reason: its rows end before the add-on fields.
+  const older = new Writer().raw(new TextEncoder().encode("OXJT")).u32(18).u64(0n).u32(0).u32(1).u32(0).u32(0)
+    .u64(1n).u32(10).u32(10).u64(9n).u8(0).u8(0).u32(43).u32(1).path("/workspace/app/main.cjs").path("").u8(0).u32(0).finish();
+  expect(() => decodeJSProcessTrace(older)).toThrow();
+});
+
+it("reports a launch a trial load vouched for, and a trial load itself, from trace 19", () => {
+  const browser = (basis: number) => placement19(1, writer => writer.u64(2n).u64(3n).u64(8n).u8(basis));
+  expect(decodeJSProcessTrace(browser(2)).placements[0]).toMatchObject({ placement: "browser", basis: "verified" });
+  expect(decodeJSProcessTrace(browser(3)).placements[0]).toMatchObject({ placement: "browser", basis: "trial" });
+  expect(() => decodeJSProcessTrace(browser(4))).toThrow();
+});
+
+it("names the add-on that placed a launch in Linux and what it lacks (OXJT 19)", () => {
+  const addon = "/workspace/app/node_modules/pkg/pkg.node";
+  expect(decodeJSProcessTrace(placement19(0, linuxReason(45), addon, "napi_create_arraybuffer")).placements[0]).toMatchObject({ placement: "linux", reason: "addon-unresolved-symbol", addon: { path: addon, detail: "napi_create_arraybuffer" } });
+  expect(decodeJSProcessTrace(placement19(0, linuxReason(49), addon, "")).placements[0]).toMatchObject({ reason: "addon-trial-deferred", addon: { path: addon, detail: "" } });
+  expect(decodeJSProcessTrace(placement19(0, linuxReason(11))).placements[0]).toMatchObject({ reason: "unsupported-invocation", addon: null });
+  // A name looked up at run time, and a predicate the origin lacks, name their add-on too.
+  expect(decodeJSProcessTrace(placement19(0, linuxReason(54), addon, "napi_create_typedarray")).placements[0]).toMatchObject({ reason: "addon-names-unserved", addon: { path: addon, detail: "napi_create_typedarray" } });
+  expect(decodeJSProcessTrace(placement19(0, linuxReason(29), addon, "napi_is_promise")).placements[0]).toMatchObject({ reason: "native-promise-predicate-unavailable", addon: { path: addon, detail: "napi_is_promise" } });
+  expect(decodeJSProcessTrace(placement19(0, linuxReason(30), addon, "napi_is_error")).placements[0]).toMatchObject({ reason: "native-error-predicate-unavailable", addon: { path: addon, detail: "napi_is_error" } });
+  // An unrelated reason, a detail without an add-on, an unprintable detail, a relative path, or an admitted launch with one.
+  for (const bytes of [placement19(0, linuxReason(11), addon, ""), placement19(0, linuxReason(45), "", "napi_x"), placement19(0, linuxReason(45), addon, "a\nb"), placement19(0, linuxReason(45), "relative.node", ""),
+    placement19(1, writer => writer.u64(2n).u64(3n).u64(8n).u8(2), addon, "")]) expect(() => decodeJSProcessTrace(bytes)).toThrow();
 });

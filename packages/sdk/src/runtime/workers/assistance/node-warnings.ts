@@ -1,6 +1,6 @@
 /*!
  * Portions adapted from Node.js v24.18.1 lib/util.js, lib/internal/util.js
- * and lib/internal/process/warning.js; modified for OxideVM's process owner.
+ * and lib/internal/process/warning.js; modified for OXVM's process owner.
  * Copyright Node.js contributors. All rights reserved.
  * Copyright Joyent, Inc. and other Node contributors. All rights reserved.
  *
@@ -28,7 +28,7 @@ import { basename } from "./node-path.js";
  * Delivery uses the process scheduler, preserving context and nextTick order. */
 export function createWarningEmitter(process: NodeProcess, nextTick: (callback: () => void) => void) {
   function emitWarning(warning: unknown, type?: unknown, code?: unknown, ctor?: unknown): void {
-    if (process.noDeprecation && type === "DeprecationWarning") return;
+    if ((process.noDeprecation ?? false) && type === "DeprecationWarning") return;
     let detail: string | undefined;
     if (type !== null && typeof type === "object" && !Array.isArray(type)) {
       ctor = Reflect.get(type, "ctor"); code = Reflect.get(type, "code");
@@ -53,7 +53,7 @@ export function createWarningEmitter(process: NodeProcess, nextTick: (callback: 
     } else if (warning instanceof Error) error = warning;
     else throw invalid("warning");
     if (error.name === "DeprecationWarning") {
-      if (process.noDeprecation) return;
+      if (process.noDeprecation ?? false) return;
       if (process.throwDeprecation) { nextTick(() => { throw error; }); return; }
     }
     nextTick(() => { process.emit("warning", error); });
@@ -72,7 +72,7 @@ export function createWarningPrinter(process: NodeProcess, write: (text: string)
   return function onWarning(warning: unknown): void {
     if (!(warning instanceof Error)) return;
     const deprecation = warning.name === "DeprecationWarning";
-    if (deprecation && process.noDeprecation) return;
+    if (deprecation && (process.noDeprecation ?? false)) return;
     const trace = process.traceProcessWarnings || (deprecation && process.traceDeprecation);
     const code: unknown = Reflect.get(warning, "code");
     const detail: unknown = Reflect.get(warning, "detail");

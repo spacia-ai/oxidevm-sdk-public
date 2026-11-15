@@ -39,7 +39,7 @@ describe("the module network in the runner", () => {
     } });`;
     const running = launch({ release: await release(["net.vm"], adapter), network });
     await expect(running.done).resolves.toBe(0);
-    // The refusal also reaches an application as one runner warning, which `oxidevm wasm test` reads (network-declared).
+    // The refusal also reaches an application as one runner warning, which `oxvm wasm test` reads (network-declared).
     expect(running.linux.stderrLines).toEqual([
       `${VM_ADDRESS} inside`,
       JSON.stringify({ oxidevm: "warning", v: 1, kind: "network-reach", address: "93.184.215.14", port: 443, protocol: "tcp" }),

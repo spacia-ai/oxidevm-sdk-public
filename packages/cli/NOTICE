@@ -1,11 +1,11 @@
-OxideVM SDK
+OXVM SDK
 Copyright 2026 Spacia B.V.
 
 This product includes software developed by Spacia B.V.
-The OxideVM engine WebAssembly modules are not part of this product; they are
+The OXVM engine WebAssembly modules are not part of this product; they are
 distributed separately under their own license.
 
-The @oxidevm/sdk compiler assets include esbuild 0.25.12 (MIT) and the Go
+The @oxvm/sdk compiler assets include esbuild 0.25.12 (MIT) and the Go
 1.26.8 runtime and standard library (BSD-3-Clause), including vendored
 golang.org/x/crypto, golang.org/x/net, golang.org/x/sys and golang.org/x/text.
 Their full license texts and artifact provenance are in assets/compilers.

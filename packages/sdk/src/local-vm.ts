@@ -92,7 +92,7 @@ async function openLocalVM(options: ValidatedVMOptions, baseUrl: string, hosting
     runtime = options.mode === "system" ? await createSystemRuntimeVM({ ...common, mode: "system", vcpus: options.vcpus,
       coreWasmUrl: requireEngineUrl(assets, "oxidevm_core.wasm"), sharedCoreWasmUrl: requireEngineUrl(assets, "oxidevm_core_shared.wasm"), netstackWasmUrl: requireEngineUrl(assets, "oxidevm_netstack.wasm") })
       : await createUserspaceRuntimeVM({ ...common, mode: "userspace", limits: { maxProcesses: resolveProcessLimit(options, verified.maxProcesses) },
-        ...(nativeExecution === undefined ? {} : { nativeExecutionPort: nativeExecution.port }),
+        ...(nativeExecution === undefined ? {} : { nativeExecutionPort: nativeExecution.port, nativeOperationSet: nativeExecution.operationSet }),
         ...(options.acceleration === "off" || options.interceptors === false || options.interceptors === undefined && !globalThis.crossOriginIsolated ? {} : { interceptors: options.interceptors ?? [{ command: "tsc", worker: typescriptInterceptor().worker.href }] }),
         ...(options.initialUser === undefined ? {} : { initialUser: options.initialUser }), ...(options.rootPersistence === undefined ? {} : { rootPersistence: options.rootPersistence }),
         ...(userspaceWasmModule === undefined ? {} : { userspaceWasmModule }),

@@ -28,7 +28,7 @@ export async function runDoctorBrowser(url: string, options: DoctorOptions, prof
     catch (error) { abortIfRequested(options.signal); throw navigationFailure(url, error); }
     if (response === null || !response.ok()) throw navigationFailure(url, response?.status());
     // The parsed document already holds a declared asset base; a page without one has nothing to wait for.
-    const declared = page.locator('meta[name="oxidevm-assets"]');
+    const declared = page.locator('meta[name="oxvm-assets"], meta[name="oxidevm-assets"]');
     const baseValue = await declared.count() === 0 ? null : await declared.first().getAttribute("content").catch(() => null);
     const base = new URL(baseValue ?? "/oxidevm/", url);
     const frameOrigin = options.frameOrigin ?? DEFAULT_FRAME_ORIGIN;

@@ -1,6 +1,6 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import type { VM, TerminalHandle } from "@oxidevm/sdk";
+import type { VM, TerminalHandle } from "@oxvm/sdk";
 
 export class TerminalView {
   readonly #terminal = new Terminal({ cursorBlink: true, fontSize: 14, fontFamily: "'JetBrains Mono', monospace", screenReaderMode: true, theme: { background: "#06142e", foreground: "#edf3ff", cursor: "#ff7a59", selectionBackground: "#0842c8" } });

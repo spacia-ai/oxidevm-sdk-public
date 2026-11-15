@@ -1,6 +1,6 @@
 {
-  "name": "@oxidevm/sdk",
-  "version": "0.0.26",
+  "name": "@oxvm/sdk",
+  "version": "0.0.27",
   "type": "module",
   "license": "Apache-2.0",
   "exports": {
@@ -90,6 +90,17 @@
     "@types/node": "24.13.3",
     "typescript": "6.0.3",
     "vitest": "5.1.0"
+  },
+  "description": "Run Linux tools in browser applications with the OXVM SDK.",
+  "keywords": [
+    "oxvm",
+    "linux",
+    "webassembly",
+    "browser"
+  ],
+  "homepage": "https://oxvm.dev/docs/",
+  "bugs": {
+    "url": "https://github.com/spacia-ai/oxidevm-sdk-public/issues"
   },
   "private": false,
   "publishConfig": {

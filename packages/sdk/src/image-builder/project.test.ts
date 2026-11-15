@@ -7,6 +7,17 @@ import { legacyImageLocations as defaultImageLocations } from "../default-images
 
 vi.mock("../defaults.generated.js", async () => ({ defaultImageLocations: (await import("../default-images.test-support.js")).legacyImageLocations }));
 
+it("uses OXVM staging for fresh configurations and keeps implicit legacy staging when loading legacy files", async () => {
+  expect(decodeProjectConfig({ mode: "userspace" }).assetBaseUrl).toBe("/oxvm/");
+  const root = await mkdtemp(join(tmpdir(), "oxvm-config-"));
+  try {
+    for (const [name, expected] of [["oxvm.config.json", "/oxvm/"], ["oxidevm.config.json", "/oxidevm/"]] as const) {
+      await writeFile(join(root, name), '{"mode":"userspace"}');
+      expect((await loadProjectConfig(join(root, name))).config.assetBaseUrl).toBe(expected);
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 it("pins the SDK-owned release and rejects changed project identities", () => {
   const config = decodeProjectConfig({ mode: "userspace" });
   const lock = createProjectLock(config);
@@ -30,7 +41,7 @@ it("explains a lock from another SDK release: both releases, the differing field
   const error = failure(() => validateProjectLock({ ...lock, sdkVersion: "0.0.8", cliVersion: "0.0.8", engineRelease }, config));
   expect(error).toMatchObject({
     code: "INVALID_ARGUMENT",
-    message: `project lock oxidevm.lock.json does not match the installed SDK release and project configuration (differing fields: sdkVersion, cliVersion, engineRelease): locked SDK 0.0.8, engine ${engineRelease}, image sha256:${image}; installed SDK ${lock.sdkVersion}, engine ${lock.engineRelease}, image sha256:${image}; run \`npx oxidevm assets install --update-lock\` to stage this release's assets and rewrite the lock (pass --image and --trust again for an image the project configuration does not name)`,
+    message: `project lock does not match the installed SDK release and project configuration (differing fields: sdkVersion, cliVersion, engineRelease): locked SDK 0.0.8, engine ${engineRelease}, image sha256:${image}; installed SDK ${lock.sdkVersion}, engine ${lock.engineRelease}, image sha256:${image}; run \`npx oxvm assets install --update-lock\` to stage this release's assets and rewrite the lock (pass --image and --trust again for an image the project configuration does not name)`,
     detail: { reason: "project-lock-stale", fields: ["sdkVersion", "cliVersion", "engineRelease"], locked: { sdkVersion: "0.0.8", engineRelease, manifestSHA256: image }, installed: { sdkVersion: lock.sdkVersion, engineRelease: lock.engineRelease, manifestSHA256: image } },
   });
   // Every differing field is named, nested ones by their path.

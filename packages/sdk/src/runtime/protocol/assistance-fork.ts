@@ -2,6 +2,7 @@ import { AgentPayloadReader, AgentPayloadWriter } from "../agent-protocol.js";
 import { boolean, exactKeys, integer, record, string } from "../decode.js";
 import { VMError } from "../errors.js";
 import { ASSISTANCE_LIMITS, decodeAssistanceOperation, readAssistanceEnvironment, writeAssistanceEnvironment } from "./assistance.js";
+import { readNodeExecutionOptions } from "./node-options.js";
 
 /** Internal fork codec shared by the process mailbox, the broker and control.
  * A parent runtime describes the child it wants; control allocates the child's
@@ -18,18 +19,19 @@ export type ForkReply =
   | { readonly kind: "spawned"; readonly process: number; readonly pid: number }
   | { readonly kind: "error"; readonly errno: number; readonly code: string };
 
-/** The only Node execution arguments the assisted runtime implements. */
-export const FORK_EXEC_ARGUMENTS: readonly string[] = ["--enable-source-maps", "--no-enable-source-maps"];
+/** At most this many execution arguments travel with a launch or a fork. */
+export const MAX_EXEC_ARGUMENTS = 64;
 
-/** The only Node execution arguments a forked child may carry, each at most
- * once. Every boundary that receives execArgv validates it here. */
+/** The Node execution arguments a launched or forked child may carry: the options the assisted
+ * runtime implements (ADR 0026, 1.11) and nothing after them. Every boundary that receives
+ * execArgv validates it here. */
 export function decodeForkExecArgv(value: unknown): readonly string[] {
-  if (!Array.isArray(value) || value.length > FORK_EXEC_ARGUMENTS.length) fail("Unsupported fork execArgv");
+  if (!Array.isArray(value) || value.length > MAX_EXEC_ARGUMENTS) fail("Unsupported fork execArgv");
   const arguments_ = value.map((argument: unknown) => {
-    if (typeof argument !== "string" || !FORK_EXEC_ARGUMENTS.includes(argument)) fail("Unsupported fork execArgv");
+    if (typeof argument !== "string") fail("Unsupported fork execArgv");
     return argument;
   });
-  if (new Set(arguments_).size !== arguments_.length) fail("Duplicate fork execArgv");
+  if (readNodeExecutionOptions(arguments_)?.end !== arguments_.length) fail("Unsupported fork execArgv");
   return arguments_;
 }
 const REQUEST_TAG = 1;
@@ -65,7 +67,7 @@ export function decodeForkRequestBytes(bytes: Uint8Array): ForkRequest {
   if (input.u8() !== REQUEST_TAG) fail("Invalid fork request tag");
   const entry = input.string();
   const args = Array.from({ length: integer(input.u32(), "fork argument count", 0, 4096) }, () => input.string());
-  const execArgv = Array.from({ length: integer(input.u32(), "fork execArgv count", 0, FORK_EXEC_ARGUMENTS.length) }, () => input.string());
+  const execArgv = Array.from({ length: integer(input.u32(), "fork execArgv count", 0, MAX_EXEC_ARGUMENTS) }, () => input.string());
   const cwd = input.string();
   const env = readAssistanceEnvironment(input);
   const silent = input.u8();

@@ -5,7 +5,12 @@ import { sdkVersion } from "../sdk-version.js";
 // itself and the deployment doctor all take these addresses from here.
 
 /** Spacia's hosted runtime frame. */
-export const DEFAULT_FRAME_ORIGIN = "https://run.oxidevm.dev";
+export const DEFAULT_FRAME_ORIGIN = "https://run.oxvm.dev";
+
+/** Both official frame hosts retain the isolated preview service during the migration. */
+export function isOfficialFrameOrigin(origin: string): boolean {
+  return origin === DEFAULT_FRAME_ORIGIN || origin === "https://run.oxidevm.dev";
+}
 
 /** The address of this SDK release's runtime frame on `origin`. */
 export function runtimeFrameUrl(origin: string): string {

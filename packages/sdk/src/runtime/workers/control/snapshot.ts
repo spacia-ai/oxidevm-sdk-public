@@ -47,7 +47,7 @@ export function validateRestoreRecord(
   if (status === CORE_STATUS_SNAPSHOT_INCOMPATIBLE) {
     throw new VMError(
       "SNAPSHOT_VERSION",
-      "the snapshot was saved by another OxideVM version or a differently configured VM",
+      "the snapshot was saved by another OXVM version or a differently configured VM",
       { reason: "snapshot-incompatible" },
     );
   }

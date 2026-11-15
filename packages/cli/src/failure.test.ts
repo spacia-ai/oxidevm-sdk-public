@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { VMError } from "@oxidevm/sdk";
+import { VMError } from "@oxvm/sdk";
 import { failureMessage } from "./failure.js";
 
 it("keeps a typed SDK error's own message", () => {

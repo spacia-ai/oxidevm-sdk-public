@@ -1,5 +1,106 @@
 # SDK migration
 
+## OXVM package rename
+
+The OXVM rename is prepared for the next approved public release. The new
+packages are `@oxvm/sdk` and `@oxvm/cli`. Their command is `oxvm`.
+Do not use these commands before that release is available.
+
+```sh
+npm uninstall @oxidevm/sdk @oxidevm/cli
+npm install --save-exact @oxvm/sdk@latest @oxvm/cli@latest
+```
+
+Confirm that both installed versions match. Update imports from `@oxidevm/sdk`
+to `@oxvm/sdk`, including its subpaths. Replace the `oxidevm` command in project
+scripts with `oxvm`. A new CLI refuses an old SDK or a mixed package pair when
+updating a project lock. npm aliases do not migrate a package's identity or binary.
+
+Existing `oxidevm.config.ts`, `oxidevm.lock.json`, and module project files remain
+supported. Keep one coherent layout. Conflicting new and legacy files fail
+before staging. An explicit `--config` selects a configuration when needed.
+Lock files must still have one owner. Use `oxvm assets install --update-lock`
+after selecting the matching package pair. Keep required image and trust options.
+A failed staging operation leaves the previous lock intact.
+
+Fresh projects use `oxvm.config.ts`, `oxvm.lock.json`, `oxvm.image.ts`,
+`oxvm.snapshot.ts`, and `oxvm.modules.*`. Renaming existing files is optional.
+If you rename module files, update the declaration, lock, generated import,
+development server paths, and staging directory together. Keep explicit
+`publicDir` and `assetBaseUrl` values when retaining existing asset directories.
+An implicit asset base in a loaded legacy configuration remains `/oxidevm/`.
+Fresh configurations default to `/oxvm/`.
+
+Self-hosted projects that retain the old asset base must set
+`runtime: { hosting: "self-hosted", baseUrl: "/oxidevm/runtime/" }`.
+Otherwise move the asset base and serving configuration together. The new
+self-hosted default is `/oxvm/runtime/`. Both paths remain valid when explicit.
+Image and module qualification serve engine, compliance and module-frame assets
+under both runtime paths.
+
+CLI signing and trust settings accept `OXVM_SIGNING_KEY_FILE`,
+`OXVM_IMAGE_TRUST_FILE`, and `OXVM_SNAPSHOT_TRUST_FILE`. Their `OXIDEVM_*`
+aliases remain valid. Different values under both names fail without echoing
+the values. An explicit CLI flag takes precedence.
+
+Engine staging accepts `OXVM_ENGINE_DIR` and legacy `OXIDEVM_ENGINE_DIR`.
+Different values fail unless an explicit `engineDir` or `--engine-dir` selects
+the directory. The Python image recipe accepts `OXVM_PANDAS_BASE_ROOTFS`,
+`OXVM_PANDAS_BASE_BUNDLE`, `OXVM_PANDAS_BASE_TRUST`, and
+`OXVM_IMAGE_SIGNING_KEY`, with the same legacy-alias conflict rule.
+Private diagnostic and website build settings keep their existing names.
+
+The new hosted default is `https://run.oxvm.dev`. Official runtime selections use
+`https://tabvm.dev` for per-session previews. An explicit preview origin at
+`oxvm.dev` or any of its subdomains fails with `INVALID_ARGUMENT` before the VM
+starts, including alternate ports and trailing-dot hostnames. These hosts are
+reserved for the trusted application and its services. The provider cutover must
+remove legacy `*.oxvm.dev` guest preview routing before trusted OXVM services launch.
+Unchanged clients that hard-code the old preview domain need an upgrade; they
+cannot retain that preview service alongside the new trusted site. Change an explicitly configured old preview origin to `https://tabvm.dev`, or omit `preview` to use the official default. Keep per-session isolation. The retained official runtime host also selects the new preview domain when `preview` is omitted.
+
+The new hosted default is `https://run.oxvm.dev`. Both exact official frame
+origins retain `https://tabvm.dev` as their isolated preview service. Browser
+data belongs to its origin and does not transfer through a redirect. Keep the
+old application and runtime available to export workspaces and `.oxvm` backups.
+Use the supported backup import path at the new origin. Account sessions also
+require a fresh sign-in after the account domain changes.
+
+Published old packages, frames, images, modules, hashes, and source URLs remain
+valid. Backup formats, storage keys and raw engine Wasm names retain their existing technical identities. The plugin and marketplace IDs
+remain `oxidevm` so existing installations can update. New skill IDs use `oxvm`.
+
+Earlier release numbers in the historical sections below describe the
+`@oxidevm` packages. They do not imply that the same versions exist under `@oxvm`.
+
+## Rust bridge: registry crate and import namespace
+
+Use the canonical crate for new programs:
+
+```toml
+[dependencies]
+oxvm-bridge = "0.1.0"
+```
+
+Update Rust paths to `oxvm_bridge::`. The new crate imports `oxvm_bridge_v1`.
+It requires the matching OXVM SDK. The SDK admits both this namespace and the
+retained `oxidevm_bridge_v1` namespace through the same functions, permissions,
+memory and handles. Unknown functions, namespace lookalikes and other ABI majors
+are refused. Record layouts and signatures do not change, so ABI major 1 remains
+unchanged. Existing binaries need no rebuild.
+
+The old `oxidevm-bridge` crate remains available for existing releases. Publish
+and verify the new SDK and crate before releasing rebuilt Rust modules.
+
+## Native Node-API buffer inspection
+
+Operation set 2 reports `Float16Array` creation and inspection requests with
+`FEATURE_NOT_AVAILABLE`. Its current guest bridge supports typed-array kinds
+0 through 10. Creation and inspection share one kind table and admission check.
+DataView inspection reads its actual backing store, byte offset and byte length
+through captured intrinsic getters. Instance and subclass properties cannot
+replace that window. Shared-backed DataViews return `FEATURE_NOT_AVAILABLE`.
+
 ## Execution bootstrap deadline: typed reasons
 
 A missed execution bootstrap deadline keeps its code, `CORE_LOAD_FAILED`, and gains a
@@ -428,6 +529,12 @@ engine:pin` refuses a schema 3 release.
   again (`+ host:net.internet`), `oxidevm wasm doctor` has a new closed check,
   `network`, and `oxidevm wasm add --json` reports `network` for a module with
   a reach. `oxidevm wasm build` has a new warning, `adapter-network`.
+- **Asynchronous completions wait for a turn (bridge 17).** The image builder now
+  writes `bridge\t17` into an acceleration profile, so the helper it is given
+  must be the bridge 17 helper of the engine release this SDK pins. A profile
+  that says 17 over an older helper fails its first native launch, which then
+  runs in full Linux. Images already built keep their `bridge\t16` row, or no
+  row, and run as before.
 - **Native Node signal listeners (bridge 16).** Images built by this SDK write
   `bridge\t16` into their acceleration profile, and Rust passes it to the SDK in
   the launch record (OXCR 19). Accelerated `node` then lets `process.on` listen
@@ -454,7 +561,7 @@ changes for a manifest that declares none of them.
 
 `host.kit.wasi` runs `wasm32-wasip1` programs over these capabilities (`run`,
 `compile`, `readProgram`, `admitShape`, `admit`, `AdmissionError`, `limits`,
-`rootPreopen`), and the `oxidevm-bridge` Rust crate (`crates/oxidevm-bridge`)
+`rootPreopen`), and the `oxvm-bridge` Rust crate (`crates/oxvm-bridge`)
 calls its `oxidevm_bridge_v1` imports. Both are additive.
 
 ## Module conformance outcomes

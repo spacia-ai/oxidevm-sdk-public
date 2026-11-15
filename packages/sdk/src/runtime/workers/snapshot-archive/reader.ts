@@ -92,5 +92,5 @@ function readFailure(error: unknown, named: boolean): VMError {
 }
 
 function notBackup(): VMError {
-  return backupError("wrong-file", "this file is not an OxideVM backup");
+  return backupError("wrong-file", "this file is not a OXVM backup");
 }

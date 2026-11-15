@@ -106,13 +106,16 @@ import { ownedRuntime } from "./vm-adapter.js";
 /** Reads the diagnostics of a VM created by this SDK. */
 export function getDiagnostics(vm: VM): RuntimeVMDiagnostics { return ownedRuntime(vm).diagnostics; }
 
-/** Erases the runtime origin's OxideVM data: this page's, or the runtime frame's in frame mode. */
+/** Erases the runtime origin's OXVM data: this page's, or the runtime frame's in frame mode. */
 export { eraseLocalData } from "./local-data.js";
 /** The one engine release this SDK pins: its ID is the SHA-256 of its exact release.json bytes. */
 export { engineRelease, engineReleaseId } from "./engine.generated.js";
 /** The relay protocol version this SDK speaks, generated from its byte-for-byte copy of the engine's relay specification. */
 export { RELAY_VERSION } from "./runtime/workers/relay-generated.js";
+/** For the engine's compatibility check against the Node-API host it builds (ADR 0026, 2.8). */
+export { NATIVE_OPERATION_SET } from "./runtime/workers/native-node-api/versions.js";
+export { NATIVE_BRIDGE_VERSION as NATIVE_FRAME_VERSION } from "./runtime/native-bridge-version.js";
 /** Generated ISA identities used by instruction entropy records and engine compatibility checks. */
 export { instructionIdentities } from "./runtime/isa-identities.generated.js";
 export { configureJSProcessTrace, readJSProcessTrace, watchAccelerationNotices } from "./js-process-diagnostics.js";
-export type { JSProcessTrace, JSProcessTraceEvent, JSProcessPlacementEvent, JSProcessLateFailureEvent, JSProcessRefusalEvent, AccelerationRejectionReason, AccelerationEnvironmentRejection, AccelerationNotice } from "./js-process-diagnostics.js";
+export type { JSProcessTrace, JSProcessTraceEvent, JSProcessPlacementEvent, JSProcessLateFailureEvent, JSProcessRefusalEvent, AccelerationRejectionReason, AccelerationEnvironmentRejection, AccelerationAddonObservation, AccelerationNotice } from "./js-process-diagnostics.js";

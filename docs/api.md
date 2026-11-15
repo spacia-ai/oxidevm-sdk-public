@@ -1,6 +1,6 @@
 # API reference
 
-The emitted declarations in `@oxidevm/sdk` are the canonical public types. Root,
+The emitted declarations in `@oxvm/sdk` are the canonical public types. Root,
 machine and diagnostics imports are safe during SSR; constructing a VM or machine
 requires a browser. Image-builder functions are Node-only. Package exports prohibit
 consumer imports of private runtime modules.
@@ -86,7 +86,7 @@ with `FEATURE_NOT_AVAILABLE` (`detail.reason: "image-update-required"`), as does
 Userspace VM without a root filesystem (`"no-root-filesystem"`). In frame
 mode every method runs in the runtime frame's workspace; aborting a signal cancels
 the request there, and a lost frame fails pending calls and ends watches with
-`PROTOCOL_ERROR`. The types are exported from `@oxidevm/sdk`:
+`PROTOCOL_ERROR`. The types are exported from `@oxvm/sdk`:
 `WorkspaceFileEntry`, `WorkspaceFile`, `WorkspaceChange`, `WorkspaceWatch`,
 `WorkspaceReadOptions`, `WorkspaceWriteOptions`, `WorkspaceOperationOptions` and
 `WorkspaceWatchOptions`.
@@ -172,7 +172,7 @@ failed connection rejects with `RELAY_ERROR`, `PERMISSION_DENIED`, `QUOTA_EXCEED
 `PROTOCOL_ERROR`, and `detail.reason` names the exact `RelayFailureReason`.
 
 In the hosted runtime frame (`runtime: { hosting: "frame" }`), relays see the frame's
-origin, `https://run.oxidevm.dev`, for every page that embeds it. The frame therefore
+origin, `https://run.oxvm.dev`, for every page that embeds it. The frame therefore
 names your page in the workspace it presents to relays: the relay's workspace ID is
 `<page origin> <workspaceId>`, for example `https://app.example default`. The personal
 relay shows it when it asks the user to approve, and `awaiting-approval` reports it
@@ -384,7 +384,7 @@ host. The digest and key stay pinned whatever the address.
 | `generateImageKey`, `readImageTrust` | Exclusive restrictive Ed25519 key creation and public trust loading |
 | `testImage` | Real browser readiness, files, command, terminal, persistence and applicable preview/evidence checks |
 | `inspectImage` | Read-only integrity inspection; authentication stays unverified without external trust |
-| `installProjectAssets`, `cacheImageBundle` | Stage the pinned engine release (from `engineDir`, `OXIDEVM_ENGINE_DIR`, the engine cache or the verified CDN release), authenticated image assets and generated references; `updateLock` rewrites `oxidevm.lock.json` for this release after staging, and the result's `lock` reports the change |
+| `installProjectAssets`, `cacheImageBundle` | Stage the pinned engine release (from `engineDir`, `OXVM_ENGINE_DIR`, the engine cache or the verified CDN release), authenticated image assets and generated references; `updateLock` rewrites the selected project lock (`oxvm.lock.json`, or legacy `oxidevm.lock.json`) for this release after staging, and the result's `lock` reports the change |
 | `doctorProject` | Inspect actual served headers, MIME, bytes, worker execution, storage and preview configuration, and with `project` the project's lock against this SDK; for an application on the hosted runtime frame (`hosting`, `frameOrigin`), its page and this release's frame and engine files instead |
 | `createProjectLock`, `validateProjectLock` | Bind the exact SDK/CLI, engine, image and chosen staging layout |
 
@@ -403,7 +403,7 @@ transport. It takes the same `network` option: a relay connects after the machin
 configured and before execution starts, and disposal revokes it; a failed connection
 disposes the machine and rejects with the relay's error.
 
-`eraseLocalData({ runtime?, signal? })` (diagnostics entry) erases every OxideVM
+`eraseLocalData({ runtime?, signal? })` (diagnostics entry) erases every OXVM
 workspace, restore point, image and IndexedDB store of the origin that runs the
 runtime. Without `runtime`, or with a self-hosted one, that is this page's origin.
 With `runtime: { hosting: "frame", origin? }` it is the runtime frame's origin, whose
@@ -477,14 +477,14 @@ permits; original files and checkpoint identities remain intact.
 
 ## Experimental JS processes
 
-`UserspaceVM.spawnJS` and the `@oxidevm/sdk/js-process` worker export start a
+`UserspaceVM.spawnJS` and the `@oxvm/sdk/js-process` worker export start a
 JavaScript process that shares the VM's files, process ids and sockets. See
 [the API and ownership notes](./js-process.md) and
 [the native-child example](../examples/js-process/README.md).
 
 ## WebAssembly modules
 
-`@oxidevm/sdk/wasm` packages a WebAssembly program as a module: a literal
+`@oxvm/sdk/wasm` packages a WebAssembly program as a module: a literal
 manifest, an adapter that receives only the host operations the manifest
 declares, and pinned artifacts. `defineModule` types a module for its author;
 `spawnModule(vm, handle, options)` and `stopModule(process)` run one on a
@@ -498,9 +498,9 @@ self-hosted runtime.
 | `defineModule({ manifest, adapter })` | Type a module definition; the adapter's `host` holds exactly the declared capabilities |
 | `spawnModule`, `stopModule` | Start a command or service and stop it by closing its input |
 | `enableModuleCommands` | Turn a command module's commands on for one Userspace VM, as `/usr/local/bin/<name>`; the result reports on them and turns them off |
-| `moduleHandle` | The typed handle `oxidevm wasm add` generates |
+| `moduleHandle` | The typed handle `oxvm wasm add` generates |
 | `decodeModuleManifest`, `encodeModuleManifest`, `classifyLicense` | Strict `module.json` and SPDX handling for tooling |
-| `oxidevm wasm add / stage / doctor / inspect / init / build / release` | The command line for installing and authoring modules |
+| `oxvm wasm add / stage / doctor / inspect / init / build / release` | The command line for installing and authoring modules |
 
 See [WebAssembly modules](./wasm-modules.md) for installing, writing and
 releasing one.

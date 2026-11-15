@@ -1,4 +1,4 @@
-import type { WasmBuildResult } from "@oxidevm/sdk/image-builder";
+import type { WasmBuildResult } from "@oxvm/sdk/image-builder";
 
 /** A word for a shell command line: left alone when it is plainly safe, single-quoted otherwise. */
 export function shellWord(value: string): string {
@@ -21,7 +21,7 @@ export function releasePlan(build: WasmBuildResult, options: { readonly repo?: s
       `2. Draft the release with every file of the build:\n   gh release create ${shellWord(tag)} ${files} --draft --verify-tag --title ${shellWord(tag)} --generate-notes${on}`,
       `3. Download the draft and check it against its own SHA256SUMS:\n   mkdir verify && gh release download ${shellWord(tag)} --dir verify${on}\n   (cd verify && sha256sum --check SHA256SUMS && sha256sum SHA256SUMS)\n   The last digest must be the release id, ${build.release}.`,
       `4. Publish it:\n   gh release edit ${shellWord(tag)} --draft=false${on}`,
-      `5. Anyone can now install it:\n   oxidevm wasm add github:${repo}@${tag}`,
+      `5. Anyone can now install it:\n   oxvm wasm add github:${repo}@${tag}`,
     ],
   };
 }

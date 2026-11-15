@@ -13,7 +13,7 @@ function freezeTree(value: unknown): void {
   Object.freeze(value);
 }
 
-type BuildProfile = Pick<NativeProcessProfile, "runtime" | "runtimeSHA256">;
+type BuildProfile = Pick<NativeProcessProfile, "runtime" | "runtimeSHA256" | "runtimeBuild">;
 
 /** Rust authenticates this digest before publishing the process launch. */
 function nativeBuildData(profile: BuildProfile) {
@@ -22,19 +22,27 @@ function nativeBuildData(profile: BuildProfile) {
   return source;
 }
 
-export function nativeProcessBuild(profile: BuildProfile): NonNullable<ProcessRuntime["metadata"]["processBuild"]> {
+/** A probed binary's build (ADR 0026, 1.5); the catalog builds' data travels with the SDK. */
+function buildVersions(profile: BuildProfile): { readonly node: string; readonly uv: string; readonly napi: string; readonly bun: string } {
+  if (profile.runtimeBuild !== null) return profile.runtimeBuild;
   const source = nativeBuildData(profile);
-  const value = structuredClone(source.config);
+  return { node: source.versions.node, uv: source.versions.uv, napi: source.versions.napi, bun: BUN_BUILD_CONFIG.versions.bun };
+}
+
+export function nativeProcessBuild(profile: BuildProfile): NonNullable<ProcessRuntime["metadata"]["processBuild"]> {
+  // The decoder checked that a probed configuration is the JSON text of an object.
+  const value: unknown = profile.runtimeBuild === null ? structuredClone(nativeBuildData(profile).config) : JSON.parse(profile.runtimeBuild.config);
+  if (typeof value !== "object" || value === null) throw new VMError("PROTOCOL_ERROR", "Invalid native runtime configuration");
   if (profile.runtime === "node") freezeTree(value);
   else Object.freeze(value);
   return { config: { value, writable: profile.runtime === "bun", configurable: true }, features: nativeBuildFeatures(profile.runtime) };
 }
 
 export function nativeProcessVersions(profile: BuildProfile & Pick<NativeProcessProfile, "identity">) {
-  const source = nativeBuildData(profile);
+  const source = buildVersions(profile);
   // The legacy profile retains its NAPI declaration until its qualified replacement.
-  return Object.freeze({ node: source.versions.node, uv: source.versions.uv,
-    ...(profile.identity === "node24-bun1-v1" ? { napi: source.versions.napi } : {}),
-    ...(profile.runtime === "bun" ? { bun: BUN_BUILD_CONFIG.versions.bun } : {}),
+  return Object.freeze({ node: source.node, uv: source.uv,
+    ...(profile.identity === "node24-bun1-v1" ? { napi: source.napi } : {}),
+    ...(profile.runtime === "bun" ? { bun: source.bun } : {}),
   });
 }

@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { deliverProcessSignal, installProcessIpc, installSignalListeners, NodeProcess, validateNodeEnvironment } from "./node-process.ts";
 import { VMError } from "../../errors.ts";
+import { DEFAULT_NODE_EXECUTION_OPTIONS } from "../../protocol/node-options.ts";
 import { createWarningPrinter } from "./node-warnings.ts";
 
 it("publishes admitted Node build config as an enumerable non-writable data property", () => {
@@ -109,7 +110,7 @@ it("rejects unsupported engine options before executing an assisted entrypoint",
   for (const value of [undefined, "", " \t\n"]) {
     expect(() => validateNodeEnvironment(value === undefined ? {} : { NODE_OPTIONS: value }, "/workspace/entry.cjs")).not.toThrow();
   }
-  for (const value of ["--max-old-space-size=2048", "--heapsnapshot-signal=SIGUSR2", "--require /workspace/private-hook.cjs"]) {
+  for (const value of ["--max-old-space-size=2048", "--heapsnapshot-signal=SIGUSR2", "--import /workspace/private-hook.mjs", '"--no-warnings']) {
     let failure: unknown;
     try { validateNodeEnvironment({ NODE_OPTIONS: value }, "/workspace/entry.cjs"); }
     catch (error) { failure = error; }
@@ -118,12 +119,20 @@ it("rejects unsupported engine options before executing an assisted entrypoint",
   }
 });
 
-it("admits only implemented source-map NODE_OPTIONS and respects the final flag", () => {
-  expect(validateNodeEnvironment({}, "/entry.cjs")).toBe(false);
-  expect(validateNodeEnvironment({ NODE_OPTIONS: '--enable-source-maps' }, "/entry.cjs")).toBe(true);
-  expect(validateNodeEnvironment({ NODE_OPTIONS: '"--enable-source-maps" --no-enable-source-maps' }, "/entry.cjs")).toBe(false);
-  expect(validateNodeEnvironment({ NODE_OPTIONS: "--enable-source-maps" }, "/entry.cjs", ["--no-enable-source-maps"])).toBe(false);
-  expect(() => validateNodeEnvironment({ NODE_OPTIONS: '--enable-source-maps --require secret' }, "/entry.cjs")).toThrow("NODE_OPTIONS");
+it("reads the implemented options from NODE_OPTIONS, then the command line, as Node does (ADR 0026, 1.11)", () => {
+  const options = (env: Record<string, string>, execArgv: readonly string[] = [], runtime: "node" | "bun" = "node") => validateNodeEnvironment(env, "/entry.cjs", execArgv, runtime);
+  expect(options({})).toEqual(DEFAULT_NODE_EXECUTION_OPTIONS);
+  expect(options({ NODE_OPTIONS: "--enable-source-maps" }).sourceMaps).toBe(true);
+  expect(options({ NODE_OPTIONS: '"--enable-source-maps" --no-enable-source-maps' }).sourceMaps).toBe(false);
+  expect(options({ NODE_OPTIONS: "--enable-source-maps" }, ["--no-enable-source-maps"]).sourceMaps).toBe(false);
+  expect(options({ NODE_OPTIONS: '--no-warnings -r "./a b.cjs" -C dev' }, ["-r", "second", "--no-deprecation"]))
+    .toEqual({ sourceMaps: false, warnings: false, deprecation: false, require: ["./a b.cjs", "second"], conditions: ["dev"] });
+  // Node reads options up to the first token that is not one and ignores the rest.
+  expect(options({ NODE_OPTIONS: "--no-warnings main.js --max-old-space-size=4096 -r ./missing" })).toEqual({ ...DEFAULT_NODE_EXECUTION_OPTIONS, warnings: false });
+  expect(options({ NODE_OPTIONS: "\t--no-warnings" })).toEqual(DEFAULT_NODE_EXECUTION_OPTIONS);
+  // Bun launches carry source-map flags only.
+  expect(options({ NODE_OPTIONS: "--enable-source-maps" }, [], "bun").sourceMaps).toBe(true);
+  expect(() => options({ NODE_OPTIONS: "-r ./a.cjs" }, [], "bun")).toThrow("NODE_OPTIONS");
 });
 
 it("exposes the IPC channel on the child process and references it only through message listeners", () => {

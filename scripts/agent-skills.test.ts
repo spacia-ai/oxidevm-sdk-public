@@ -9,7 +9,7 @@ import { stageAgentSkills } from "./agent-skills.ts";
 void test("a pinned skill snapshot stages both clients offline and binds the actual SDK version", async () => {
   const root = await mkdtemp(join(tmpdir(), "oxidevm-agent-skills-"));
   try {
-    const directory = join(root, "examples/starter"), content = "---\nname: oxidevm-sdk\ndescription: Use OxideVM.\n---\nUse installed declarations.\n";
+    const directory = join(root, "examples/starter"), content = "---\nname: oxidevm-sdk\ndescription: Use OXVM.\n---\nUse installed declarations.\n";
     await mkdir(join(directory, ".agents/skills/oxidevm-sdk"), { recursive: true });
     const path = "oxidevm-sdk/SKILL.md", sha256 = createHash("sha256").update(content).digest("hex");
     await writeFile(join(directory, ".agents/skills", path), content);

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createUserspaceWakeTimer,
   nativeExecutionPending,
+  userspaceExecutionPending,
   failUserspaceRuntime,
   preparesAgainAfter,
   rearmsWakeTimer,
@@ -12,6 +13,23 @@ import {
 } from "./userspace-service.js";
 
 describe("Userspace service boundaries", () => {
+  it("schedules a Rust-requested background trial before it has a PID or attachment", () => {
+    let pending = 1;
+    const runtime = { instance: { exports: {
+      oxidevm_userspace_live_process_count: () => 0,
+      oxidevm_userspace_detached_io_pending: () => 0,
+      oxidevm_userspace_pending_work: () => pending,
+    } } };
+    expect(userspaceExecutionPending(runtime, 0)).toBe(true);
+    pending = 0;
+    expect(userspaceExecutionPending(runtime, 0)).toBe(false);
+    pending = 2 | 4 | 8;
+    expect(userspaceExecutionPending(runtime, 0)).toBe(false);
+    pending = 16;
+    expect(() => userspaceExecutionPending(runtime, 0)).toThrow();
+    expect(userspaceExecutionPending(undefined, 0)).toBe(false);
+    expect(userspaceExecutionPending(runtime, 1)).toBe(true);
+  });
   it("keeps Rust-owned kernel work scheduled after its final guest process exits", () => {
     expect(nativeExecutionPending(0, 1)).toBe(true);
     expect(nativeExecutionPending(0, 0)).toBe(false);

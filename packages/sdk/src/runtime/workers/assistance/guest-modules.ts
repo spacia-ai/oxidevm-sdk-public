@@ -18,7 +18,8 @@ function frozenEntry(name: string): boolean {
 
 /** Linux owns lookups. Rust publishes the frozen roots (ADR 0026); only metadata inside their
  * frozen entries survives a call, and installed code outside every root is refused. */
-export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDependencyIdentity, loadNative?: (path: string) => unknown, pathInfo?: (path: string) => ModulePathInfo): LocalModuleFiles {
+export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDependencyIdentity, loadNative?: (path: string) => unknown, pathInfo?: (path: string) => ModulePathInfo,
+  conditions: readonly string[] = []): LocalModuleFiles {
   const dependencies = selected === undefined ? undefined : Object.freeze({ ...selected });
   const roots = dependencies !== undefined && "profile" in dependencies ? dependencies.roots : undefined;
   const paths = createNodePath(() => "/");
@@ -149,7 +150,7 @@ export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDep
     return undefined;
   }
   function mapped(root: string, map: unknown, key: string, kind: "require" | "import", internal: boolean, depth: number): string | undefined {
-    const target = resolvePackageTarget(map, key, kind, internal);
+    const target = resolvePackageTarget(map, key, kind, internal, conditions);
     if (!target.startsWith("./")) {
       const result = resolve(target, paths.join(root, "package.json"), kind, depth + 1);
       // Node 24's CJS imports-map path requires a file URL even for builtin targets.

@@ -4,22 +4,28 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import { startImageTestServer } from "./image-test-server.js";
 
-it("serves exact image paths and browser MIME with isolation, excluding escaping symlinks", async () => {
+it.each(["/oxvm/runtime/", "/oxidevm/runtime/"])("serves image, engine and compliance paths under %s with isolation, excluding escaping symlinks", async runtimePrefix => {
   const root = await mkdtemp(join(tmpdir(), "oxidevm-image-server-test-"));
-  await mkdir(join(root, "image")); await mkdir(join(root, "engine")); await mkdir(join(root, "browser"));
+  await mkdir(join(root, "image")); await mkdir(join(root, "engine")); await mkdir(join(root, "browser")); await mkdir(join(root, "compliance"));
   await writeFile(join(root, "image/manifest.json"), "{}"); await writeFile(join(root, "engine/core.wasm"), Uint8Array.of(0, 97, 115, 109));
   await writeFile(join(root, "browser/client.js"), "export {};"); await writeFile(join(root, "private.txt"), "private");
   await symlink(join(root, "private.txt"), join(root, "image/escape"));
-  const server = await startImageTestServer({ bundleDir: join(root, "image"), manifestPath: "/images/example/digest/manifest.json", engineDir: join(root, "engine"), browserDir: join(root, "browser"), configuration: { public: true } });
+  const complianceSHA256 = "a".repeat(64);
+  await writeFile(join(root, "compliance/compliance.json"), '{"components":[]}');
+  const server = await startImageTestServer({ bundleDir: join(root, "image"), manifestPath: "/images/example/digest/manifest.json", engineDir: join(root, "engine"), engineCompliance: { directory: join(root, "compliance"), sha256: complianceSHA256 }, browserDir: join(root, "browser"), configuration: { public: true } });
   try {
     const manifest = await fetch(`${server.origin}/images/example/digest/manifest.json`);
     expect(manifest.status).toBe(200); expect(manifest.headers.get("cross-origin-opener-policy")).toBe("same-origin");
     expect(manifest.headers.get("cross-origin-embedder-policy")).toBe("require-corp");
     expect(await manifest.json()).toEqual({});
-    expect((await fetch(`${server.origin}/oxidevm/runtime/core.wasm`)).headers.get("content-type")).toBe("application/wasm");
+    const engine = await fetch(`${server.origin}${runtimePrefix}core.wasm`);
+    expect(engine.status).toBe(200); expect(engine.headers.get("content-type")).toBe("application/wasm");
+    expect(new Uint8Array(await engine.arrayBuffer())).toEqual(Uint8Array.of(0, 97, 115, 109));
+    const compliance = await fetch(`${server.origin}${runtimePrefix}compliance/${complianceSHA256}/compliance.json`);
+    expect(compliance.status).toBe(200); expect(await compliance.json()).toEqual({ components: [] });
     expect((await fetch(`${server.origin}/qualification/client.js`)).headers.get("content-type")).toBe("text/javascript");
     expect(await (await fetch(`${server.origin}/fixture.json`)).json()).toEqual({ public: true });
-    for (const path of ["/images/example/digest/escape", "/images/example/digest/%2e%2e/private.txt", "/private.txt", "/fixture.json?unexpected=true"]) expect((await fetch(`${server.origin}${path}`)).status).toBe(404);
+    for (const path of ["/images/example/digest/escape", "/images/example/digest/%2e%2e/private.txt", "/private.txt", "/fixture.json?unexpected=true", `${runtimePrefix}compliance/${"b".repeat(64)}/compliance.json`]) expect((await fetch(`${server.origin}${path}`)).status).toBe(404);
   } finally { await server.close(); await rm(root, { recursive: true, force: true }); }
 });
 
@@ -43,7 +49,7 @@ it("serves a module release, a copy with one altered adapter byte, the wasm page
   } finally { await server.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-it("serves the module frame beside the runtime with the headers its frame.json names, and nothing else of that directory", async () => {
+it.each(["/oxvm/runtime/", "/oxidevm/runtime/"])("serves the module frame under %s with its own headers, excluding unlisted files", async runtimePrefix => {
   const root = await mkdtemp(join(tmpdir(), "oxidevm-module-frame-server-test-"));
   await mkdir(join(root, "engine")); await mkdir(join(root, "browser")); await mkdir(join(root, "frame"));
   const headers = { "Content-Security-Policy": "sandbox allow-scripts; default-src 'none'", "Cross-Origin-Embedder-Policy": "require-corp", "Cross-Origin-Resource-Policy": "cross-origin", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
@@ -53,7 +59,7 @@ it("serves the module frame beside the runtime with the headers its frame.json n
   const server = await startImageTestServer({ engineDir: join(root, "engine"), browserDir: join(root, "browser"), entry: "wasm-client.js", moduleFrameDir: join(root, "frame") });
   try {
     for (const [path, body, type] of [["broker.js", "/* broker */", "text/javascript"], ["runner.js", "/* runner */", "text/javascript"], ["", "<!doctype html><title>frame</title>", "text/html"], ["index.html", "<!doctype html><title>frame</title>", "text/html"]] as const) {
-      const response = await fetch(`${server.origin}/oxidevm/runtime/module-frame/${path}`);
+      const response = await fetch(`${server.origin}${runtimePrefix}module-frame/${path}`);
       expect(response.status, path).toBe(200);
       expect(await response.text()).toBe(body);
       expect(response.headers.get("content-type")).toBe(type);
@@ -61,7 +67,7 @@ it("serves the module frame beside the runtime with the headers its frame.json n
       // The frame's own headers replace the page's: no opener policy, and CORP cross-origin for the opaque frame.
       expect(response.headers.get("cross-origin-opener-policy")).toBeNull();
     }
-    for (const path of ["frame.json", "extra.js", "%2e%2e/frame.json", "nested/broker.js"]) expect((await fetch(`${server.origin}/oxidevm/runtime/module-frame/${path}`)).status, path).toBe(404);
+    for (const path of ["frame.json", "extra.js", "%2e%2e/frame.json", "nested/broker.js"]) expect((await fetch(`${server.origin}${runtimePrefix}module-frame/${path}`)).status, path).toBe(404);
   } finally { await server.close(); await rm(root, { recursive: true, force: true }); }
 });
 

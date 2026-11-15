@@ -1,5 +1,11 @@
-import { expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import { NativeValues } from "./values.js";
+import { installProxyRegistry } from "../../proxy-brand.js";
+
+// The value owner runs in a process realm, which records its proxies (ADR 0026, 2.11).
+let restoreProxies: () => void;
+beforeAll(() => { restoreProxies = installProxyRegistry(globalThis); });
+afterAll(() => { restoreProxies(); });
 
 for (const runtime of ["node", "bun"] as const) for (const operation of ["napi_get_prototype", "napi_has_own_property"] as const) for (const poison of ["replacement", "getter"] as const) {
   it(`${runtime} ${operation} ignores an intrinsic ${poison} and preserves pending exceptions`, () => {

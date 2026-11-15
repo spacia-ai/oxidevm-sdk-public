@@ -8,7 +8,7 @@ const commandRelease = (adapter: string, host: readonly Capability[] = ["files.s
   buildRelease({ adapter, artifacts: { "tool.wasm": wasm }, declaration: { ...COMMAND_DECLARATION, requires: { host } } });
 
 // The fault in an adapter-fault report (exit 123) says which rule the module broke, so tools such as
-// `oxidevm wasm test` can name it without reading the message prose.
+// `oxvm wasm test` can name it without reading the message prose.
 describe("adapter fault reports", () => {
   it("reports a main status outside 0-119 as an exit-status fault", async () => {
     const running = launch({ release: await commandRelease("export default () => ({ main: () => 200 });") });

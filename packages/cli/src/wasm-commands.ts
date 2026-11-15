@@ -1,8 +1,8 @@
 import { relative, resolve, sep } from "node:path";
 import { readFile } from "node:fs/promises";
-import { VMError } from "@oxidevm/sdk";
-import { BlobCache, buildModule, commitAdd, defaultModuleCacheDir, doctorModules, githubToken, inspectWasm, previewAdd, readImageTrust, stageProject, testModule } from "@oxidevm/sdk/image-builder";
-import type { AddConsent, ResolveContext, WasmBuildResult } from "@oxidevm/sdk/image-builder";
+import { VMError } from "@oxvm/sdk";
+import { BlobCache, buildModule, commitAdd, defaultModuleCacheDir, doctorModules, githubToken, inspectWasm, previewAdd, readImageTrust, stageProject, testModule } from "@oxvm/sdk/image-builder";
+import type { AddConsent, ResolveContext, WasmBuildResult } from "@oxvm/sdk/image-builder";
 import type { CLIInvocation } from "./arguments.js";
 import type { CliReport } from "./contracts.js";
 import type { CLIEnvironment } from "./run.js";
@@ -55,7 +55,7 @@ export async function runWasmCommand(invocation: WasmCLIInvocation, io: CLIEnvir
     case "wasm test": {
       const projectDir = resolve(io.directory, invocation.project);
       const module = resolve(projectDir, invocation.module ?? "dist");
-      // Without --image: the public starter image `oxidevm init` uses, which the page loads from the CDN.
+      // Without --image: the public starter image `oxvm init` uses, which the page loads from the CDN.
       const image = invocation.image === undefined ? pinnedStarterRelease()?.image
         : { bundle: resolve(io.directory, invocation.image.bundle), trust: await readImageTrust(resolve(io.directory, invocation.image.trust)) };
       if (image === undefined) throw new VMError("INVALID_ARGUMENT", "this CLI pins no public starter image; pass --image <bundle> --image-trust <A.public.json>", { reason: "wasm-test-image" });

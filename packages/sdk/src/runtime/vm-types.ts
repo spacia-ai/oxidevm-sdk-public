@@ -122,6 +122,8 @@ export type RuntimeVMOptions =
       mode: "userspace";
       readonly interceptors?: readonly CommandInterceptorRecord[];
       readonly nativeExecutionPort?: MessagePort;
+      /** The highest Node-API operation set the execution origin serves (ADR 0026, 2.8). */
+      readonly nativeOperationSet?: number;
       userspaceWasmUrl?: string;
       userspaceSharedWasmUrl?: string;
       userspaceWasmModule?: WebAssembly.Module;

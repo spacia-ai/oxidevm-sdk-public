@@ -6,6 +6,13 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 export const run = promisify(execFile);
+export type ImageSetting = "PANDAS_BASE_ROOTFS" | "PANDAS_BASE_BUNDLE" | "PANDAS_BASE_TRUST" | "IMAGE_SIGNING_KEY";
+export function imageSetting(environment: Readonly<Record<string, string | undefined>>, name: ImageSetting): string | undefined {
+  const canonical = `OXVM_${name}`, legacy = `OXIDEVM_${name}`;
+  const current = environment[canonical], previous = environment[legacy];
+  if (current !== undefined && previous !== undefined && current !== previous) throw new Error(`${canonical} and ${legacy} differ; set one value`);
+  return current ?? previous;
+}
 export const digest = (bytes: string | Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 export interface AdditionalSourceInput { readonly url: string; readonly file: string; readonly sha256: string; readonly sha512: string; readonly format: "file" | "archive" }
 export interface SourceInput { readonly name: string; readonly version: string; readonly url: string; readonly file: string; readonly sha256: string; readonly sha512: string; readonly aportsRevision: string; readonly scope: "guest" | "build-tool-source"; readonly origin?: string; readonly repository?: "main" | "community"; readonly format?: "archive" | "recipe"; readonly additional?: readonly AdditionalSourceInput[] }

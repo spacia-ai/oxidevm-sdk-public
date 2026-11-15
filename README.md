@@ -1,4 +1,4 @@
-# OxideVM SDK
+# OXVM SDK
 
 Run Linux programs in your browser. Use the TypeScript SDK to work with files,
 start processes, connect terminals, and preview HTTP servers.
@@ -11,13 +11,13 @@ Upload a CSV, edit Python, inspect the dataframe, and make the app your own.
 Use Node.js 24 or newer:
 
 ```sh
-npx @oxidevm/cli@latest init app --start
+npx @oxvm/cli@latest init app --start
 ```
 
 Or use Bun:
 
 ```sh
-bunx --package @oxidevm/cli@latest oxidevm init app-bun --use-bun --start
+bunx --package @oxvm/cli@latest oxvm init app-bun --use-bun --start
 ```
 
 For a fixed release, replace `@latest` with its exact version. Generated projects pin matching SDK and CLI versions.

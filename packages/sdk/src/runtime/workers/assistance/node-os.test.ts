@@ -11,7 +11,7 @@ it.skipIf(process.platform !== "linux" || process.arch !== "x64")("matches nativ
 it("uses live Linux guest CPU and memory values rather than browser hardware", () => {
   const sources = new Map([
     ["/proc/stat", "cpu 1 2 3 4 5 6 7 8\ncpu0 10 20 30 40 50 60 70 80\nintr 0\n"],
-    ["/proc/cpuinfo", "processor\t: 0\nmodel name\t: OxideVM CPU\ncpu MHz\t: 9999\n\n"],
+    ["/proc/cpuinfo", "processor\t: 0\nmodel name\t: OXVM CPU\ncpu MHz\t: 9999\n\n"],
     ["/proc/meminfo", "MemTotal: 1572864 kB\nMemFree: 1000 kB\nMemAvailable: 2000 kB\n"],
     ["/proc/sys/kernel/osrelease", "6.12.1\n"],
     ["/proc/sys/kernel/version", "#1 SMP\n"],
@@ -22,7 +22,7 @@ it("uses live Linux guest CPU and memory values rather than browser hardware", (
     if (source === undefined) throw Object.assign(new Error("missing"), { code: "ENOENT" });
     return source;
   } }, {});
-  expect(os.cpus()).toEqual([{ model: "OxideVM CPU", speed: 0,
+  expect(os.cpus()).toEqual([{ model: "OXVM CPU", speed: 0,
     times: { user: 100, nice: 200, sys: 300, idle: 400, irq: 600 } }]);
   expect(os.totalmem()).toBe(1536 * 1024 ** 2);
   expect(os.availableParallelism()).toBe(1);

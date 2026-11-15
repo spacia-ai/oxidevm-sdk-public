@@ -61,7 +61,11 @@ function runtimeRequirement(value: unknown): "node" | "bun" | undefined {
   throw new VMError("INVALID_ARGUMENT", "Invalid native runtime requirement");
 }
 
-/** Generate image metadata. Rust authenticates bytes and captured generations independently at launch. */
+/** Generate image metadata. Rust authenticates bytes and captured generations independently at launch.
+ * Since ADR 0026 an image needs no `node24-bun1-v1` profile: the engine admits a launch in any
+ * project folder from its own dependency roots and vouches for add-ons itself. That profile keeps
+ * working for images built for older engines, and its frozen name and version list goes when no
+ * supported image ships one. Qualification-fixture profiles are unaffected. */
 export async function createAccelerationProfile(options: AccelerationProfileOptions): Promise<{ readonly path: "/usr/local/share/oxidevm/acceleration.profile"; readonly bytes: Uint8Array }> {
   const input = record(options, "acceleration profile"), fixture = input["profile"] === "native-parity-fixture-v1";
   exactKeys(input, ["profile", "dependencies", "host", "addons", ...(fixture ? ["platform", "capability"] : [])], ["codeRoots", ...(fixture ? ["libraries", "requiredCapabilities", "requiredRuntime"] : [])]);

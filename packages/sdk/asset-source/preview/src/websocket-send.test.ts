@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 
-const HOST = "0123456789abcdef0123456789abcdef.oxvm.dev";
+const HOST = "0123456789abcdef0123456789abcdef.tabvm.dev";
 const LIMIT = 16 * 1024 * 1024;
 const bridges: MessagePort[] = [];
 

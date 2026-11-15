@@ -11,7 +11,7 @@ export function acquireLocalDataLease(): Promise<() => Promise<void>> {
 }
 
 /**
- * Erase all OxideVM workspaces, restore points, images and IndexedDB stores on this origin.
+ * Erase all OXVM workspaces, restore points, images and IndexedDB stores on this origin.
  * Dispose every VM first. An active workspace in another tab makes this fail before erasure.
  * Applications must stop their own writers and clear their preferences/caches separately.
  */

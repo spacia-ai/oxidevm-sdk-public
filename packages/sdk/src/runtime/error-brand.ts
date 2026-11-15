@@ -24,7 +24,8 @@ const predicate = capture();
 export const nativeErrorCapability: 0 | 2 = predicate.kind === "available" ? 2 : 0;
 
 export function nativeIsError(value: unknown, runtime: "node" | "bun"): boolean {
-  if (predicate.kind === "unavailable") throw new VMError("FEATURE_NOT_AVAILABLE", "Native Error predicate is unavailable", { api: "napi_is_error" });
+  // A browser without Error.isError cannot answer exactly; the program is remembered for Linux.
+  if (predicate.kind === "unavailable") throw new VMError("FEATURE_NOT_AVAILABLE", "Native Error predicate is unavailable", { api: "napi_is_error", lateFailure: "unsupported-node-api", subject: "napi_is_error" });
   if (predicate.kind !== "available") throw new VMError("PROTOCOL_ERROR", "Invalid native Error capability");
   let result: unknown;
   try { result = apply(predicate.invoke, undefined, [value]); }

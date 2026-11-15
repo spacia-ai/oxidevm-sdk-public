@@ -108,7 +108,7 @@ export async function resolveGithubRelease(target: GithubTarget, options: Resolv
   };
   const sumsBytes = await download("SHA256SUMS", MAX_SUMS_BYTES), manifestBytes = await download("module.json", 256 * 1024);
   if (options.expectedRelease !== undefined && releaseId(sumsBytes) !== options.expectedRelease) {
-    throw new VMError("PROTOCOL_ERROR", `${owner}/${repo}@${tag} no longer matches the release that was locked: run "oxidevm wasm add" again to review and re-lock it`, { reason: "wasm-lock-mismatch" });
+    throw new VMError("PROTOCOL_ERROR", `${owner}/${repo}@${tag} no longer matches the release that was locked: run "oxvm wasm add" again to review and re-lock it`, { reason: "wasm-lock-mismatch" });
   }
   // Before any file is fetched the release must agree with itself and with GitHub's listing: module.json decodes and is
   // canonical, SHA256SUMS lists exactly its files with the hashes it pins, each asset has the pinned size and GitHub's own

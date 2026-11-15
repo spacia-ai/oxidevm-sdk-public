@@ -33,7 +33,7 @@ networking is the default. External connections require the existing relay.
 ## Launch and lifecycle
 
 ```ts
-import type { UserspaceVM } from "@oxidevm/sdk";
+import type { UserspaceVM } from "@oxvm/sdk";
 
 async function run(vm: UserspaceVM, worker: URL) {
   const process = await vm.spawnJS({ worker, args: ["hello"], cwd: "/workspace" });
@@ -91,7 +91,7 @@ for a native program. Signals 32 to 34 stay reserved to musl.
 ## Worker context
 
 ```ts
-import { serveProcess } from "@oxidevm/sdk/js-process";
+import { serveProcess } from "@oxvm/sdk/js-process";
 
 serveProcess(async ({ files, process, stdout }) => {
   const info = await process.info();
@@ -198,7 +198,7 @@ identities and operation payloads are validated before effects. Stale
 completions cannot affect a successor. Compiler-only filesystem requests are no
 longer accepted.
 
-`@oxidevm/sdk/diagnostics` exports `configureJSProcessTrace(vm, capacity)` and
+`@oxvm/sdk/diagnostics` exports `configureJSProcessTrace(vm, capacity)` and
 `readJSProcessTrace(vm)`. Traces include bounded capture counts, monotonic
 events, process/request/operation identities and errno. They do not invent an
 x86 RIP for JS operations or record file contents. Native replay journals the

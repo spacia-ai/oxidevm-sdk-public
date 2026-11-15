@@ -1,6 +1,6 @@
-import { VMError } from "@oxidevm/sdk";
-import { decodeBuilderError, decodeDoctorReport, decodeImageDigest, decodeImageDistribution, decodeImageInspection, decodeImageTestReport,decodeSnapshotBuildResult,decodeSnapshotTestReport,decodeSnapshotInspectResult, decodeWasmAddResult, decodeWasmBuildResult, decodeWasmDoctorReport, decodeWasmInspectResult, decodeWasmStageResult, decodeWasmTestReport } from "@oxidevm/sdk/image-builder";
-import type { ProjectLockChange, ProjectLockIdentity } from "@oxidevm/sdk/image-builder";
+import { VMError } from "@oxvm/sdk";
+import { decodeBuilderError, decodeDoctorReport, decodeImageDigest, decodeImageDistribution, decodeImageInspection, decodeImageTestReport,decodeSnapshotBuildResult,decodeSnapshotTestReport,decodeSnapshotInspectResult, decodeWasmAddResult, decodeWasmBuildResult, decodeWasmDoctorReport, decodeWasmInspectResult, decodeWasmStageResult, decodeWasmTestReport } from "@oxvm/sdk/image-builder";
+import type { ProjectLockChange, ProjectLockIdentity } from "@oxvm/sdk/image-builder";
 import type { CliCommand, CliReport } from "./contracts.js";
 import { choice, fields, number, object, text } from "./validation.js";
 

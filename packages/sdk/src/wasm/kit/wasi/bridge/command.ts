@@ -39,7 +39,7 @@ export function decodeRequest(bytes: Uint8Array): Parameters<ProcessSyncHost["ru
 }
 
 /**
- * The native-process part of `oxidevm_bridge_v1`. Each finished child is retained behind a per-run handle until the
+ * The native-process part of `oxvm_bridge_v1`. Each finished child is retained behind a per-run handle until the
  * program closes it, within the run's descriptor count and an 8 MiB budget, so the host never re-runs a command to
  * learn its size and a program cannot grow host memory without bound.
  */

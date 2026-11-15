@@ -1,4 +1,4 @@
-import type { PipeSpawnSpec, ProcessHandle, VM } from "@oxidevm/sdk";
+import type { PipeSpawnSpec, ProcessHandle, VM } from "@oxvm/sdk";
 import { decodeDataframe } from "./dataframe.js";
 import { pythonRunner } from "./analysis.js";
 

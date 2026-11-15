@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { blockedDirective, blockedSiteReporter, MAX_REPORTED_SITES, type BlockedSiteMessage } from "./blocked-sites";
 
-const SELF = "https://0123456789abcdef0123456789abcdef.oxvm.dev";
+const SELF = "https://0123456789abcdef0123456789abcdef.tabvm.dev";
 
 function reporter(): { readonly report: ReturnType<typeof blockedSiteReporter>; readonly posted: BlockedSiteMessage[] } {
   const posted: BlockedSiteMessage[] = [];

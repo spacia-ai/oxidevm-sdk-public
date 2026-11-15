@@ -1,6 +1,6 @@
-import { MODULE_EXIT, classifyLicense, decodeModuleManifest, defineModule, enableModuleCommands, encodeModuleManifest, isServiceDecl, moduleHandle, spawnModule, stopModule } from "@oxidevm/sdk/wasm";
-import type { Connection, Gate, ModuleCommands, ModuleCommandsStatus, ModuleHandle, ModuleProcess, SpawnArgs } from "@oxidevm/sdk/wasm";
-import type { ProcessExit, SystemVM, UserspaceVM } from "@oxidevm/sdk";
+import { MODULE_EXIT, classifyLicense, decodeModuleManifest, defineModule, enableModuleCommands, encodeModuleManifest, isServiceDecl, moduleHandle, spawnModule, stopModule } from "@oxvm/sdk/wasm";
+import type { Connection, Gate, ModuleCommands, ModuleCommandsStatus, ModuleHandle, ModuleProcess, SpawnArgs } from "@oxvm/sdk/wasm";
+import type { ProcessExit, SystemVM, UserspaceVM } from "@oxvm/sdk";
 
 declare function render(markdown: string): string;
 declare function openDatabase(path: string): { query(sql: string): Promise<readonly string[]>; close(): void };

@@ -14,7 +14,7 @@ Read those pinned links before modifying the image. Do not use `main`,
 starter whose README has no pinned links, run this in the project directory:
 
 ```sh
-SDK_VERSION="$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/@oxidevm/sdk/package.json', 'utf8')).version")"
+SDK_VERSION="$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/@oxvm/sdk/package.json', 'utf8')).version")"
 printf 'Recipe: https://github.com/spacia-ai/oxidevm-sdk-public/tree/v%s/examples/starter/image\n' "$SDK_VERSION"
 printf 'Guide: https://github.com/spacia-ai/oxidevm-sdk-public/blob/v%s/docs/images.md\n' "$SDK_VERSION"
 ```
@@ -22,7 +22,7 @@ printf 'Guide: https://github.com/spacia-ai/oxidevm-sdk-public/blob/v%s/docs/ima
 Unpublished candidates can reference a tag that does not exist yet. Use their
 reviewed source checkout until publication. Do not silently select another release.
 
-The data image's real recipe contains `Dockerfile`, `oxidevm.image.ts`,
+The data image's real recipe contains `Dockerfile`, `oxvm.image.ts`,
 `inputs.lock.json`, `python-inputs.lock.json`, `source-lock.json`, preparation
 and compliance scripts, utility build scripts and component/license inventories.
 It does not use a generic `requirements.lock`. `image init` writes an initial
@@ -30,8 +30,8 @@ It does not use a generic `requirements.lock`. `image init` writes an initial
 
 The maintainer recipe also requires a separately supplied, exact Python base
 rootfs, signed bundle and independent author trust. See its README for the
-`OXIDEVM_PANDAS_BASE_ROOTFS`, `OXIDEVM_PANDAS_BASE_BUNDLE` and
-`OXIDEVM_PANDAS_BASE_TRUST` inputs and hash checks. The source/license archive
+`OXVM_PANDAS_BASE_ROOTFS`, `OXVM_PANDAS_BASE_BUNDLE` and
+`OXVM_PANDAS_BASE_TRUST` inputs and hash checks. The source/license archive
 is not that rootfs, an OCI base image, or a runnable bundle. Copying only the
 Dockerfile cannot reproduce the image. If those inputs are unavailable, create
 an author-owned image with the workflow below instead of inventing their paths.
@@ -47,10 +47,10 @@ finished Linux programs, not Docker.
 1. Create a separate recipe directory:
 
    ```sh
-   npm exec -- oxidevm image init images/my-linux --mode userspace
+   npm exec -- oxvm image init images/my-linux --mode userspace
    ```
 
-   This creates `Dockerfile`, `.dockerignore`, `.gitignore`, `oxidevm.image.ts`,
+   This creates `Dockerfile`, `.dockerignore`, `.gitignore`, `oxvm.image.ts`,
    an initial `image.lock.json` and a README.
    It is a minimal Linux scaffold, not a copy of the Python + pandas image.
    Edit its Dockerfile to supply the actual Linux x86-64 programs, loader,
@@ -64,12 +64,12 @@ finished Linux programs, not Docker.
    The default NumPy build disables external BLAS/LAPACK and Fortran runtimes;
    replacing it with an arbitrary wheel changes both compatibility and licensing.
 
-3. Edit `oxidevm.image.ts`. For these examples, set `id: "my-linux"` and
+3. Edit `oxvm.image.ts`. For these examples, set `id: "my-linux"` and
    `version: "1.0.0"`. Use your own image identity for real distribution. Set a fixed `sourceDateEpoch` and appropriate memory. Keep `mode: "userspace"`.
    Set `smokeTest.command`, `args`, `expectedExitCode` and `stdoutIncludes` to
    exercise the new program and its native dependencies. The generated shell
    smoke test alone does not test an added package. The Node-only recipe API is
-   `@oxidevm/sdk/image-builder`; browser application APIs stay in `@oxidevm/sdk`.
+   `@oxvm/sdk/image-builder`; browser application APIs stay in `@oxvm/sdk`.
 
    The scaffold lock identifies `custom-linux`. After changing that initial
    identity, remove only this new scaffold lock before the first build:
@@ -85,7 +85,7 @@ finished Linux programs, not Docker.
 
    ```sh
    mkdir -p "$HOME/.config/oxidevm"
-   npm exec -- oxidevm image keygen --out "$HOME/.config/oxidevm/image-author.pem"
+   npm exec -- oxvm image keygen --out "$HOME/.config/oxvm/image-author.pem"
    ```
 
    Retain the companion `image-author.public.json` independently. Back up the
@@ -95,8 +95,8 @@ finished Linux programs, not Docker.
 5. Build and inspect a local development candidate:
 
    ```sh
-   npm exec -- oxidevm image build images/my-linux/oxidevm.image.ts --signing-key "$HOME/.config/oxidevm/image-author.pem"
-   npm exec -- oxidevm image inspect images/my-linux/dist --trust "$HOME/.config/oxidevm/image-author.public.json"
+   npm exec -- oxvm image build images/my-linux/oxvm.image.ts --signing-key "$HOME/.config/oxvm/image-author.pem"
+   npm exec -- oxvm image inspect images/my-linux/dist --trust "$HOME/.config/oxvm/image-author.public.json"
    ```
 
    The output directory contains the signed manifest, blobs/packs, generated
@@ -107,7 +107,7 @@ finished Linux programs, not Docker.
 
    ```sh
    npm exec --package playwright@1.64.0 -- playwright install chromium
-   npm exec -- oxidevm image test images/my-linux/dist --trust "$HOME/.config/oxidevm/image-author.public.json" --browser chromium --engine-dir /absolute/path/to/matching-engine-release
+   npm exec -- oxvm image test images/my-linux/dist --trust "$HOME/.config/oxvm/image-author.public.json" --browser chromium --engine-dir /absolute/path/to/matching-engine-release
    ```
 
    The current image-test harness uses a local, matching pinned engine and its
@@ -115,7 +115,7 @@ finished Linux programs, not Docker.
    using this explicit test path. Building an image does not require an engine.
    This test path does not change the application's hosted runtime configuration.
    If the engine is unavailable, report the automated browser test as blocked;
-   do not claim a successful Docker build proves OxideVM compatibility.
+   do not claim a successful Docker build proves OXVM compatibility.
 
 For Bun-managed applications, use `bunx --no-install oxidevm` instead of
 `npm exec -- oxidevm`. Keep using the CLI installed with the project.
@@ -126,7 +126,7 @@ Add `--use-bun` to `init` when Bun should install and start the new app.
 For a fresh development app, the CLI supports an explicit local image:
 
 ```sh
-npm exec -- oxidevm init custom-app --image images/my-linux/dist --image-trust "$HOME/.config/oxidevm/image-author.public.json" --start
+npm exec -- oxvm init custom-app --image images/my-linux/dist --image-trust "$HOME/.config/oxvm/image-author.public.json" --start
 ```
 
 This stages the supplied image and keeps `runtime: { hosting: "frame" }`.
@@ -140,12 +140,12 @@ its old image references. Stop the VM before changing its image. Use the public
 
 <!-- typecheck: images/stage.ts -->
 ```ts
-import { readImageTrust, installProjectAssets } from "@oxidevm/sdk/image-builder";
+import { readImageTrust, installProjectAssets } from "@oxvm/sdk/image-builder";
 
 await installProjectAssets(process.cwd(), {
   mode: "userspace",
-  publicDir: ".oxidevm/assets",
-  assetBaseUrl: "/oxidevm/",
+  publicDir: ".oxvm/assets",
+  assetBaseUrl: "/oxvm/",
 }, {
   hosting: "frame",
   imageDir: "images/my-linux/dist",
@@ -155,8 +155,8 @@ await installProjectAssets(process.cwd(), {
 ```
 
 Run this as a Node-only script from the project root. Use a new generated
-reference path. Before running it, move the existing `oxidevm.lock.json` to a
-backup outside the app and remove the old `image` from `oxidevm.config.ts`.
+reference path. Before running it, move the existing project lock (`oxvm.lock.json`, or legacy `oxidevm.lock.json`) to a
+backup outside the app and remove the old `image` from `oxvm.config.ts`.
 The installer refuses a lock or explicit image that identifies another bundle.
 Keep the same `mode`, `publicDir` and `assetBaseUrl` as above. Import the new
 reference from the config after staging. Change the development image import
@@ -164,7 +164,7 @@ in `src/main.ts` to `./custom.image.js`. Keep `src/runtime.ts` on frame hosting.
 Do not use the bare `assets install` command for this hosted-only path: it
 currently selects local engine installation.
 
-Vite serves `.oxidevm/assets` only in development. These files are not copied
+Vite serves `.oxvm/assets` only in development. These files are not copied
 into the production build. Test the actual application: interpreter/package
 imports, CSV upload, repeated execution, terminal, restart and persistence.
 Test tampered-image rejection. Existing stored workspaces do not migrate merely
@@ -191,9 +191,9 @@ headers. Keep old image URLs reachable for saved workspaces.
 
 Use the builder-generated `my-linux.image.ts` for both `src/image.ts` and
 `src/production-image.ts` when both environments should select that image.
-Set the matching `image` in `oxidevm.config.ts`. Regenerate the project lock
+Set the matching `image` in `oxvm.config.ts`. Regenerate the project lock
 explicitly from that configuration; preserve the old lock for rollback. Use
-`createProjectLock` from `@oxidevm/sdk/image-builder`, not a manual JSON edit.
+`createProjectLock` from `@oxvm/sdk/image-builder`, not a manual JSON edit.
 Do not leave production pointing to the original pandas image accidentally.
 Keep the independently verified author key and manifest hash in the reference.
 The app continues to use the hosted runtime in development and production.
@@ -300,7 +300,7 @@ frame protocol 9, worker protocol 71 and snapshot channel 13 reject incompatible
 A signature does not replace the guest-artifact publication approval.
 
 For an existing whole-manifest signed Userspace bundle, run
-`oxidevm image pack <bundle> --trust <trust-file>`. This writes deterministic packs
+`oxvm image pack <bundle> --trust <trust-file>`. This writes deterministic packs
 in blob digest order, the layout browsers compact such images into, and
 `transport/<original-manifest-sha256>/packs-v1.json` beside the unchanged
 manifest and lock. Publish those additions at the original image directory before
@@ -336,7 +336,7 @@ its complete distribution evidence before staging it:
 
 ```ts
 import { readFile } from "node:fs/promises";
-import { readImageTrust, validateImageDistribution } from "@oxidevm/sdk/image-builder";
+import { readImageTrust, validateImageDistribution } from "@oxvm/sdk/image-builder";
 
 const components: unknown = JSON.parse(await readFile("components.json", "utf8"));
 const verified = await validateImageDistribution("./image/dist", {

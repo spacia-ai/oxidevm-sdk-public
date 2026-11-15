@@ -1,4 +1,4 @@
-// The oxidevm_bridge_v1 request records: exact decoding, and refusal of every broken bound before anything runs.
+// The oxvm_bridge_v1 request records: exact decoding, and refusal of every broken bound before anything runs.
 import { describe, expect, it } from "vitest";
 import { decodeRequest } from "./command.js";
 import { decodeDestination } from "./net.js";

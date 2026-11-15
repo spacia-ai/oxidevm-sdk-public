@@ -5,22 +5,25 @@ import { decodeProcessId, type ProcessId } from "../../values.js";
 
 /** ADR 0026: why an admitted program failed after it started. Rust owns the codes
  * (`LateFailureKind`), the record and the decision; the SDK only names what it saw. */
-export type LateFailureKind = "unavailable-builtin" | "unqualified-addon" | "unsupported-node-api" | "eval-worker";
-export interface LateFailure { readonly kind: LateFailureKind; readonly detail: string }
+export type LateFailureKind = "unavailable-builtin" | "unqualified-addon" | "unsupported-node-api" | "eval-worker" | "host-crash" | "shared-buffer-budget";
+/** The kinds a process observes itself and reports (command operation 5). */
+export type ReportedLateFailureKind = Exclude<LateFailureKind, "host-crash">;
+/** A limitation a process reported; host crashes reach the trace from Rust only. */
+export interface LateFailure { readonly kind: ReportedLateFailureKind; readonly detail: string }
 export interface LateFailureNotice { readonly pid: number; readonly session: number; readonly record: Uint8Array<ArrayBuffer> }
 /** One late failure as the page sees it, after Rust remembered the program. */
 export interface AccelerationNotice {
   readonly pid: ProcessId;
   /** The session leader's PID (a terminal tab's shell), or null when the process had none. */
   readonly session: ProcessId | null;
-  readonly kind: LateFailureKind;
+  readonly kind: ReportedLateFailureKind;
   readonly detail: string;
   /** The sentence the terminal printed: what failed, and that the next run uses full Linux. */
   readonly message: string;
 }
 
-const CODES: Readonly<Record<LateFailureKind, number>> = { "unavailable-builtin": 1, "unqualified-addon": 2, "unsupported-node-api": 3, "eval-worker": 4 };
-const KINDS: readonly LateFailureKind[] = ["unavailable-builtin", "unqualified-addon", "unsupported-node-api", "eval-worker"];
+const CODES: Readonly<Record<LateFailureKind, number>> = { "unavailable-builtin": 1, "unqualified-addon": 2, "unsupported-node-api": 3, "eval-worker": 4, "host-crash": 5, "shared-buffer-budget": 7 };
+const KINDS: readonly LateFailureKind[] = ["unavailable-builtin", "unqualified-addon", "unsupported-node-api", "eval-worker", "host-crash", "shared-buffer-budget"];
 const COMMAND_REPORT = 5;
 const MAX_DETAIL = 255;
 
@@ -42,8 +45,51 @@ export function lateFailureKind(code: number): LateFailureKind | undefined {
   return KINDS.find(kind => CODES[kind] === code);
 }
 
-function isLateFailureKind(value: string): value is LateFailureKind {
-  return Object.hasOwn(CODES, value);
+/** A kind a process can report; only Rust sees a host crash, so no report or notice claims one. */
+function isLateFailureKind(value: string): value is ReportedLateFailureKind {
+  return Object.hasOwn(CODES, value) && value !== "host-crash";
+}
+
+/** What a trial load reports before it exits (ADR 0026): a limitation, or the class of the
+ * error an add-on initializer threw. Rust remembers it as the add-on's verdict. */
+export type TrialFailureKind = ReportedLateFailureKind | "addon-init-threw";
+export interface TrialFailure { readonly kind: TrialFailureKind; readonly detail: string }
+const TRIAL_CODES: Readonly<Record<TrialFailureKind, number>> = { "unavailable-builtin": 1, "unqualified-addon": 2, "unsupported-node-api": 3, "eval-worker": 4, "addon-init-threw": 6, "shared-buffer-budget": 7 };
+// Operations 6 and 7 are the caught-signal notice and signal exit of ADR 0027.
+const TRIAL_REPORT = 8, TRIAL_DEADLINE = 9, TRIAL_SUSPEND = 10;
+
+export function decodeTrialFailure(input: unknown): TrialFailure {
+  const value = record(input, "trial failure"); exactKeys(value, ["kind", "detail"]);
+  const kind = string(value["kind"], "trial failure kind"), detail = string(value["detail"], "trial failure detail");
+  if (!isTrialFailureKind(kind) || detail !== lateFailureDetail(detail)) protocol("Invalid trial failure");
+  return { kind, detail };
+}
+
+function isTrialFailureKind(value: string): value is TrialFailureKind {
+  return Object.hasOwn(TRIAL_CODES, value);
+}
+
+function commandOperation(request: { readonly generation: bigint; readonly id: bigint }, operation: number, payload: Uint8Array): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(21 + payload.byteLength), view = new DataView(bytes.buffer);
+  view.setUint32(0, 1, true); bytes[4] = operation; view.setBigUint64(5, request.generation, true); view.setBigUint64(13, request.id, true);
+  bytes.set(payload, 21);
+  return bytes;
+}
+
+/** Command operation 8 for a running trial load (Userspace API 148). */
+export function encodeTrialReport(request: { readonly generation: bigint; readonly id: bigint }, failure: TrialFailure): Uint8Array<ArrayBuffer> {
+  const detail = new TextEncoder().encode(lateFailureDetail(failure.detail));
+  return commandOperation(request, TRIAL_REPORT, Uint8Array.of(TRIAL_CODES[failure.kind], detail.byteLength, ...detail));
+}
+
+/** Command operation 9: a trial's first deadline (waiting launches go to Linux) or hard one. */
+export function encodeTrialDeadline(request: { readonly generation: bigint; readonly id: bigint }, expired: boolean): Uint8Array<ArrayBuffer> {
+  return commandOperation(request, TRIAL_DEADLINE, Uint8Array.of(expired ? 1 : 0));
+}
+
+/** Command operation 10: a save or suspend begins or ends; Rust answers whether trials still run. */
+export function encodeTrialSuspend(suspended: boolean): Uint8Array<ArrayBuffer> {
+  return commandOperation({ generation: 0n, id: 0n }, TRIAL_SUSPEND, Uint8Array.of(suspended ? 1 : 0));
 }
 
 /** Command operation 5 for one live admitted launch (Userspace API 142). */
@@ -64,7 +110,7 @@ export function decodeLateFailureNotice(bytes: Uint8Array): LateFailureNotice {
 }
 
 /** The notice fields every page-facing message carries; the sentence is derived on decode. */
-export function encodeAccelerationNotice(notice: Pick<LateFailureNotice, "pid" | "session">, failure: LateFailure): { readonly pid: number; readonly session: number; readonly kind: LateFailureKind; readonly detail: string } {
+export function encodeAccelerationNotice(notice: Pick<LateFailureNotice, "pid" | "session">, failure: LateFailure): { readonly pid: number; readonly session: number; readonly kind: ReportedLateFailureKind; readonly detail: string } {
   return { pid: notice.pid, session: notice.session, kind: failure.kind, detail: failure.detail };
 }
 
@@ -81,12 +127,14 @@ export function decodeAccelerationNotice(input: unknown): AccelerationNotice {
 }
 
 /** One plain sentence for the terminal: what failed and that the next run uses full Linux. */
-export function lateFailureSentence(failure: LateFailure): string {
+export function lateFailureSentence(failure: { readonly kind: LateFailureKind; readonly detail: string }): string {
   switch (failure.kind) {
     case "unavailable-builtin": return `This program uses ${failure.detail}, which the fast path does not provide; its next run uses full Linux.`;
     case "unqualified-addon": return `This program loaded the add-on ${failure.detail}, which the fast path cannot vouch for; its next run uses full Linux.`;
     case "unsupported-node-api": return `This program's add-on called ${failure.detail}, which the fast path does not provide yet; its next run uses full Linux.`;
     case "eval-worker": return "This program started a worker thread from source text, which the fast path does not run; its next run uses full Linux.";
+    case "host-crash": return `This program's add-on stopped the fast path with ${failure.detail}; its next run uses full Linux.`;
+    case "shared-buffer-budget": return `This program's add-on shared more memory with JavaScript than the fast path allows (${failure.detail}); its next run uses full Linux.`;
   }
 }
 

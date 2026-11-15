@@ -4,7 +4,7 @@ import { mountRuntimeFrame } from "../frame/client/iframe.js";
 import { detectBrowserSupport } from "../runtime/browser-support.js";
 import { VMError } from "../runtime/errors.js";
 
-// The deployment doctor's probe for an application that runs OxideVM through the hosted runtime frame (ADR 0021).
+// The deployment doctor's probe for an application that runs OXVM through the hosted runtime frame (ADR 0021).
 // The doctor evaluates this bundle in the application's own page, so the page's headers, Content-Security-Policy
 // and permissions apply to it as they do to the SDK client the application bundles, whose own code mounts the frame
 // here. The doctor decodes what these functions return (contracts/doctor-frame.ts).

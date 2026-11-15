@@ -1,8 +1,8 @@
-import type { RuntimeMode, SHA256, VMErrorCode } from "@oxidevm/sdk";
-import type { DoctorReport, ImageDistribution, ImageInspection, ImagePackReport, ImageTestReport, ProjectLockChange,SnapshotBuildResult,SnapshotTestReport,SnapshotInspectResult, WasmAddResult, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult, WasmTestReport } from "@oxidevm/sdk/image-builder";
+import type { RuntimeMode, SHA256, VMErrorCode } from "@oxvm/sdk";
+import type { DoctorReport, ImageDistribution, ImageInspection, ImagePackReport, ImageTestReport, ProjectLockChange,SnapshotBuildResult,SnapshotTestReport,SnapshotInspectResult, WasmAddResult, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult, WasmTestReport } from "@oxvm/sdk/image-builder";
 
 /** The deployment doctor's report is the SDK's (`decodeDoctorReport` owns its decoding). */
-export type { DoctorCheck, DoctorHosting, DoctorReport } from "@oxidevm/sdk/image-builder";
+export type { DoctorCheck, DoctorHosting, DoctorReport } from "@oxvm/sdk/image-builder";
 
 export interface WasmInitResult {
   readonly directory: string;

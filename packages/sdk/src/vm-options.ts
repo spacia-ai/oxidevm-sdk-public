@@ -12,15 +12,15 @@ import { isTrustworthyURL } from "./trustworthy-url.js";
 import { exactKeys, integer, record, string } from "./runtime/decode.js";
 import { decodeRelayOptions } from "./runtime/protocol/network.js";
 import { newEphemeralWorkspaceId, validateWorkspaceId } from "./runtime/workspace-path.js";
-import { DEFAULT_FRAME_ORIGIN } from "./frame/location.js";
+import { DEFAULT_FRAME_ORIGIN, isOfficialFrameOrigin } from "./frame/location.js";
 
 /** Validates relative URLs without reading browser state. */
 const REFERENCE_BASE = "https://oxidevm-reference.invalid/";
 
 /** Where a self-hosted page serves the engine release by default. */
-export const DEFAULT_SELF_HOSTED_BASE_URL = "/oxidevm/runtime/";
-/** Where previews of VMs in Spacia's frame live: one https://<session>.oxvm.dev origin each. */
-export const DEFAULT_FRAME_PREVIEW_ORIGIN = "https://oxvm.dev";
+export const DEFAULT_SELF_HOSTED_BASE_URL = "/oxvm/runtime/";
+/** Where previews of VMs in Spacia's frame live: one https://<session>.tabvm.dev origin each. */
+export const DEFAULT_FRAME_PREVIEW_ORIGIN = "https://tabvm.dev";
 
 /** Where the runtime runs: a hidden frame on the runtime origin, or this page with its own engine copy. */
 export type RuntimeSelection =
@@ -87,8 +87,12 @@ function decodeOptions(input: unknown): ValidatedVMOptions {
   const runtime = decodeRuntime(value["runtime"]);
   // Spacia's frame comes with Spacia's preview origin; any other runtime needs its own.
   const preview = value["preview"] === undefined
-    ? runtime.hosting === "frame" && runtime.origin === DEFAULT_FRAME_ORIGIN ? { origin: DEFAULT_FRAME_PREVIEW_ORIGIN, isolation: "per-session" as const } : undefined
+    ? runtime.hosting === "frame" && isOfficialFrameOrigin(runtime.origin) ? { origin: DEFAULT_FRAME_PREVIEW_ORIGIN, isolation: "per-session" as const } : undefined
     : decodePreview(value["preview"]);
+  if (preview !== undefined && runtime.hosting === "frame" && isOfficialFrameOrigin(runtime.origin)) {
+    const hostname = new URL(preview.origin).hostname.replace(/\.$/u, "");
+    if (hostname === "oxvm.dev" || hostname.endsWith(".oxvm.dev")) invalid("official previews must use a domain separate from oxvm.dev");
+  }
   const common: ValidatedCommon = {
     imagePreparation: decodeImagePreparation(value["imagePreparation"]),
     workspaceId: workspace === undefined ? newEphemeralWorkspaceId() : validateWorkspaceId(string(workspace, "workspaceId")),

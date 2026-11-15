@@ -11,11 +11,13 @@ export type AccelerationKnowledgeBackend =
   | { readonly kind: "opfs"; readonly root: FileSystemDirectoryHandle }
   | { readonly kind: "indexeddb"; readonly database: Promise<IDBDatabase> };
 
-export function accelerationKnowledgeNamespace(engineReleaseId: string, sdkVersion: string): string {
-  if (!/^[0-9a-f]{64}$/u.test(engineReleaseId) || !/^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/u.test(sdkVersion)) {
+/** One file per engine release, SDK version and served Node-API operation set: a newer set can
+ * pass add-ons an older one failed (ADR 0026, 2.8). */
+export function accelerationKnowledgeNamespace(engineReleaseId: string, sdkVersion: string, operationSet: number): string {
+  if (!/^[0-9a-f]{64}$/u.test(engineReleaseId) || !/^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/u.test(sdkVersion) || !Number.isInteger(operationSet) || operationSet < 0 || operationSet > 0xffff) {
     throw new VMError("INVALID_ARGUMENT", "Invalid acceleration knowledge namespace");
   }
-  return `${engineReleaseId}-${sdkVersion}`;
+  return `${engineReleaseId}-${sdkVersion}-ops${String(operationSet)}`;
 }
 
 export async function readAccelerationKnowledge(backend: AccelerationKnowledgeBackend, namespace: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
@@ -24,8 +26,11 @@ export async function readAccelerationKnowledge(backend: AccelerationKnowledgeBa
   else {
     try {
       const directory = await backend.root.getDirectoryHandle(DIRECTORY);
-      bytes = new Uint8Array(await (await (await directory.getFileHandle(`${namespace}.bin`)).getFile()).arrayBuffer());
+      const file = await (await directory.getFileHandle(`${namespace}.bin`)).getFile();
+      if (file.size > KNOWLEDGE_MAX_BYTES) throw new VMError("STORAGE_ERROR", "Stored acceleration knowledge exceeds its bound");
+      bytes = new Uint8Array(await file.arrayBuffer());
     } catch (error: unknown) {
+      if (error instanceof VMError) throw error;
       if (error instanceof DOMException && error.name === "NotFoundError") return undefined;
       throw new VMError("STORAGE_ERROR", "Acceleration knowledge read failed", { reason: domReason(error) });
     }

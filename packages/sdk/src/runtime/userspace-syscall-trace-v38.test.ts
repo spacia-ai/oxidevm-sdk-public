@@ -66,7 +66,7 @@ describe("trace38 ordinary issuer generations", () => {
 
   it("retains arbitrary real syscall-return sources and the canonical generation", () => {
     const version: UserspaceSyscallTraceSnapshot["version"] = 38;
-    expect(USERSPACE_SYSCALL_TRACE_VERSION).toBe(52);
+    expect(USERSPACE_SYSCALL_TRACE_VERSION).toBe(53);
     for (const source of [39n, 426n, 427n, 228n, 999999n]) {
       expect(decodeUserspaceSyscallTrace(boundary(1, 5, source))).toMatchObject({ version, events: [{
         kind: "io-uring-work", work: { completion: "task-run", done: false,

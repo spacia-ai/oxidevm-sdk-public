@@ -43,8 +43,8 @@ export async function createTestPki(): Promise<TestPki> {
     return { key: await readFile(path(`${name}.key`), "utf8"), cert: await readFile(path(`${name}.pem`), "utf8") };
   };
   try {
-    await root("root", "OxideVM SDK TLS Test Root");
-    await root("stranger", "OxideVM SDK TLS Test Stranger");
+    await root("root", "OXVM SDK TLS Test Root");
+    await root("stranger", "OXVM SDK TLS Test Stranger");
     const valid = ["-days", "30"];
     return {
       root: await readFile(path("root.pem"), "utf8"),

@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildImage, generateImageKey, getSDKRelease } from "@oxidevm/sdk/image-builder";
+import { buildImage, generateImageKey, getSDKRelease } from "@oxvm/sdk/image-builder";
 import { expect, it, vi } from "vitest";
 import { initializeApplication, initializeImage } from "./templates.js";
 import { object, text } from "./validation.js";
@@ -26,7 +26,7 @@ it("scaffolds System images from explicit kernel and disk files without a manage
   await scratch(async root => {
     const directory = join(root, "system");
     await initializeImage(directory, "system");
-    const recipe = await readFile(join(directory, "oxidevm.image.ts"), "utf8");
+    const recipe = await readFile(join(directory, "oxvm.image.ts"), "utf8");
     expect(recipe).toContain('"kind": "boot-files"');
     expect(recipe).not.toContain("managed-default");
     await expect(readFile(join(directory, "Dockerfile"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -59,11 +59,11 @@ it("maps the package's configured registry only when this release has one", asyn
     const app = join(root, "app");
     await initializeApplication(app, "userspace", true, new AbortController().signal, await imageInputs(root));
     if (publish === undefined || object(publish, "publish configuration")["registry"] === "https://registry.npmjs.org/") await expect(readFile(join(app, ".npmrc"))).rejects.toMatchObject({ code: "ENOENT" });
-    else expect(settings(await readFile(join(app, ".npmrc"), "utf8"))).toEqual([`@oxidevm:registry=${text(object(publish, "publish configuration")["registry"])}`]);
+    else expect(settings(await readFile(join(app, ".npmrc"), "utf8"))).toEqual([`@oxvm:registry=${text(object(publish, "publish configuration")["registry"])}`]);
     const manifest: unknown = JSON.parse(await readFile(join(app, "package.json"), "utf8"));
     // The scope covers the app's two exact @oxidevm dependencies.
     const version = getSDKRelease().sdkVersion;
-    expect(manifest).toMatchObject({ dependencies: { "@oxidevm/sdk": version }, devDependencies: { "@oxidevm/cli": version } });
+    expect(manifest).toMatchObject({ dependencies: { "@oxvm/sdk": version }, devDependencies: { "@oxvm/cli": version } });
     expect(await readFile(join(app, ".gitignore"), "utf8")).not.toContain(".npmrc");
   });
 });
@@ -88,9 +88,9 @@ it("scaffolds an explicitly trusted image and rejects a mode mismatch before cre
     const app = join(root, "app");
     const options = { image: { bundle: built.bundleDir, trust: key.trust } };
     await initializeApplication(app, "userspace", true, new AbortController().signal, options);
-    expect(await readFile(join(app, "oxidevm.config.ts"), "utf8")).toContain(built.image.manifestSHA256);
+    expect(await readFile(join(app, "oxvm.config.ts"), "utf8")).toContain(built.image.manifestSHA256);
     expect(await readFile(join(app, "src/image.ts"), "utf8")).toContain("defineImage");
-    const lock: unknown = JSON.parse(await readFile(join(app, "oxidevm.lock.json"), "utf8"));
+    const lock: unknown = JSON.parse(await readFile(join(app, "oxvm.lock.json"), "utf8"));
     expect(lock).toMatchObject({ image: { manifestSHA256: built.image.manifestSHA256 } });
     await expect(initializeApplication(join(root, "wrong"), "system", true, new AbortController().signal, options)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
     await expect(readFile(join(root, "wrong/package.json"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -104,7 +104,7 @@ it("creates the canonical Python + pandas starter and preserves its private arch
     const app = join(root, "starter");
     await initializeApplication(app, "userspace", true, new AbortController().signal, { ...await imageInputs(root), archives: { sdk, cli } });
     const manifest: unknown = JSON.parse(await readFile(join(app, "package.json"), "utf8"));
-    expect(manifest).toMatchObject({ private: true, dependencies: { "@oxidevm/sdk": `file:${sdk}`, "@xterm/xterm": "6.0.0" }, overrides: { "@oxidevm/sdk": `file:${sdk}` } });
+    expect(manifest).toMatchObject({ private: true, dependencies: { "@oxvm/sdk": `file:${sdk}`, "@xterm/xterm": "6.0.0" }, overrides: { "@oxvm/sdk": `file:${sdk}` } });
     expect(await readFile(join(app, "index.html"), "utf8")).toContain("Your data starter.");
     expect(await readFile(join(app, "public/favicon.png"))).toEqual(await readFile(new URL("../../../examples/starter/public/favicon.png", import.meta.url)));
     expect(await readFile(join(app, "src/python.ts"), "utf8")).toContain("/usr/bin/python3");
@@ -128,8 +128,8 @@ it("stages an explicit local image without downloading an engine when hosting st
       await initializeApplication(app, "userspace", false, new AbortController().signal, input);
       expect(fetch).not.toHaveBeenCalled();
       expect(await readFile(join(app, "src/runtime.ts"), "utf8")).toContain('hosting: "frame"');
-      await expect(readFile(join(app, ".oxidevm/assets/oxidevm/runtime/oxidevm_userspace.wasm"))).rejects.toMatchObject({ code: "ENOENT" });
-      expect(await readFile(join(app, "src/image.ts"), "utf8")).toContain("/oxidevm/images/");
+      await expect(readFile(join(app, ".oxvm/assets/oxvm/runtime/oxidevm_userspace.wasm"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(join(app, "src/image.ts"), "utf8")).toContain("/oxvm/images/");
     } finally { fetch.mockRestore(); }
   });
 });
@@ -139,7 +139,7 @@ it("keeps local development hosting explicit and production hosting framed", asy
     const app = join(root, "self-hosted");
     await initializeApplication(app, "userspace", true, new AbortController().signal, { ...await imageInputs(root), engineDir: join(root, "engine") });
     const runtime = await readFile(join(app, "src/runtime.ts"), "utf8");
-    expect(runtime).toContain('import.meta.env.DEV ? { hosting: "self-hosted", baseUrl: "/oxidevm/runtime/" } : { hosting: "frame" }');
+    expect(runtime).toContain('import.meta.env.DEV ? { hosting: "self-hosted", baseUrl: "/oxvm/runtime/" } : { hosting: "frame" }');
     expect(await readFile(join(app, "src/main.ts"), "utf8")).toContain("runtime,");
   });
 });

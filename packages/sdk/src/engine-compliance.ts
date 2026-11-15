@@ -16,7 +16,8 @@ export function decodeEngineCompliancePin(value: unknown, engineRelease: string)
   const input = record(value, "engine compliance pin"); exactKeys(input, ["url", "bytes", "sha256"]);
   const sha256 = decodeSHA256(input["sha256"], "engine compliance digest"), url = string(input["url"], "engine compliance URL");
   decodeSHA256(engineRelease, "engine release");
-  if (url !== `https://cdn.oxidevm.dev/engine/${engineRelease}/compliance/${sha256}/compliance.json`) throw new VMError("PROTOCOL_ERROR", "engine compliance URL differs from its pinned engine or revision");
+  const suffix = `/engine/${engineRelease}/compliance/${sha256}/compliance.json`;
+  if (url !== `https://cdn.oxvm.dev${suffix}` && url !== `https://cdn.oxidevm.dev${suffix}`) throw new VMError("PROTOCOL_ERROR", "engine compliance URL differs from its pinned engine or revision");
   return { url, bytes: integer(input["bytes"], "compliance manifest size", 1, 1024 ** 2), sha256 };
 }
 

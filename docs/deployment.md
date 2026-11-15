@@ -29,7 +29,7 @@ const headers = {
   "Cross-Origin-Embedder-Policy": "require-corp",
 };
 export default defineConfig({
-  optimizeDeps: { exclude: ["@oxidevm/sdk"] },
+  optimizeDeps: { exclude: ["@oxvm/sdk"] },
   worker: { format: "es" },
   server: { headers },
   preview: { headers },
@@ -44,7 +44,7 @@ frontend build alone does not prove workers execute.
 
 `createVM({ ..., runtime: { hosting: "frame" } })` runs the whole runtime (workers,
 engine WebAssembly, browser storage and images) in a hidden frame on Spacia's
-runtime origin, `https://run.oxidevm.dev`, like the WebContainer API (ADR 0021
+runtime origin, `https://run.oxvm.dev`, like the WebContainer API (ADR 0021
 in the engine repository). The application then serves no engine files: it
 needs only the SDK package and the two isolation headers above, because a frame
 can be cross-origin isolated only inside an isolated page. Without them
@@ -64,15 +64,15 @@ can be cross-origin isolated only inside an isolated page. Without them
 - Storage is partitioned by the top-level site: each application keeps its own
   workspaces and restore points in the frame.
 - Previews: with Spacia's frame, `preview` defaults to
-  `{ origin: "https://oxvm.dev", isolation: "per-session" }`, so exposed ports
-  open on `https://<session>.oxvm.dev`. The keeper iframe of each preview lives in
+  `{ origin: "https://tabvm.dev", isolation: "per-session" }`, so exposed ports
+  open on `https://<session>.tabvm.dev`. The keeper iframe of each preview lives in
   the application's page (the frame asks the page to open it, and the page opens
   only `/__oxidevm/` on its own preview origin), so the keeper and the iframe that
   shows the preview share one storage partition. Another runtime origin needs an
   explicit `preview`.
-- `getDiagnostics` and raw machines (`@oxidevm/sdk/machine`) need a self-hosted
+- `getDiagnostics` and raw machines (`@oxvm/sdk/machine`) need a self-hosted
   runtime.
-- The starter selects frame hosting in development and production. The starter uses the pinned hosted runtime at `run.oxidevm.dev`.
+- The starter selects frame hosting in development and production. The starter uses the pinned hosted runtime at `run.oxvm.dev`.
   Allow that origin in your application's `frame-src` policy.
 
 The frame page itself is `assets/runtime-host/` in the SDK package. Whoever
@@ -83,14 +83,14 @@ CORP `cross-origin` and its CSP, which allows WebAssembly compilation and
 
 ## Immutable assets
 
-Explicit self-hosting with `oxidevm assets install` stages the SDK's pinned engine release and the
+Explicit self-hosting with `oxvm assets install` stages the SDK's pinned engine release and the
 selected authenticated image. The SDK package contains no engine: the release comes
-from the verified CDN release, `--engine-dir <release>`, `OXIDEVM_ENGINE_DIR`,
-or the local engine cache (`~/.cache/oxidevm/engine/<release id>`). Authenticated
+from the verified CDN release, `--engine-dir <release>`, `OXVM_ENGINE_DIR`,
+or the local engine cache (`~/.cache/oxvm/engine/<release id>`). Authenticated
 custom release channels are also supported. Its `release.json` must hash to the pinned release ID, and
 each module and the engine `LICENSE` must match their pinned size and SHA-256, before
 all six files are staged, world-readable, under `runtime/`; the engine keeps its own
-license terms. `oxidevm.lock.json` records versions, descriptor, digests,
+license terms. `oxvm.lock.json` records versions, descriptor, digests,
 author anchor and layout. Relocating `runtime.baseUrl` cannot change the expected
 engine bytes: the browser verifies every module again before any worker runs it.
 Keep retained image bases needed by persisted workspaces and restore points.
@@ -105,9 +105,9 @@ author trust and verified references.
 
 ### WebAssembly modules
 
-Modules are separate from the engine and the image. `oxidevm wasm add` writes the
+Modules are separate from the engine and the image. `oxvm wasm add` writes the
 declaration and lock to commit, and stages each module's files under
-`.oxidevm/modules/<id>/<release>/`; `oxidevm wasm stage` rebuilds them after a
+`.oxvm/modules/<id>/<release>/`; `oxvm wasm stage` rebuilds them after a
 clone, so run it before the production build. The generated handles name those
 files with `new URL(path, import.meta.url)`, so bundlers copy them as assets (small
 files may be inlined as `data:` URLs; both forms are verified against the lock).
@@ -123,12 +123,12 @@ origin that runs the runtime:
 - **Hosted runtime frame:** `/v/<sdk version>/module-frame/` on the runtime
   origin, served by the runtime frame deployment with the frame's own headers.
   The page still reads the module's staged files from its own origin.
-- **Self-hosted:** `oxidevm assets install` stages the SDK's module frame
+- **Self-hosted:** `oxvm assets install` stages the SDK's module frame
   (`index.html`, `broker.js`, `runner.js` and the `frame.json` that holds its
   headers) at `module-frame/` beside the engine assets, that is
   `<runtime.baseUrl>module-frame/`. With the default `assetBaseUrl` that is
-  `public/oxidevm/runtime/module-frame/`, served at
-  `/oxidevm/runtime/module-frame/`. Run `oxidevm assets install` again after
+  `public/oxvm/runtime/module-frame/`, served at
+  `/oxvm/runtime/module-frame/`. Run `oxvm assets install` again after
   every SDK upgrade, as for the engine: the broker and runner speak that SDK's
   protocol versions, and the frame's policy names its bootstrap script by
   sha256. A deployment that does not use `assets install` serves the SDK
@@ -219,7 +219,7 @@ needs your authenticated session route; the relay URL alone grants no access. A
 successful host download of an image does not enable guest networking. Production
 preview and relay sessions must be independently scoped and retired on VM disposal.
 
-Run `oxidevm doctor <actual-application-url> --browser chromium --json` against
+Run `oxvm doctor <actual-application-url> --browser chromium --json` against
 the deployed site. It checks served responses and browser execution rather than
 inferring success from local configuration. Preserve its one structured report,
 exact asset descriptor and browser version. Then exercise commands, persistence,
@@ -227,12 +227,12 @@ HTTP, websocket updates and separate sessions through the production host.
 
 The report's `hosting` names the runtime the doctor checked. An application
 that serves the SDK's doctor probe at its asset base (`<meta name="oxidevm-assets">`
-or `/oxidevm/`) is checked as self-hosted: the headers, MIME types, bytes,
+or `/oxvm/`) is checked as self-hosted: the headers, MIME types, bytes,
 workers, Content-Security-Policy and storage of its own runtime assets. Any
 other application can run only the hosted runtime frame, so the doctor checks
 that instead: the page's secure context, cross-origin isolation and browser
 features; whether this SDK release's frame at
-`https://run.oxidevm.dev/v/<sdk-version>/` is served, is admitted by the page's
+`https://run.oxvm.dev/v/<sdk-version>/` is served, is admitted by the page's
 Content-Security-Policy and accepts the page; and whether the frame's engine
 files match the SDK's pins and are served as `application/wasm`. Workers and
 storage run inside the frame, so `worker-load` and `storage` are
@@ -243,10 +243,10 @@ as a private qualification frame.
 ## Starter runtime selection
 
 The starter uses `runtime: { hosting: "frame" }` in development and production.
-Normal `oxidevm init` installs dependencies and writes pinned image references.
+Normal `oxvm init` installs dependencies and writes pinned image references.
 It does not download or stage engine files, image archives, or compliance files
 on the developer's filesystem. The browser loads the SDK version's frame from
-`https://run.oxidevm.dev/v/<sdk-version>/`. That frame verifies and executes the
+`https://run.oxvm.dev/v/<sdk-version>/`. That frame verifies and executes the
 engine in browser workers. Hosted per-session previews work in both builds.
 
 `src/runtime.ts` owns the application's runtime selection. Explicit commercial

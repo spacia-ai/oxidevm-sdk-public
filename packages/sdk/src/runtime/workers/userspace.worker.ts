@@ -3,7 +3,7 @@ import { ModuleCommands, nativeModuleCommandTable } from "./js-process/module-co
 import { ModuleCopies } from "./js-process/module-copies.js";
 import { prepareModuleStart, type ModuleStart } from "./js-process/module-artifacts.js";
 import { isolationUnavailable } from "../protocol/module-isolation.js";
-import { nativePromiseCapability } from "../promise-brand.js";
+import { nativePromiseCapability, practicalPromiseCapability } from "../promise-brand.js";
 import { nativeErrorCapability } from "../error-brand.js";
 import { captureUserspaceJitProfileForRuntime } from "./userspace-jit-profile.js";
 import { captureExecutionProfile } from "./userspace-execution-profile.js";
@@ -16,6 +16,9 @@ import { admitInitialUserspaceProcess, type InitialUserspaceProgram } from "./us
 import { UserspaceCheckpointGate } from "./userspace-checkpoint-gate.js";
 import { UserspaceCheckpointPort } from "./userspace-checkpoint-port.js";
 import { UserspaceAccelerationKnowledge } from "./userspace-acceleration.js";
+import { UserspaceRuntimeProbes } from "./userspace-runtime-probes.js";
+import { runRuntimeProbeProcess } from "./userspace-runtime-probe-process.js";
+import { callUserspaceRecord } from "./userspace-record.js";
 import { accelerationKnowledgeNamespace } from "./acceleration-knowledge.js";
 import { engineReleaseId } from "../../engine.generated.js";
 import { sdkVersion } from "../../sdk-version.js";
@@ -75,8 +78,8 @@ import { UserspaceNetworkClient } from "./userspace-network-channel.js";
 import { UserspacePreviewRuntime } from "./userspace-preview-runtime.js";
 import {
   createUserspaceWakeTimer,
-  nativeExecutionPending,
   preparesAgainAfter,
+  userspaceExecutionPending,
   rearmsWakeTimer,
   shouldAcknowledgeOutputGeneration,
   wakeTimerAction,
@@ -131,6 +134,8 @@ let interceptors: readonly CommandInterceptorRecord[] | undefined;
 let nativeExecutionPort: MessagePort | undefined;
 /** ADR 0028: the VM's module frame broker, attached by the page once it opened the frame. */
 let moduleFrame: MessagePort | undefined;
+/** The highest Node-API operation set the execution origin serves; set 0 for an older origin. */
+let nativeOperationSet = 0;
 /** ADR 0026: remembered fast-path failures, imported before every acceleration enable. */
 let accelerationKnowledge: UserspaceAccelerationKnowledge | undefined;
 let executionTiming: ExecutionTimingMode = { kind: "disabled" };
@@ -253,6 +258,7 @@ async function handle(request: UserspaceRequest): Promise<unknown> {
       memoryMiB = request.memoryMiB;
       interceptors = request.interceptors;
       nativeExecutionPort = request.nativeExecutionPort;
+      nativeOperationSet = request.nativeOperationSet ?? 0;
       if (nativeExecutionPort !== undefined && (!globalThis.crossOriginIsolated || typeof SharedArrayBuffer !== "function")) throw new VMError("FEATURE_NOT_AVAILABLE", "Native execution requires cross-origin isolation");
       if (interceptors !== undefined && (!globalThis.crossOriginIsolated || typeof SharedArrayBuffer !== "function" || new URL(interceptors[0]?.worker ?? "", location.href).origin !== location.origin)) throw new VMError("FEATURE_NOT_AVAILABLE", "Command interception requires cross-origin isolation and a same-origin trusted worker");
       executionTiming = request.executionTiming ?? { kind: "disabled" };
@@ -265,7 +271,8 @@ async function handle(request: UserspaceRequest): Promise<unknown> {
         : new UserspaceNetworkClient(request.networkPort, enabled => checkpointGate.deliver(() => configureNetwork(enabled)));
       network?.servePreview((operation, signal) => previewRuntime.request(operation, signal));
       if (nativeExecutionPort !== undefined) {
-        accelerationKnowledge = new UserspaceAccelerationKnowledge(storage, accelerationKnowledgeNamespace(engineReleaseId, sdkVersion), () => runtimeState);
+        accelerationKnowledge = new UserspaceAccelerationKnowledge(storage, accelerationKnowledgeNamespace(engineReleaseId, sdkVersion, nativeOperationSet), () => runtimeState,
+          error => { console.warn("oxidevm: acceleration knowledge", { code: error.code, message: error.message }); });
         await accelerationKnowledge.load();
       }
       return undefined;
@@ -470,7 +477,7 @@ async function handle(request: UserspaceRequest): Promise<unknown> {
       runtimeWakeTimer.cancel();
       runtimeRunScheduled = false;
       workspaceCommit.reset();
-      runtimeState?.jsProcesses?.dispose();runtimeState?.hostService?.cancel();
+      runtimeState?.runtimeProbes?.dispose();runtimeState?.jsProcesses?.dispose();runtimeState?.hostService?.cancel();
       previewRuntime.close();
       if (runtimeState !== undefined) await runtimeState.jitRuntime.dispose();
       runtimeState = undefined;
@@ -589,6 +596,10 @@ function clearManagedBytes(): void {
 function enableNativeAcceleration(binding: Pick<RuntimeState, "instance" | "memory">, operation: string): void {
   if (nativeExecutionPort === undefined) return;
   accelerationKnowledge?.importInto(binding);
+  // A host newer than this set runs its launches in Linux (ADR 0026, 2.8).
+  assertStatus(call(binding.instance, "oxidevm_userspace_acceleration_operation_sets", nativeOperationSet), operation);
+  // Without Promise.isPromise this browser answers napi_is_promise with its own brand check (ADR 0026, practical profile).
+  assertStatus(call(binding.instance, "oxidevm_userspace_acceleration_practical_predicates", practicalPromiseCapability), operation);
   assertStatus(call(binding.instance, "oxidevm_userspace_acceleration_enable", nativePromiseCapability | nativeErrorCapability), operation);
 }
 
@@ -629,6 +640,35 @@ async function createMountedRuntime(rootfs: Uint8Array, cpuProfile: "x86-64-v2" 
 function configureRuntimeRoot(runtime:RuntimeState):void {runtime.rootPersistence?.configure();}
 
 function bindRuntimeServices(runtime: RuntimeState, previous?: RuntimeState, origin:"restored"|"remounted"="restored", workspace:"now"|"later"="now"): void {
+  if (nativeExecutionPort !== undefined) runtime.runtimeProbes = new UserspaceRuntimeProbes({
+    command: bytes => {
+      if (runtimeState !== runtime || disposing) throw new VMError("ABORTED", "Runtime probe instance retired");
+      return callUserspaceRecord(runtime, "oxidevm_userspace_command", bytes);
+    },
+    run: (sha256, path, signal) => runRuntimeProbeProcess({
+      runtime, active: () => runtimeState === runtime && !disposing,
+      serviceRead: async signal => {
+        const read = takeHostRequest(runtime, 1);
+        if (read === undefined) return false;
+        await serviceHostRequest(runtime, read, signal); return true;
+      },
+      connect: (pid, port) => connectSpawnedProcess(runtime, pid, port, nativeAttachmentCommand(path)).sessionId,
+      kill: pid => {
+        if (runtimeState !== runtime || call(runtime.instance, "oxidevm_userspace_process_exit_status", pid) !== 0xffff_ffff) return;
+        assertStatus(call(runtime.instance, "oxidevm_userspace_process_signal", pid, 9), "stop runtime probe");
+        scheduleRun(runtime);
+      },
+      disconnect: pid => {
+        const process = processes.get(pid);
+        if (process?.runtime === runtime) failProcess(process, new VMError("ABORTED", "Runtime probe connection retired"));
+      },
+    }, sha256, signal),
+    settled: () => {
+      if (runtimeState !== runtime || disposing) return;
+      serviceHostRequests(runtime); scheduleRun(runtime);
+    },
+    failed: error => { console.warn("oxidevm: acceleration probe", { code: error instanceof VMError ? error.code : "PROTOCOL_ERROR" }); },
+  });
   runtime.jsProcesses = new JsProcessWorkers({ runtime, commands: moduleCommands, ...(interceptors?.[0] === undefined ? {} : { interceptor: interceptors[0].worker }),
     ...(nativeExecutionPort === undefined ? {} : { nativeExecution: nativeExecutionPort }),
     moduleFrame: () => moduleFrame,
@@ -697,13 +737,13 @@ async function configureCheckpoints(configuration: NativeCheckpointConfiguration
       previewRuntime.close();
       if(candidate===undefined)previous.checkpoints.beginCold(imageBytes(currentImage())).abort();
       else candidate.discardStartup();
-      previous.jsProcesses?.dispose();previous.hostService?.cancel();runtimeWakeTimer.cancel();runtimeRunScheduled=false;
+      previous.runtimeProbes?.dispose();previous.jsProcesses?.dispose();previous.hostService?.cancel();runtimeWakeTimer.cancel();runtimeRunScheduled=false;
       previous.jitRuntime.invalidate();
       // The native discard retired the sole heap. Remount in the same Wasm instance.
       mountRuntimeRootfs(previous,configuration.mount.rootfs,configuration.mount.cpuProfile,configuration.mount.workspaceBaseSha256);
       const replacement:RuntimeState={...previous,startup:"scaffold",rootTreeSha256:configuration.mount.rootTreeSha256,workspaceBaseSha256:configuration.mount.workspaceBaseSha256,pendingResult:undefined};
       delete replacement.hostService;delete replacement.rootPersistence;delete replacement.workspacePersistence;
-      previous.jsProcesses?.dispose();
+      previous.runtimeProbes?.dispose();previous.jsProcesses?.dispose();
       bindRuntimeServices(replacement,previous,"remounted");configureRuntimeRoot(replacement);
       workspaceCommit.reset();workspaceFailure=undefined;runtimeState=replacement;runtimeMounting=undefined;
       await Promise.resolve();
@@ -733,22 +773,29 @@ async function configureCheckpoints(configuration: NativeCheckpointConfiguration
       previewRuntime.retire();
       checkpointGate.close();runtimeWakeTimer.cancel();runtimeRunScheduled=false;
       const failed=runtimeState;runtimeState=undefined;runtimeMounting=undefined;
-      failed?.jsProcesses?.dispose();failed?.hostService?.cancel();await failed?.jitRuntime.dispose();
+      failed?.runtimeProbes?.dispose();failed?.jsProcesses?.dispose();failed?.hostService?.cancel();await failed?.jitRuntime.dispose();
     },
     get baseline() { return current().checkpoints.baseline; },
     dirty: () => current().checkpoints.dirty !== current().checkpoints.acknowledgedDirty,
     assertCheckpointAdmission: () => current().jsProcesses?.assertIdle(),
     freeze: async signal => {
-      current().jsProcesses?.assertIdle();
+      const jsProcesses = current().jsProcesses;
+      const probes = current().runtimeProbes;
+      jsProcesses?.assertIdle();
       if (signal?.aborted === true) throw new VMError("ABORTED", "Native freeze cancelled");
-      await checkpointGate.freeze(async () => {
-        runtimeWakeTimer.cancel(); runtimeRunScheduled = false;
-        try { current().checkpoints.pauseClock(); await flushCheckpointFiles(); previewRuntime.close(); }
-        catch (error) { resumeCheckpointClock(current()); throw error; }
-      });
+      // Trial loads end without a verdict before the capture; their launches run in Linux (ADR 0026).
+      try { await probes?.suspend(); await jsProcesses?.suspendTrials(signal); }
+      catch (error) { probes?.resume(); jsProcesses?.resumeTrials(); throw error; }
+      try {
+        await checkpointGate.freeze(async () => {
+          runtimeWakeTimer.cancel(); runtimeRunScheduled = false;
+          try { current().checkpoints.pauseClock(); await flushCheckpointFiles(); previewRuntime.close(); }
+          catch (error) { resumeCheckpointClock(current()); throw error; }
+        });
+      } catch (error) { probes?.resume(); jsProcesses?.resumeTrials(); throw error; }
       runtimeWakeTimer.cancel(); runtimeRunScheduled = false;
     },
-    resume: () => { resumeCheckpointClock(current()); checkpointGate.resume(); const runtime = runtimeState; if (runtime !== undefined) scheduleRun(runtime); },
+    resume: () => { current().runtimeProbes?.resume(); current().jsProcesses?.resumeTrials(); resumeCheckpointClock(current()); checkpointGate.resume(); const runtime = runtimeState; if (runtime !== undefined) scheduleRun(runtime); },
     attachments: () => attachments.capture(processes.values()),
     beginCapture: () => current().checkpoints.beginCapture(imageBytes(currentImage())),
     beginPrecopy: baseline => current().checkpoints.beginPrecopy(imageBytes(currentImage()), baseline),
@@ -773,7 +820,7 @@ async function configureCheckpoints(configuration: NativeCheckpointConfiguration
         // Normal runtime calls require the native checkpoint candidate to be published first.
         if (interceptors?.[0] !== undefined) assertStatus(call(replacement.instance, "oxidevm_userspace_command_enable"), "enable restored command interceptor");
         enableNativeAcceleration(replacement, "enable restored native acceleration");
-        previous.jsProcesses?.dispose();previous.hostService?.cancel(); runtimeWakeTimer.cancel(); runtimeRunScheduled = false;
+        previous.runtimeProbes?.dispose();previous.jsProcesses?.dispose();previous.hostService?.cancel(); runtimeWakeTimer.cancel(); runtimeRunScheduled = false;
         if (recovering) {
           for (const process of processes.values()) process.runtime = replacement;
         } else {
@@ -856,10 +903,7 @@ function connectProcess(active: ProcessState): void {
 }
 
 function hasNativeWork(runtime: RuntimeState | undefined): boolean {
-  if (runtime === undefined) return false;
-  if (processes.size + attachments.pendingCount !== 0) return true;
-  const live = call(runtime.instance, "oxidevm_userspace_live_process_count");
-  return nativeExecutionPending(live, live === 0 ? call(runtime.instance, "oxidevm_userspace_detached_io_pending") : 0);
+  return userspaceExecutionPending(runtime, processes.size + attachments.pendingCount);
 }
 
 function scheduleRun(_active: ProcessState | RuntimeState, delay = 0): void {
@@ -1071,7 +1115,7 @@ function configureNetwork(enabled: boolean): void {
   if (active !== undefined && hasNativeWork(active)) scheduleRun(active);
 }
 
-function serviceHostRequests(active: RuntimeState): void { previewRuntime.pump(); active.jsProcesses?.reconcile(); active.hostService?.pump(); }
+function serviceHostRequests(active: RuntimeState): void { previewRuntime.pump(); active.jsProcesses?.reconcile(); active.runtimeProbes?.pump(); active.hostService?.pump(); void accelerationKnowledge?.poll(); }
 
 function takeHostRequest(active: RuntimeState, mask: 1 | 2 | 4 | 8): ReturnType<typeof decodeUserspaceHostRequest> | undefined {
   const loaded = active.instance;

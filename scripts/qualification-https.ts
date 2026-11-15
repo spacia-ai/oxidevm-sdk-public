@@ -34,5 +34,5 @@ export async function trustQualificationHttpsBrowser(browser: string, profile: s
   const directory = qualificationHttpsDirectory(); if (directory === undefined || browser === "webkit") return;
   await mkdir(profile, { recursive: true });
   await execute("certutil", ["-N", "--empty-password", "-d", `sql:${profile}`]);
-  await execute("certutil", ["-A", "-a", "-n", "OxideVM qualification CA", "-t", "C,,", "-d", `sql:${profile}`, "-i", join(directory, "ca.crt")]);
+  await execute("certutil", ["-A", "-a", "-n", "OXVM qualification CA", "-t", "C,,", "-d", `sql:${profile}`, "-i", join(directory, "ca.crt")]);
 }

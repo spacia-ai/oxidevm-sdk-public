@@ -53,7 +53,7 @@ describe("backup manifest", () => {
     expect(backupObjectsOf(raw).map((object) => object.sha256)).toEqual([1, 2, 3, 5, 6, 7, 8, 9, 10, 11].map(hash));
   });
 
-  it("reports a file that is not a backup, or one from a newer or older OxideVM, before any strict check", () => {
+  it("reports a file that is not a backup, or one from a newer or older OXVM, before any strict check", () => {
     const cases: [Uint8Array, string][] = [
       [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), "backup-wrong-file"],
       [encoder.encode("[1, 2, 3]"), "backup-wrong-file"],

@@ -15,7 +15,7 @@ export async function eraseLocalDataStorage(signal: AbortSignal, scope: StorageS
     const { held } = await navigator.locks.query();
     const workspaces = workspaceLockPrefix(scope);
     if (held?.some(lock => lock.name?.startsWith(workspaces) === true) === true) {
-      throw new VMError("STORAGE_ERROR", "Close other OxideVM tabs, then retry cleanup", { reason: "local-data-in-use" });
+      throw new VMError("STORAGE_ERROR", "Close other OXVM tabs, then retry cleanup", { reason: "local-data-in-use" });
     }
     // Enumerate before modifying anything: an incomplete database listing must fail closed.
     if (typeof indexedDB.databases !== "function") {
@@ -48,12 +48,12 @@ function deleteDatabase(name: string): Promise<void> {
     const request = indexedDB.deleteDatabase(name);
     // IndexedDB deletion cannot be cancelled. A prior blocked request can outlive its worker
     // and queue this retry without another `blocked` event. Never leave the UI waiting forever.
-    const timeout = setTimeout(() => reject(new VMError("STORAGE_ERROR", `IndexedDB ${name} did not finish cleanup. Close other OxideVM tabs, then retry.`, {
+    const timeout = setTimeout(() => reject(new VMError("STORAGE_ERROR", `IndexedDB ${name} did not finish cleanup. Close other OXVM tabs, then retry.`, {
       reason: "local-data-timeout", operation: "erase-local-data", resource: `IndexedDB ${name}`,
     })), 5_000);
     request.onsuccess = () => { clearTimeout(timeout); resolve(); };
     request.onerror = () => { clearTimeout(timeout); reject(erasureError(request.error, `IndexedDB ${name}`)); };
-    request.onblocked = () => { clearTimeout(timeout); reject(new VMError("STORAGE_ERROR", "Close other OxideVM tabs, then retry cleanup", {
+    request.onblocked = () => { clearTimeout(timeout); reject(new VMError("STORAGE_ERROR", "Close other OXVM tabs, then retry cleanup", {
       reason: "local-data-in-use", operation: "erase-local-data", resource: `IndexedDB ${name}`,
     })); };
   });

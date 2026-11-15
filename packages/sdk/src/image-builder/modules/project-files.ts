@@ -1,7 +1,27 @@
 import { lstat } from "node:fs/promises";
+import { join } from "node:path";
 import { VMError } from "../../runtime/errors.js";
 import { checkedOutput } from "../assets.js";
 import { readSourceFile } from "../files.js";
+
+const canonicalFiles = { declaration: "oxvm.modules.json", lock: "oxvm.modules.lock.json", generated: "src/oxvm.modules.generated.ts", stageRoot: ".oxvm/modules" };
+const legacyFiles = { declaration: "oxidevm.modules.json", lock: "oxidevm.modules.lock.json", generated: "src/oxidevm.modules.generated.ts", stageRoot: ".oxidevm/modules" };
+
+async function present(project: string, name: string): Promise<boolean> {
+  try { await lstat(join(project, name)); return true; }
+  catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/** One coherent project layout owns declaration, lock, generated handles, and staged bytes. */
+export async function moduleProjectFiles(project: string): Promise<typeof canonicalFiles> {
+  const [canonical, legacy] = await Promise.all([canonicalFiles, legacyFiles].map(async files =>
+    (await Promise.all([files.declaration, files.lock, files.generated].map(name => present(project, name)))).some(Boolean)));
+  if (canonical === true && legacy === true) throw new VMError("INVALID_ARGUMENT", "Both OXVM and legacy OxideVM module files exist; keep one coherent module project", { reason: "project-file-conflict" });
+  return legacy === true ? legacyFiles : canonicalFiles;
+}
 
 /**
  * Reads a file of the project the tool is run on. The project is not trusted: a repository can commit a link named like

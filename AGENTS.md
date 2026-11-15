@@ -1,4 +1,4 @@
-# OxideVM SDK contributor instructions
+# OXVM SDK contributor instructions
 
 This repository contains the Apache-2.0 SDK, CLI, and Python + pandas starter.
 The engine has separate license terms. Guest programs retain their own licenses.
@@ -29,7 +29,7 @@ Run the frozen installation, production build, strict compiler projects,
 type-aware lint, license checks, layout checks, secret checks, and relevant tests.
 Test packed packages when package exports or templates change.
 
-The starter loads the pinned hosted runtime through `run.oxidevm.dev` in both
+The starter loads the pinned hosted runtime through `run.oxvm.dev` in both
 local development and production. Local engine delivery requires explicit
 licensed self-hosting. Do not add a silent local fallback.
 

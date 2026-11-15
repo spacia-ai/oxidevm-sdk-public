@@ -7,12 +7,12 @@ import { mapGuestExit } from "./exit.js";
 import type { NativeRunResult, NetSyncHost, WasiRunHost } from "./host.js";
 import { GuestMemory } from "./memory.js";
 import { admitProgram, AdmissionError } from "./admission.js";
-import { BRIDGE_NAMESPACE, PREVIEW1_NAMESPACE } from "./imports.js";
+import { BRIDGE_NAMESPACE, LEGACY_BRIDGE_NAMESPACE, PREVIEW1_NAMESPACE } from "./imports.js";
 import type { FileDescriptor } from "../../../js-process-types.js";
 import type { Terminals } from "../../define.js";
 import { encodeLaunch, LaunchError, preview1, ProcExit, type Preopen } from "./preview1.js";
 
-/** The bridge functions this release serves (`oxidevm_bridge_v1`). */
+/** The bridge functions this release serves (`oxvm_bridge_v1` and its legacy alias). */
 export const BRIDGE_FUNCTIONS: ReadonlySet<string> = new Set([...PROCESS_FUNCTIONS, ...COMMAND_FUNCTIONS, ...NET_FUNCTIONS]);
 
 /** The caller's side of one run: a command's `io`, or the same fields from anywhere else. */
@@ -67,9 +67,11 @@ export async function run(host: WasiRunHost, program: WebAssembly.Module, io: Wa
   const runSync = host.process?.runSync;
   const process = runSync === undefined ? undefined : { runSync };
   try {
+    const bridge = { ...bridgeProcess(memory, identity, io.cwd), ...bridgeCommand(wasi.context, process, memory, results), ...bridgeNet(wasi.context, netPort(host.net), memory, connections) };
     const instance = new WebAssembly.Instance(program, {
       [PREVIEW1_NAMESPACE]: wasi.imports,
-      [BRIDGE_NAMESPACE]: { ...bridgeProcess(memory, identity, io.cwd), ...bridgeCommand(wasi.context, process, memory, results), ...bridgeNet(wasi.context, netPort(host.net), memory, connections) },
+      [BRIDGE_NAMESPACE]: bridge,
+      [LEGACY_BRIDGE_NAMESPACE]: bridge,
     });
     const exported = instance.exports["memory"], start = instance.exports["_start"];
     if (!(exported instanceof WebAssembly.Memory) || typeof start !== "function") throw new AdmissionError("the program lost its memory or _start export");

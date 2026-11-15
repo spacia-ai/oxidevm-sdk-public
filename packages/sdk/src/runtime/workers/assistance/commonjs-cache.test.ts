@@ -72,3 +72,23 @@ it("keeps resolution scoped to parent, cwd and process and retries only a failed
   expect(other.loader.require("./a.js")).toEqual({ source: "fixed" });
   expect(other.counts.resolve).toBe(2);
 });
+
+it("preloads --require modules from the working directory under Node's dummy parent, before the main module (ADR 0026, 1.11)", () => {
+  const { loader, cwd } = fixture();
+  cwd("/other");
+  loader.preload(["./a.js"]);
+  expect(loader.Module._cache["/other/a.js"]).toMatchObject({ id: "/other/a.js", exports: { source: "other" }, parent: { id: "internal/preload", paths: ["/other/node_modules", "/node_modules"] } });
+  cwd("/workspace");
+  // A preload never becomes the main module; the entry still does.
+  expect(loader.require("./b.js")).toEqual({ source: "second" });
+  expect(loader.Module._cache["/workspace/b.js"]).toMatchObject({ id: "." });
+});
+
+it("names a late failure when require meets an ES module, which Node 24 would load", () => {
+  const files: LocalModuleFiles = { resolve: path => path, read: () => ({ source: "export default 1", format: "module" }) };
+  const loader = createCommonJSLoader(files, {}, request => { if (typeof request !== "string") throw new TypeError("Invalid module request"); return posix.resolve("/workspace", request); },
+    () => undefined, () => undefined, { cwd: () => "/workspace", sources: new ExecutableSources() });
+  let thrown: unknown;
+  try { loader.Module.createRequire("/workspace/main.js")("./esm.js"); } catch (error) { thrown = error; }
+  expect(thrown).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", detail: { lateFailure: "unavailable-builtin", subject: "require(esm)", path: "/workspace/esm.js" } });
+});

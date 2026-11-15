@@ -22,7 +22,7 @@ it("accepts an explicit-image catalog without managed images or kernel integrati
   expect(() => decodeReleaseCatalog({ ...value, schemaVersion: 2 })).toThrow();
 });
 
-// `oxidevm assets install` downloads a missing default image from this catalog; a catalog that
+// `oxvm assets install` downloads a missing default image from this catalog; a catalog that
 // lags the pinned defaults leaves a clean machine unable to install them.
 it("lists exactly the default images this SDK version pins", async () => {
   const catalog = await readReleaseCatalog();

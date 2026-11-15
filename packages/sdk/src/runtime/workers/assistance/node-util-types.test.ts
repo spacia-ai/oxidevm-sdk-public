@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { nodeUtilTypes } from "./node-util-types.js";
+import { installProxyRegistry } from "../../proxy-brand.js";
 
 describe("util.types", () => {
+  it("recognizes the proxies its realm's Proxy made (ADR 0026, 2.11)", () => {
+    const restore = installProxyRegistry(globalThis);
+    try {
+      expect(nodeUtilTypes.isProxy(new Proxy({}, {}))).toBe(true);
+      expect(nodeUtilTypes.isProxy(Proxy.revocable({}, {}).proxy)).toBe(true);
+      expect([nodeUtilTypes.isProxy({}), nodeUtilTypes.isProxy(Proxy), nodeUtilTypes.isProxy(null)]).toEqual([false, false, false]);
+    } finally { restore(); }
+  });
   it("classifies platform values the way Node does", () => {
     const t = nodeUtilTypes;
     expect(t.isUint8Array(new Uint8Array(1))).toBe(true);

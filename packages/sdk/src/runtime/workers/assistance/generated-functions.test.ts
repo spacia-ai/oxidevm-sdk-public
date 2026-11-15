@@ -7,6 +7,7 @@ import { installGeneratedFunctions } from "./generated-functions.js";
 const compiler = {
   transform: (source: string) => ({ code: source, map: "" }),
   hasDynamicImport: () => false,
+  scriptBindings: () => "none",
 } satisfies AssistanceCompiler;
 
 function realmWithEval(): { readonly realm: Record<string, unknown>; readonly evaluate: (code: string) => unknown } {

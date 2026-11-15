@@ -93,7 +93,7 @@ test("real Linux pandas supports editing, CSV upload, export, persistence and in
 });
 
 test("a tampered signed image cannot start Python", async ({ context, page }) => {
-  await context.route(/https:\/\/cdn\.oxidevm\.dev\/images\/oxidevm-starter-pandas\/[^/]+\/[a-f0-9]{64}\/manifest\.json/u, route => route.fulfill({ status: 200, contentType: "application/json", body: '{"tampered":true}' }));
+  await context.route(/https:\/\/cdn\.oxvm\.dev\/images\/oxidevm-starter-pandas\/[^/]+\/[a-f0-9]{64}\/manifest\.json/u, route => route.fulfill({ status: 200, contentType: "application/json", body: '{"tampered":true}' }));
   await page.goto(origin());
   await expect(page.locator("#error")).toBeVisible({ timeout: 120000 });
   await expect(page.locator("#rows tr")).toHaveCount(0);

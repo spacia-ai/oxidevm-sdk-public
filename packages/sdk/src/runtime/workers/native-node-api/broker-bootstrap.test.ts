@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 
 import { JS_PROCESS_PROTOCOL_VERSION, NATIVE_BROKER_PROCESS_VERSION } from "../../js-process/codec.js";
 import { record } from "../../decode.js";
+import { NATIVE_OPERATION_SET } from "./versions.js";
 
 for (const beforeSpawn of [false, true]) it(`acknowledges bootstrap and retains compiler failure ${beforeSpawn ? "before" : "after"} spawn`, async () => {
   vi.resetModules();
@@ -17,7 +18,7 @@ for (const beforeSpawn of [false, true]) it(`acknowledges bootstrap and retains 
     if (scope.onmessage === undefined) throw new Error("Native broker did not install its bootstrap handler");
     const ready = next(broker.port2);
     scope.onmessage(new MessageEvent("message", { data: { version: 1, port: broker.port1, nonce: "bootstrap-fixture" } }));
-    expect(await ready).toEqual({ version: 1, type: "native-ready", nonce: "bootstrap-fixture" });
+    expect(await ready).toEqual({ version: 1, type: "native-ready", nonce: "bootstrap-fixture", operationSet: NATIVE_OPERATION_SET });
     if (beforeSpawn) { loading.reject(new Error("Fixture compiler download failed")); await new Promise<void>(accept => setImmediate(accept)); }
     const failure = next(spawn.port2);
     broker.port2.postMessage({ version: NATIVE_BROKER_PROCESS_VERSION, type: "spawn", pid: 1000, port: spawn.port1 }, [spawn.port1]);
@@ -33,7 +34,7 @@ for (const beforeSpawn of [false, true]) it(`acknowledges bootstrap and retains 
 });
 
 const PROGRAM = { kind: "native-node", entry: "/workspace/server.js", source: { kind: "file" }, input: 3, output: 4, context: { kind: "main" },
-  profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/node_modules" }], basis: "no-addons", dependencyGeneration: 1n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0, bridgeVersion: 16 } };
+  profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/node_modules" }], basis: "no-addons", dependencyGeneration: 1n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0, bridgeVersion: 16, operationSet: 0, sharedBufferBudget: 134217728, runtimeBuild: null } };
 
 /** A bootstrapped broker with one spawned process whose worker this test plays. */
 async function spawnedProcess() {

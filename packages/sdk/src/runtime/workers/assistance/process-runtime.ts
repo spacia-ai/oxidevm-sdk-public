@@ -64,12 +64,15 @@ import { createNodeUtil, nodeUtil } from "./node-util.ts";
 import { NEXT_COMPILER_BUILTIN, NEXT_COMPILER_DIRECTORY, nextCompilerEnvironment, verifyNextCompilerFacade, type NextCompilerBindings } from "./next-compiler.js";
 import { createInputStream, createOutputStream, createNodeStreamModule, EventEmitter } from "./node-streams.ts";
 import { createLocalModuleLoader } from "./module-loader.js";
-import { lateFailureReporter, type LateFailure } from "../../js-process/late-failure.js";
+import { lateFailureReporter, type LateFailure, type TrialFailure } from "../../js-process/late-failure.js";
+import { probeAddon } from "./trial-load.js";
+import { installProxyRegistry } from "../../proxy-brand.js";
 import { guardMissingExports } from "./builtin-guard.ts";
 import { BUN_BUILTIN_EXPORTS, NODE_BUILTIN_EXPORTS } from "./builtin-exports.generated.ts";
 
 export interface LocalProcessStart {
-  readonly entry: { readonly kind: "file"; readonly path: string } | { readonly kind: "eval"; readonly code: string };
+  /** `probe`: an ADR 0026 trial load, which requires one add-on and runs no application code. */
+  readonly entry: { readonly kind: "file" | "probe"; readonly path: string } | { readonly kind: "eval"; readonly code: string };
   readonly cwd: string;
   readonly args: readonly string[];
   readonly argvEntry?: string;
@@ -100,6 +103,8 @@ export interface ProcessRuntime {
   /** Receives an uncaught fast-path limitation before the process exits, so Rust can remember the
    * program and its next run uses Linux (ADR 0026). */
   readonly lateFailure?: (failure: LateFailure) => void;
+  /** Receives why a trial load's add-on failed to load, before the trial exits. */
+  readonly trialFailure?: (failure: TrialFailure) => void;
   readonly loadNative?: (path: string) => unknown;
   readonly exactPromiseQueries?: boolean;
   readonly workerThreads?: WorkerThreadFactory;
@@ -109,8 +114,8 @@ export interface ProcessRuntime {
 /** The shared Node runtime uses Linux services supplied by its admitted process owner. */
 export async function runLocalProcess(start: LocalProcessStart, io: ProcessRuntimeIO, runtime: ProcessRuntime): Promise<void> {
   const { compiler, systemSource, httpParser } = runtime;
-  const entry = start.entry.kind === "file" ? start.entry.path : "[worker eval]";
-  const sourceMapsEnabled = validateNodeEnvironment(start.env, entry, start.execArgv);
+  const entry = start.entry.kind === "eval" ? "[worker eval]" : start.entry.path;
+  const executionOptions = validateNodeEnvironment(start.env, entry, start.execArgv, runtime.socketRuntime?.runtime ?? "node");
   if ((start.env["EXPERIMENTAL_DEBUG_MEMORY_USAGE"] ?? "") !== "") unavailableNodeApi("Next memory debugging");
   const context = createAsyncContext();
   const scheduler = new ProcessScheduler(context, error => io.fail(error), () => input.hasReferences || timers.hasReferences || io.hasPending || children.hasPending || forked.hasPending || ipcReferenced() || (threads?.hasPending ?? false) || stdout.writableLength !== 0 || stderr.writableLength !== 0);
@@ -120,7 +125,7 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
   const directory = createProcessDirectory(operation => io.callSync(operation), start.cwd, runtime.metadata.isMainThread ?? true);
   const files = createSyncFiles(operation => io.callSync(operation), directory.cwd, io.copyOpenMode);
   const asynchronous = createAsyncFiles(operation => io.call(operation), directory.cwd, context, () => io.retain(), callback => scheduler.enqueue(callback), io.copyOpenMode);
-  const modules = createGuestModules(files, start.dependencies, runtime.loadNative, runtime.modulePathInfo);
+  const modules = createGuestModules(files, start.dependencies, runtime.loadNative, runtime.modulePathInfo, executionOptions.conditions);
   const input = createInputStream(context);
   io.setInput(bytes => input.receive(bytes).catch((error: unknown) => { io.applicationException(error); }));
   const children = createNativeChildren(io, context, start.env, scheduler);
@@ -147,6 +152,10 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
   });
   const processIdentity = createProcessIdentity(files);
   Object.defineProperties(process, Object.getOwnPropertyDescriptors(processIdentity));
+  // Node's read-only aliases of the execution options, each defined when truthy (ADR 0026, 1.11).
+  for (const [name, value] of [["_preload_modules", [...executionOptions.require]], ["noDeprecation", !executionOptions.deprecation], ["noProcessWarnings", !executionOptions.warnings]] as const) {
+    if (value !== false) Object.defineProperty(process, name, { value, writable: false, enumerable: true, configurable: true });
+  }
   let threads: WorkerThreadRuntime | undefined;
   if (start.ipc !== undefined) {
     // A forked child: its parent's private channel, never the broker's port.
@@ -157,7 +166,7 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
   }
   io.setSignals(signal => scheduler.run(() => { deliverProcessSignal(process, signal, ended => { io.signalExit(ended); return io.halt(); }); }));
   if (io.watchSignal !== undefined) installSignalListeners(process, (signal, watching) => { io.watchSignal?.(signal, watching); });
-  if (start.env["NODE_NO_WARNINGS"] !== "1") {
+  if (executionOptions.warnings && start.env["NODE_NO_WARNINGS"] !== "1") {
     process.on("warning", createWarningPrinter(process, text => { stderr.write(text); }, () => processIdentity.pid));
   }
   const writeConsole = (stream: "stdout" | "stderr", values: readonly unknown[]): void => {
@@ -221,18 +230,21 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
       ...(runtime.tty === undefined ? {} : { tty: runtime.tty }),
       ...(runtime.nextCompiler === undefined ? {} : { [NEXT_COMPILER_BUILTIN]: runtime.nextCompiler }),
     };
-    touched = guardMissingExports(builtins, (runtime.socketRuntime?.runtime ?? "node") === "bun" ? BUN_BUILTIN_EXPORTS : NODE_BUILTIN_EXPORTS);
-    const loader: ReturnType<typeof createLocalModuleLoader> = createLocalModuleLoader(compiler, systemSource, modules, builtins, directory.cwd, path => writeConsole("stderr", [
+    const realExports = (runtime.socketRuntime?.runtime ?? "node") === "bun" ? BUN_BUILTIN_EXPORTS : NODE_BUILTIN_EXPORTS;
+    touched = guardMissingExports(builtins, realExports);
+    const loader: ReturnType<typeof createLocalModuleLoader> = createLocalModuleLoader(compiler, systemSource, modules, builtins, directory.cwd, { realExports, onNextMemoryException: path => writeConsole("stderr", [
       `[oxidevm experimental ${NEXT_MEMORY_EXCEPTION}] Applied to ${path}; memory tracing, automatic heap overrides and proactive heap-threshold restart are unavailable. Dependency generation: ${start.dependencies?.generation ?? "none"}.`,
-    ]));
+    ]) });
     const setSourceMapsEnabled = (enabled: unknown): void => {
       loader.sources.setSourceMapsSupport(enabled, { nodeModules: enabled, generatedCode: enabled });
     };
-    setSourceMapsEnabled(sourceMapsEnabled);
+    setSourceMapsEnabled(executionOptions.sourceMaps);
     Object.assign(process, { setSourceMapsEnabled });
     Object.defineProperty(process, "sourceMapsEnabled", { configurable: true, enumerable: true,
       get: () => loader.sources.getSourceMapsSupport().enabled });
     restore.push(installExecutableStacks(loader.sources, globalThis));
+    // Before application code: V8 can tell a Proxy apart and Node-API add-ons rely on it.
+    restore.push(installProxyRegistry(globalThis));
     install("process", process);
     install("global", globalThis);
     install("Buffer", Buffer);
@@ -250,9 +262,14 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
     if (runtime.nextCompiler !== undefined && start.dependencies !== undefined) verifyNextCompilerFacade(files.readFileSync(`${NEXT_COMPILER_DIRECTORY}/wasm.js`, "utf8"));
     try {
       const source = start.entry;
-      if (source.kind === "eval") scheduler.run(() => loader.evaluateScript(source.code, install));
-      else if (modules.read(source.path).format === "module") await loader.import(source.path);
-      else scheduler.run(() => loader.require(source.path));
+      // A trial load requires its add-on like an application would, so the initializer sees an
+      // installed runtime, then exits at once.
+      if (source.kind === "probe") io.terminate(probeAddon(path => scheduler.run(() => loader.require(path)), source.path, runtime.trialFailure ?? (() => undefined)));
+      // --require modules run first, in the entry's own turn as in Node (ADR 0026, 1.11).
+      const preload = () => { if (executionOptions.require.length !== 0) loader.preload(executionOptions.require); };
+      if (source.kind === "eval") scheduler.run(() => { preload(); loader.evaluateScript(source.code, install); });
+      else if (modules.read(source.path).format === "module") { scheduler.run(preload); await loader.import(source.path); }
+      else scheduler.run(() => { preload(); loader.require(source.path); });
     } catch (error) { if (!scheduler.handleException(error)) throw error; }
     const hasWork = () => scheduler.hasPending || input.hasReferences || timers.hasReferences || io.hasPending || children.hasPending || forked.hasPending || ipcReferenced() || (threads?.hasPending ?? false) || stdout.writableLength !== 0 || stderr.writableLength !== 0;
     do {

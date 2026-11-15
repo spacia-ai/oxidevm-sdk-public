@@ -70,7 +70,7 @@ async function readModuleSource(projectDir: string, modulePath: string): Promise
   if (!/^(?!\/)(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9][A-Za-z0-9._-]*\.m?ts$/u.test(modulePath) || modulePath.split("/").some(part => part === "..")) return fail(`the module file must be a relative .ts or .mts path inside the project, not ${JSON.stringify(modulePath)}`);
   const path = resolve(projectDir, modulePath);
   const metadata = await lstatIfPresent(path);
-  if (metadata === undefined) return fail(`${modulePath} does not exist; a module project keeps its definition there (oxidevm wasm init creates one)`);
+  if (metadata === undefined) return fail(`${modulePath} does not exist; a module project keeps its definition there (oxvm wasm init creates one)`);
   if (!metadata.isFile()) return fail(`${modulePath} must be a regular file, not a link or directory`);
   if (metadata.size > MAX_MODULE_SOURCE_BYTES) return fail(`${modulePath} is larger than ${String(MAX_MODULE_SOURCE_BYTES)} bytes`);
   return readFile(path, "utf8");

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { websocketRoute } from "./websocket-route";
 
-const PAGE = { href: "https://0123456789abcdef0123456789abcdef.oxvm.dev/app", hostname: "0123456789abcdef0123456789abcdef.oxvm.dev" };
+const PAGE = { href: "https://0123456789abcdef0123456789abcdef.tabvm.dev/app", hostname: "0123456789abcdef0123456789abcdef.tabvm.dev" };
 
 describe("websocketRoute", () => {
   it("bridges sockets to the page's own host", () => {

@@ -1,7 +1,8 @@
 /** Node package maps select a target; filesystem existence is checked afterward.
  * In particular, a missing first array target must not select a later file. */
-export function resolvePackageTarget(value: unknown, subpath: string, kind: "require" | "import", internal = false): string {
-  const conditions = new Set(["node", "node-addons", "module-sync", kind]);
+export function resolvePackageTarget(value: unknown, subpath: string, kind: "require" | "import", internal = false, user: readonly string[] = []): string {
+  // Node's conditions, and the user's from --conditions (ADR 0026, 1.11).
+  const conditions = new Set(["node", "node-addons", "module-sync", kind, ...user]);
   const object = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
   const error = (code: string, message: string) => Object.assign(new Error(message), { code });
   const invalid = () => error("ERR_INVALID_PACKAGE_TARGET", `Invalid package target for ${subpath}`);

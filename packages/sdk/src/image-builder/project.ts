@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { engineRelease, engineReleaseId } from "../engine.generated.js";
 import { defaultImage } from "../default-image.js";
@@ -40,7 +40,7 @@ export function decodeProjectConfig(value: unknown): ResolvedProjectConfig {
   const mode = input["mode"];
   if (mode !== "system" && mode !== "userspace") throw new VMError("INVALID_ARGUMENT", "project mode must be system or userspace");
   const publicDir = input["publicDir"] === undefined ? "public" : string(input["publicDir"], "public directory");
-  const assetBaseUrl = input["assetBaseUrl"] === undefined ? "/oxidevm/" : string(input["assetBaseUrl"], "asset base URL");
+  const assetBaseUrl = input["assetBaseUrl"] === undefined ? "/oxvm/" : string(input["assetBaseUrl"], "asset base URL");
   if (publicDir.length === 0 || publicDir.length > 8192 || publicDir.includes("\0")) throw new VMError("INVALID_ARGUMENT", "invalid public directory");
   decodeImageLocation(`${assetBaseUrl}manifest.json`);
   if (!assetBaseUrl.endsWith("/") || new URL(assetBaseUrl, "https://project.invalid").search !== "") throw new VMError("INVALID_ARGUMENT", "assetBaseUrl must name a directory URL");
@@ -58,19 +58,22 @@ export async function loadProjectConfig(file: string): Promise<{ readonly direct
   let value: unknown;
   if (path.endsWith(".json")) value = decodeBundleJSON(new Uint8Array(await readFile(path)));
   else { const module: unknown = await import(location.href); value = record(module, "project module")["default"]; }
-  return { directory: dirname(path), config: decodeProjectConfig(value) };
+  const input = record(value, "project configuration");
+  const config = basename(path).startsWith("oxidevm.config.") && input["assetBaseUrl"] === undefined ? { ...input, assetBaseUrl: "/oxidevm/" } : input;
+  return { directory: dirname(path), config: decodeProjectConfig(config) };
 }
 export function createProjectLock(input: ProjectConfig): ProjectLock {
   const config = decodeProjectConfig(input); const release = getSDKRelease();
   const image = config.image === undefined ? defaultImage(config.mode) : defineImage(config.image);
   const path = image.manifestUrl;
-  if (config.image === undefined && !path.startsWith("/oxidevm/")) throw new VMError("PROTOCOL_ERROR", "official image lacks its release staging path");
-  const reference = defineImage({ ...image, manifestUrl: config.image === undefined ? `${config.assetBaseUrl}${path.slice("/oxidevm/".length)}` : path });
+  const prefix = path.startsWith("/oxvm/") ? "/oxvm/" : "/oxidevm/";
+  if (config.image === undefined && !path.startsWith(prefix)) throw new VMError("PROTOCOL_ERROR", "official image lacks its release staging path");
+  const reference = defineImage({ ...image, manifestUrl: config.image === undefined ? `${config.assetBaseUrl}${path.slice(prefix.length)}` : path });
   return { schemaVersion: 2, mode: config.mode, sdkVersion: release.sdkVersion, cliVersion: release.sdkVersion, engine: release.engine, engineRelease: release.engineRelease,
     image: { mode: reference.mode, manifestUrl: reference.manifestUrl, manifestSHA256: reference.manifestSHA256, trust: reference.trust }, staging: { publicDir: config.publicDir, assetBaseUrl: config.assetBaseUrl } };
 }
 /** The command that stages this release's assets and then rewrites a lock written for another release. */
-const UPDATE_LOCK_COMMAND = "npx oxidevm assets install --update-lock";
+const UPDATE_LOCK_COMMAND = "npx oxvm assets install --update-lock";
 const LOCKED_VERSION = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/u;
 const LOCKED_ENGINE = /^sha256:[0-9a-f]{64}$/u;
 
@@ -128,7 +131,7 @@ export function lockedImage(value: unknown): ImageRef<RuntimeMode> {
 }
 function staleLock(locked: ProjectLockIdentity, installed: ProjectLockIdentity, fields: readonly string[]): VMError {
   const release = (lock: ProjectLockIdentity) => `SDK ${lock.sdkVersion}, engine ${lock.engineRelease}, image sha256:${lock.manifestSHA256}`;
-  return new VMError("INVALID_ARGUMENT", `project lock oxidevm.lock.json does not match the installed SDK release and project configuration (differing fields: ${fields.join(", ")}): locked ${release(locked)}; installed ${release(installed)}; run \`${UPDATE_LOCK_COMMAND}\` to stage this release's assets and rewrite the lock (pass --image and --trust again for an image the project configuration does not name)`,
+  return new VMError("INVALID_ARGUMENT", `project lock does not match the installed SDK release and project configuration (differing fields: ${fields.join(", ")}): locked ${release(locked)}; installed ${release(installed)}; run \`${UPDATE_LOCK_COMMAND}\` to stage this release's assets and rewrite the lock (pass --image and --trust again for an image the project configuration does not name)`,
     { reason: "project-lock-stale", fields: [...fields], locked, installed });
 }
 /** An existing lock must be the one this release writes for `input`; one that differs says how to update it. */

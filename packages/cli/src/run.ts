@@ -1,6 +1,6 @@
 import { dirname, resolve } from "node:path";
-import { VMError } from "@oxidevm/sdk";
-import { buildImage, downloadImageBundle, getSDKRelease, inspectImage, installProjectAssets, loadImageRecipe, loadImageReference, loadProjectConfig, generateImageKey, readImageTrust, testImage, doctorProject, packImage } from "@oxidevm/sdk/image-builder";
+import { VMError } from "@oxvm/sdk";
+import { buildImage, downloadImageBundle, getSDKRelease, inspectImage, installProjectAssets, loadImageRecipe, loadImageReference, loadProjectConfig, generateImageKey, readImageTrust, testImage, doctorProject, packImage } from "@oxvm/sdk/image-builder";
 import { parseArguments } from "./arguments.js";
 import type { CLIInvocation } from "./arguments.js";
 import type { CliCommand, CliReport } from "./contracts.js";
@@ -17,7 +17,8 @@ import { wasmCommandHelp, wasmHelp } from "./wasm-help.js";
 import { addText, buildText, doctorText, initText, inspectText, printable, releaseText, stageText, testText } from "./wasm-text.js";
 import { wasmFailureDetail } from "./wasm-errors.js";
 import { failureMessage } from "./failure.js";
-import { defaultProjectConfig, lockChangeText, requireOneRelease } from "./project-lock.js";
+import { lockChangeText, requireOneRelease } from "./project-lock.js";
+import { defaultProjectConfig } from "./project-files.js";
 
 export interface CLIEnvironment {
   readonly directory: string;
@@ -28,7 +29,7 @@ export interface CLIEnvironment {
   /** Asks a yes-or-no question of a person at a terminal; absent when nobody can answer. */
   confirm?(question: string): Promise<boolean>;
 }
-const help = `oxidevm — Linux in your browser\n\nCommands:\n  init <directory> [--start] [--use-bun]\n    Creates the Python + pandas starter using the hosted runtime and signed image.\n    Advanced: [--mode system|userspace] [--image <bundle> --image-trust <file>]\n              [--skip-assets | --engine-dir <release>] [--sdk-archive <sdk.tgz> --cli-archive <cli.tgz>]\n  assets install [--config oxidevm.config.ts] [--image <bundle> --trust <file>] [--reference <file>] [--engine-dir <release>] [--update-lock]\n    After an SDK upgrade, --update-lock stages this release's assets, then rewrites oxidevm.lock.json for it.\n  doctor [url] [--browser chromium|firefox|webkit] [--hosting frame|self-hosted] [--frame-origin <origin>] [--preview-origin <origin>] [--config oxidevm.config.ts]\n    Checks a running application in a real browser (default http://localhost:5173/); start it first.\n    It checks the hosted runtime frame unless the application serves its own runtime assets; --hosting chooses.\n    Its lock check compares the project's oxidevm.lock.json with the installed SDK.\n  image init <directory> --mode system|userspace\n  image keygen --out <author.pem>\n  image build <recipe.ts> --signing-key <author.pem> [--distribution]\n  image test <bundle> --trust <author.public.json> [--browser chromium|firefox|webkit] [--engine-dir <release>]\n  image inspect <bundle> [--trust <author.public.json>]\n  image pack <bundle> --trust <author.public.json>\n\nEvery command accepts --json; --start runs interactively and cannot use --json. Paths resolve from the current directory.\nNormal init installs no local engine files. Development and production use run.oxidevm.dev.\nSelf-hosting is an explicit commercial option: --engine-dir selects a local pinned release.\nExplicit assets/image test commands can use OXIDEVM_ENGINE_DIR or the verified engine cache.\nExample: oxidevm init app --start\n`;
+const help = `oxvm — Linux in your browser\n\nCommands:\n  init <directory> [--start] [--use-bun]\n    Creates the Python + pandas starter using the hosted runtime and signed image.\n    Advanced: [--mode system|userspace] [--image <bundle> --image-trust <file>]\n              [--skip-assets | --engine-dir <release>] [--sdk-archive <sdk.tgz> --cli-archive <cli.tgz>]\n  assets install [--config oxvm.config.ts] [--image <bundle> --trust <file>] [--reference <file>] [--engine-dir <release>] [--update-lock]\n    After an SDK upgrade, --update-lock stages this release's assets, then rewrites oxvm.lock.json for it.\n  doctor [url] [--browser chromium|firefox|webkit] [--hosting frame|self-hosted] [--frame-origin <origin>] [--preview-origin <origin>] [--config oxvm.config.ts]\n    Checks a running application in a real browser (default http://localhost:5173/); start it first.\n    It checks the hosted runtime frame unless the application serves its own runtime assets; --hosting chooses.\n    Its lock check compares the project's oxvm.lock.json with the installed SDK.\n  image init <directory> --mode system|userspace\n  image keygen --out <author.pem>\n  image build <recipe.ts> --signing-key <author.pem> [--distribution]\n  image test <bundle> --trust <author.public.json> [--browser chromium|firefox|webkit] [--engine-dir <release>]\n  image inspect <bundle> [--trust <author.public.json>]\n  image pack <bundle> --trust <author.public.json>\n\nEvery command accepts --json; --start runs interactively and cannot use --json. Paths resolve from the current directory.\nNormal init installs no local engine files. Development and production use run.oxvm.dev.\nSelf-hosting is an explicit commercial option: --engine-dir selects a local pinned release.\nExplicit assets/image test commands can use OXVM_ENGINE_DIR (legacy OXIDEVM_ENGINE_DIR) or the verified engine cache.\nExample: oxvm init app --start\n`;
 
 async function execute(invocation: CLIInvocation, io: CLIEnvironment): Promise<CliReport> {
   const path = (value: string) => resolve(io.directory, value); const command = invocation.command;
@@ -50,7 +51,8 @@ async function execute(invocation: CLIInvocation, io: CLIEnvironment): Promise<C
       return { schemaVersion: 3, kind: "result", command, result: await initializeApplication(path(invocation.directory), invocation.mode, invocation.skipAssets, io.signal, { ...(archives === undefined ? {} : { archives }), ...(engineDir === undefined ? {} : { engineDir }), ...(image === undefined ? {} : { image }), ...(productionImage === undefined ? {} : { productionImage }), ...(release === undefined ? {} : { materialsUrl: release.materialsUrl }), ...(engineComplianceDir === undefined ? {} : { engineComplianceDir }) }) };
     }
     case "assets install": {
-      const project = await loadProjectConfig(path(invocation.config));
+      const configPath = invocation.config === undefined ? await defaultProjectConfig(io.directory) ?? path("oxvm.config.ts") : path(invocation.config);
+      const project = await loadProjectConfig(configPath);
       if (invocation.updateLock) await requireOneRelease(project.directory);
       const result = await installProjectAssets(project.directory, project.config, { signal: io.signal, ...(invocation.updateLock ? { updateLock: true } : {}), ...(invocation.image === undefined ? {} : { imageDir: path(invocation.image) }),...(invocation.snapshot===undefined?{}:{snapshotDir:path(invocation.snapshot)}),...(invocation.trust===undefined?{}:{trust:await readImageTrust(path(invocation.trust))}), ...(invocation.reference === undefined ? {} : { referencePath: path(invocation.reference) }), ...(invocation.engineDir === undefined ? {} : { engineDir: path(invocation.engineDir) }) });
       const note = lockChangeText(result.lock, invocation.updateLock);
@@ -100,7 +102,7 @@ export async function runCLI(arguments_: readonly string[], io: CLIEnvironment):
       // Help and version are textual control flags, outside the eight-command JSON envelope.
       if (json) throw new VMError("INVALID_ARGUMENT", "use --help or --version without --json");
       const release = getSDKRelease();
-      io.stdout(invocation.kind === "help" ? invocation.command===undefined?help+snapshotHelp+wasmHelp:invocation.command.startsWith("wasm ")?wasmCommandHelp(invocation.command):snapshotCommandHelp(invocation.command) : `@oxidevm/cli ${release.sdkVersion}; @oxidevm/sdk ${release.sdkVersion}; engine ${release.engineRelease}\n`); return 0;
+      io.stdout(invocation.kind === "help" ? invocation.command===undefined?help+snapshotHelp+wasmHelp:invocation.command.startsWith("wasm ")?wasmCommandHelp(invocation.command):snapshotCommandHelp(invocation.command) : `@oxvm/cli ${release.sdkVersion}; @oxvm/sdk ${release.sdkVersion}; engine ${release.engineRelease}\n`); return 0;
     }
     command = invocation.command;
     if (io.signal.aborted) throw new VMError("ABORTED", "command interrupted");
@@ -123,7 +125,7 @@ export async function runCLI(arguments_: readonly string[], io: CLIEnvironment):
 function successText(report:CliReport):string {
   if(report.kind==="result"){
     if(report.command==="snapshot build"||report.command==="snapshot pack")return `Snapshot ${report.result.name} verified in ${report.result.verification.browser}. Bundle: ${report.result.bundlePath}. SDK options: ${report.result.referencePath}\n`;
-    if(report.command==="snapshot init")return `Created ${report.result.directory}. Edit prepare.ts, then run oxidevm snapshot build ${report.result.recipePath}.\n`;
+    if(report.command==="snapshot init")return `Created ${report.result.directory}. Edit prepare.ts, then run oxvm snapshot build ${report.result.recipePath}.\n`;
     if(report.command==="snapshot test")return `Snapshot ${report.result.name} restoration ${report.result.result} (${report.result.browser.name} ${report.result.browser.version}).\n`;
     if(report.command==="snapshot inspect")return `${report.result.kind==="bundle"?report.result.name:"Personal backup"}: ${report.result.snapshot.mode}, integrity verified; authentication ${report.result.authentication.kind}; runtime restoration not run.\n`;
   }

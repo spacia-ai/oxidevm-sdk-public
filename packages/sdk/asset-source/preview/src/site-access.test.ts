@@ -56,13 +56,13 @@ describe("siteSources", () => {
 
 describe("reportedSite", () => {
   it("names the site of a blocked https or wss URL", () => {
-    expect(reportedSite("https://api.open-meteo.com/v1?x", "https://s.oxvm.dev")).toBe("api.open-meteo.com");
-    expect(reportedSite("wss://rt.example:8443/s", "https://s.oxvm.dev")).toBe("rt.example:8443");
+    expect(reportedSite("https://api.open-meteo.com/v1?x", "https://s.tabvm.dev")).toBe("api.open-meteo.com");
+    expect(reportedSite("wss://rt.example:8443/s", "https://s.tabvm.dev")).toBe("rt.example:8443");
   });
 
-  it.each(["inline", "eval", "data", "blob", "http://x.example", "https://s.oxvm.dev/app.js", "https://localhost/x", "api.example.com"])(
+  it.each(["inline", "eval", "data", "blob", "http://x.example", "https://s.tabvm.dev/app.js", "https://localhost/x", "api.example.com"])(
     "ignores %s", (blocked) => {
-      expect(reportedSite(blocked, "https://s.oxvm.dev")).toBeNull();
+      expect(reportedSite(blocked, "https://s.tabvm.dev")).toBeNull();
     },
   );
 });

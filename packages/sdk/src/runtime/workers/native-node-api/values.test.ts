@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NativeValues } from "./values.js";
+import { installProxyRegistry } from "../../proxy-brand.js";
+
+// The value owner runs in a process realm, which records its proxies (ADR 0026, 2.11).
+let restoreProxies: () => void;
+beforeAll(() => { restoreProxies = installProxyRegistry(globalThis); });
+afterAll(() => { restoreProxies(); });
 
 it("restores module version across nested environments and rejects retired identities", () => {
   const values = new NativeValues(() => undefined, () => undefined, () => undefined, 37);
@@ -236,4 +242,24 @@ it("fences value and reference handles from another native environment", () => {
   expect(other.status).toBe(0);
   if (ref === undefined) throw new Error("Missing reference");
   expect(two.dispatch("napi_get_reference_value", [ref], new Uint8Array()).status).toBe(1);
+});
+
+// Pinned Node 24.18.1 (engine docs/baselines/native-api-function-controls-2026-11-15.json): its Buffer check is "any
+// ArrayBuffer view", so napi_is_buffer and napi_get_buffer_info take every typed array and a DataView, by their bytes.
+it("treats every ArrayBuffer view as a buffer under Node, by its bytes, and only byte arrays under Bun", () => {
+  const empty = new Uint8Array(), backing = new Uint8Array([4, 3, 2, 1, 9, 9, 9, 9]).buffer;
+  const node = new NativeValues(() => undefined, () => undefined, () => undefined);
+  for (const view of [new Uint8Array(2), Buffer.from("ab"), new Float64Array(1), new Int16Array(2), new DataView(backing)]) expect(node.dispatch("napi_is_buffer", [node.add(view)], empty).args).toEqual([1n]);
+  for (const other of [new ArrayBuffer(2), {}, [1], "ab", undefined]) expect(node.dispatch("napi_is_buffer", [node.add(other)], empty).args).toEqual([0n]);
+  // identity, element type (bytes), length in bytes, byte offset, backing store
+  const float = node.dispatch("napi_get_buffer_info", [node.add(new Float64Array(backing))], empty);
+  expect(float.args.slice(1, 4)).toEqual([1n, 8n, 0n]);
+  const data = node.dispatch("napi_get_buffer_info", [node.add(new DataView(backing, 1, 2))], empty);
+  expect(data.args.slice(1, 4)).toEqual([1n, 2n, 1n]); expect([...data.bytes]).toEqual([4, 3, 2, 1, 9, 9, 9, 9]);
+  expect(data.args[0]).toBe(float.args[0]);
+  expect(node.dispatch("napi_get_buffer_info", [node.add(new ArrayBuffer(2))], empty).status).toBe(1);
+  const bun = new NativeValues(() => undefined, () => undefined, () => undefined, undefined, undefined, { runtime: "bun", claim: () => undefined, retire: () => undefined });
+  expect(bun.dispatch("napi_is_buffer", [bun.add(new Float64Array(1))], empty).args).toEqual([0n]);
+  expect(bun.dispatch("napi_is_buffer", [bun.add(new Uint8Array(1))], empty).args).toEqual([1n]);
+  expect(bun.dispatch("napi_get_buffer_info", [bun.add(new Float64Array(1))], empty).status).toBe(1);
 });

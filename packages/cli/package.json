@@ -1,10 +1,10 @@
 {
-  "name": "@oxidevm/cli",
-  "version": "0.0.26",
+  "name": "@oxvm/cli",
+  "version": "0.0.27",
   "type": "module",
   "license": "Apache-2.0",
   "bin": {
-    "oxidevm": "./dist/bin.js"
+    "oxvm": "./dist/bin.js"
   },
   "exports": {
     ".": {
@@ -28,12 +28,23 @@
     "test": "node ../../scripts/stage-starter.ts && vitest run --maxWorkers=2"
   },
   "dependencies": {
-    "@oxidevm/sdk": "workspace:*"
+    "@oxvm/sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "24.13.3",
     "typescript": "6.0.3",
     "vitest": "5.1.0"
+  },
+  "description": "Create and verify OXVM browser applications, images, snapshots, and WebAssembly modules.",
+  "keywords": [
+    "oxvm",
+    "linux",
+    "webassembly",
+    "browser"
+  ],
+  "homepage": "https://oxvm.dev/docs/",
+  "bugs": {
+    "url": "https://github.com/spacia-ai/oxidevm-sdk-public/issues"
   },
   "private": false,
   "publishConfig": {

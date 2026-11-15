@@ -19,10 +19,10 @@ importers:
       '@eslint/js':
         specifier: 10.0.1
         version: 10.0.1(eslint@10.7.0)
-      '@oxidevm/cli':
+      '@oxvm/cli':
         specifier: workspace:*
         version: link:packages/cli
-      '@oxidevm/sdk':
+      '@oxvm/sdk':
         specifier: workspace:*
         version: link:packages/sdk
       '@playwright/test':
@@ -67,7 +67,7 @@ importers:
 
   examples/starter:
     dependencies:
-      '@oxidevm/sdk':
+      '@oxvm/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       '@xterm/addon-fit':
@@ -95,7 +95,7 @@ importers:
 
   packages/cli:
     dependencies:
-      '@oxidevm/sdk':
+      '@oxvm/sdk':
         specifier: workspace:*
         version: link:../sdk
     devDependencies:

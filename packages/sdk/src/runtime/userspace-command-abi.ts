@@ -8,7 +8,8 @@ import { isModuleCommandName, moduleCommandPath } from "./module-command-names.t
 
 export const NATIVE_EVAL_MAX_UNITS = 256 * 1024;
 export const NATIVE_EVAL_ENTRY = "[worker eval]";
-export type NativeProcessSource = { readonly kind: "file" } | { readonly kind: "eval"; readonly code: string };
+/** `probe`: a sealed trial load of the add-on at the entry path; no application code runs (ADR 0026). */
+export type NativeProcessSource = { readonly kind: "file" } | { readonly kind: "eval"; readonly code: string } | { readonly kind: "probe" };
 
 /** Eval source is a JavaScript string, whose unpaired UTF-16 units must survive transport. */
 export function encodeNativeEvalSource(value: unknown): Uint8Array {
@@ -33,6 +34,7 @@ export function decodeNativeEvalSource(bytes: Uint8Array): string {
 function decodeNativeSource(input: unknown): NativeProcessSource {
   const source = record(input, "native program source");
   if (source["kind"] === "file") { exactKeys(source, ["kind"]); return { kind: "file" }; }
+  if (source["kind"] === "probe") { exactKeys(source, ["kind"]); return { kind: "probe" }; }
   if (source["kind"] !== "eval") protocol("Unknown native program source");
   exactKeys(source, ["kind", "code"]);
   const code = string(source["code"], "native eval source");
@@ -43,21 +45,38 @@ function decodeNativeSource(input: unknown): NativeProcessSource {
 /** A frozen dependency root Rust captured: project `node_modules` or package store entries. */
 export type NativeProcessRoot = { readonly kind: "dependencies" | "store"; readonly path: string }
   | { readonly kind: "image"; readonly path: string; readonly sha256: string };
+/** A runtime binary in no catalog row: the build its own probe reported, which the process
+ * presents as `process.version`, `process.versions` and `process.config` (ADR 0026, 1.5). */
+export interface NativeRuntimeBuild {
+  readonly version: string; readonly node: string; readonly uv: string; readonly napi: string;
+  /** Bun's own version; empty for Node. */
+  readonly bun: string;
+  /** `process.config` as the binary printed it: JSON text of an object. */
+  readonly config: string;
+}
 export interface NativeProcessProfile {
   readonly runtime: "node" | "bun";
-  readonly executable: "/usr/bin/node" | "/usr/local/bin/bun";
+  /** A catalog path, or with a probed build any path that resolves to a file named `node` or `bun`. */
+  readonly executable: string;
   readonly runtimeSHA256: string;
   readonly identity: "node24-bun1-v1" | "native-parity-fixture-v1";
   /** In Node's lookup order from the entry, then the working directory and links (ADR 0026). */
   readonly roots: readonly NativeProcessRoot[];
-  /** Why Rust vouched for the launch: qualified add-ons, or no add-on in any root. */
-  readonly basis: "qualified" | "no-addons";
+  /** Why Rust vouched for the launch: qualified add-ons, no add-on in any root, a remembered
+   * trial load, or the launch is itself a trial load of its one add-on (ADR 0026). */
+  readonly basis: "qualified" | "no-addons" | "verified" | "trial";
   readonly dependencyGeneration: bigint;
   readonly artifacts: readonly ({ readonly path: string; readonly sha256: string; readonly inode: bigint } & ({ readonly kind: "node-api" } | { readonly kind: "shared-library"; readonly soname: string }))[];
   readonly moduleSearchPaths: readonly string[];
   readonly requiredCapabilities: 0 | 1 | 2 | 3;
   /** The native bridge version of the image's host helper, from its acceleration profile (OXCR 19): 15 without a `bridge` row. */
   readonly bridgeVersion: NativeBridgeVersion;
+  /** The Node-API operation set the host speaks, which this process must be served (ADR 0026). */
+  readonly operationSet: number;
+  /** The bytes this launch may share with native code at once, from its admission basis (OXCR 21). */
+  readonly sharedBufferBudget: number;
+  /** Null for the catalog builds, whose data the SDK carries itself. */
+  readonly runtimeBuild: NativeRuntimeBuild | null;
 }
 
 export interface NativeThreadIdentity { readonly tid: number; readonly parent: bigint; readonly stdio: readonly [number, number, number] }
@@ -69,6 +88,8 @@ function canonicalPath(value: string): boolean {
 function workspacePath(value: string): boolean { return value.startsWith("/workspace/") && canonicalPath(value); }
 export const NATIVE_MAX_ROOTS = 64;
 export const NATIVE_MAX_ARTIFACTS = 256;
+/** The most bytes a launch may share with native code at once: the native bridge's own limit (OXCR 21 carries a budget up to it). */
+export const NATIVE_MAX_SHARED_BYTES = 128 * 1024 * 1024;
 /** Whether `path` lies in one of the roots Rust froze for this launch. */
 export function insideRoot(path: string, roots: readonly NativeProcessRoot[]): boolean {
   return roots.some(root => path === root.path || path.startsWith(root.path + "/"));
@@ -124,7 +145,7 @@ function readModuleCommand(r: Reader): ModuleCommandProgram {
 export function decodeUserspaceCommandRequest(bytes: Uint8Array): UserspaceCommandHostRequest {
   if (bytes.byteLength > 2 * 1024 * 1024 + NATIVE_EVAL_MAX_UNITS * 2 + 16384) protocol("JS launch record exceeds its limit");
   const r = new Reader(bytes);
-  if (new TextDecoder().decode(r.raw(4)) !== "OXCR" || r.u32() !== 19) protocol("JS launch record version mismatch");
+  if (new TextDecoder().decode(r.raw(4)) !== "OXCR" || r.u32() !== 21) protocol("JS launch record version mismatch");
   const { generation, id } = decodeJSIdentity(r.u64(), r.u64());
   const pid = r.u32(), tty = r.u8(), cwd = r.text(4095), tag = r.u8();
   let program: UserspaceCommandHostRequest["program"];
@@ -135,14 +156,14 @@ export function decodeUserspaceCommandRequest(bytes: Uint8Array): UserspaceComma
   } else if (tag === 1) {
     const token = r.u64(); if (token === 0n || token > 0xffff_ffffn) protocol("Invalid JS worker token"); program = { kind: "worker", token };
   } else if (tag === 2) {
-    const sourceTag = r.u8(); if (sourceTag > 1) protocol("Unknown native entry kind");
-    const entry = sourceTag === 0 ? r.text(4095) : NATIVE_EVAL_ENTRY;
-    const source = sourceTag === 0 ? { kind: "file" } : { kind: "eval", code: decodeNativeEvalSource(r.blob(NATIVE_EVAL_MAX_UNITS * 2)) };
+    const sourceTag = r.u8(); if (sourceTag > 2) protocol("Unknown native entry kind");
+    const entry = sourceTag === 1 ? NATIVE_EVAL_ENTRY : r.text(4095);
+    const source = sourceTag === 0 ? { kind: "file" } : sourceTag === 2 ? { kind: "probe" } : { kind: "eval", code: decodeNativeEvalSource(r.blob(NATIVE_EVAL_MAX_UNITS * 2)) };
     const input = r.u32(), output = r.u32();
     const runtime = r.u8(), executable = r.text(4095), runtimeSHA256 = r.text(64), identity = r.text(255);
     const roots = readNativeRoots(r);
-    const basisCode = r.u8(); if (basisCode > 1) protocol("Unknown native admission basis");
-    const basis = basisCode === 0 ? "qualified" : "no-addons", dependencyGeneration = r.u64();
+    const basisCode = r.u8(); if (basisCode > 3) protocol("Unknown native admission basis");
+    const basis = basisCode === 0 ? "qualified" : basisCode === 1 ? "no-addons" : basisCode === 2 ? "verified" : "trial", dependencyGeneration = r.u64();
     const count = integer(r.u32(), "native artifact count", 0, NATIVE_MAX_ARTIFACTS);
     const artifacts = Array.from({ length: count }, () => {
       const tag = r.u8(); if (tag > 1) protocol("Unsupported native artifact kind");
@@ -150,12 +171,14 @@ export function decodeUserspaceCommandRequest(bytes: Uint8Array): UserspaceComma
       return { ...kind, path: r.text(4095), sha256: r.text(64), inode: r.u64() };
     });
     const moduleSearchPaths = r.strings();
-    const requiredCapabilities = r.u32(), bridgeVersion = r.u8();
+    const requiredCapabilities = r.u32(), bridgeVersion = r.u8(), operationSet = r.u32(), sharedBufferBudget = r.u32(), buildTag = r.u8();
+    if (buildTag > 1) protocol("Unknown native runtime build tag");
+    const runtimeBuild = buildTag === 0 ? null : readRuntimeBuild(r);
     if (runtime > 1) protocol("Unqualified native runtime");
     const tag = r.u8();
     if (tag > 2) protocol("Invalid native environment tag");
     const context = tag === 0 ? { kind: "main" } : tag === 2 ? { kind: "fork", parent: r.u64() } : { kind: "thread", tid: r.u32(), parent: r.u64(), stdio: [r.u32(), r.u32(), r.u32()] };
-    program = decodeNativeProcessProgram({ kind: "native-node", entry, source, input, output, profile: { runtime: runtime === 0 ? "node" : "bun", executable, runtimeSHA256, identity, roots, basis, dependencyGeneration, artifacts, moduleSearchPaths, requiredCapabilities, bridgeVersion }, context });
+    program = decodeNativeProcessProgram({ kind: "native-node", entry, source, input, output, profile: { runtime: runtime === 0 ? "node" : "bun", executable, runtimeSHA256, identity, roots, basis, dependencyGeneration, artifacts, moduleSearchPaths, requiredCapabilities, bridgeVersion, operationSet, sharedBufferBudget, runtimeBuild }, context });
   } else if (tag === 3) {
     const executable = r.text(4095), version = r.text(64);
     if (!executable.startsWith("/") || executable.includes("\0") || executable.split("/").slice(1).some(part => part === "" || part === "." || part === "..")
@@ -213,17 +236,47 @@ export function encodeCommandExit(request: { readonly generation: bigint; readon
 }
 
 
+const MAX_BUILD_FIELD = 64, MAX_BUILD_CONFIG = 64 * 1024;
+function printable(value: string, limit: number): boolean { return value.length <= limit && /^[\x20-\x7e]*$/u.test(value); }
+/** Rust's layout: five u16-prefixed fields, then the u32-prefixed configuration. */
+function readRuntimeBuild(r: Reader): NativeRuntimeBuild {
+  const field = (): string => { const bytes = r.raw(r.u16()); return new TextDecoder().decode(bytes); };
+  const version = field(), node = field(), uv = field(), napi = field(), bun = field(), length = r.u32();
+  if (length > MAX_BUILD_CONFIG) protocol("Native runtime configuration exceeds its limit");
+  let config: string;
+  try { config = new TextDecoder("utf-8", { fatal: true }).decode(r.raw(length)); } catch { return protocol("Invalid native runtime configuration"); }
+  return { version, node, uv, napi, bun, config };
+}
+function decodeRuntimeBuild(input: unknown, runtime: unknown): NativeRuntimeBuild | null {
+  if (input === null) return null;
+  const build = record(input, "native runtime build"); exactKeys(build, ["version", "node", "uv", "napi", "bun", "config"]);
+  const [version, node, uv, napi, bun] = (["version", "node", "uv", "napi", "bun"] as const).map(key => string(build[key], "native runtime build field"));
+  const config = string(build["config"], "native runtime configuration");
+  if (version === undefined || node === undefined || uv === undefined || napi === undefined || bun === undefined
+    || ![version, node, uv, napi, bun].every(value => printable(value, MAX_BUILD_FIELD)) || new TextEncoder().encode(config).byteLength > MAX_BUILD_CONFIG
+    || version !== `v${node}` || (runtime === "bun") !== (bun !== "")) protocol("Invalid native runtime build");
+  let parsed: unknown;
+  try { parsed = JSON.parse(config); } catch { return protocol("Invalid native runtime configuration"); }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) protocol("Invalid native runtime configuration");
+  return { version, node, uv, napi, bun, config };
+}
+
 export function decodeNativeProcessProgram(input: unknown): Extract<UserspaceCommandHostRequest["program"], { kind: "native-node" }> {
   const program = record(input, "native process program"); exactKeys(program, ["kind", "entry", "source", "input", "output", "profile", "context"]);
   const entry = string(program["entry"], "native process entry"), fdInput = integer(program["input"], "native input", 3, 0x7fff_ffff), output = integer(program["output"], "native output", 3, 0x7fff_ffff);
   const source = decodeNativeSource(program["source"]);
-  const p = record(program["profile"], "native compatibility profile"); exactKeys(p, ["runtime", "executable", "runtimeSHA256", "identity", "roots", "basis", "dependencyGeneration", "artifacts", "moduleSearchPaths", "requiredCapabilities", "bridgeVersion"]);
+  const p = record(program["profile"], "native compatibility profile"); exactKeys(p, ["runtime", "executable", "runtimeSHA256", "identity", "roots", "basis", "dependencyGeneration", "artifacts", "moduleSearchPaths", "requiredCapabilities", "bridgeVersion", "operationSet", "sharedBufferBudget", "runtimeBuild"]);
+  const operationSet = integer(p["operationSet"], "native operation set", 0, 0xffff), sharedBufferBudget = integer(p["sharedBufferBudget"], "native shared-buffer budget", 1, NATIVE_MAX_SHARED_BYTES);
   const requiredCapabilities = p["requiredCapabilities"], bridgeVersion = p["bridgeVersion"];
-  if (bridgeVersion !== 15 && bridgeVersion !== 16) protocol("Unknown native bridge version of the host helper");
+  if (bridgeVersion !== 15 && bridgeVersion !== 16 && bridgeVersion !== 17) protocol("Unknown native bridge version of the host helper");
   if (requiredCapabilities !== 0 && requiredCapabilities !== 1 && requiredCapabilities !== 2 && requiredCapabilities !== 3 || requiredCapabilities !== 0 && p["identity"] !== "native-parity-fixture-v1") protocol("Invalid native capability requirements");
   const runtimeSHA256 = string(p["runtimeSHA256"], "native runtime digest");
   if (!/^[a-f0-9]{64}$/u.test(runtimeSHA256)) protocol("Invalid native runtime digest");
-  const runtime = p["runtime"], executable = p["executable"], identity = p["identity"], roots = decodeNativeRoots(p["roots"]), basis = p["basis"], dependencyGeneration = p["dependencyGeneration"], values = p["artifacts"];
+  const runtime = p["runtime"], executable = string(p["executable"], "native runtime executable"), identity = p["identity"], roots = decodeNativeRoots(p["roots"]), basis = p["basis"], dependencyGeneration = p["dependencyGeneration"], values = p["artifacts"];
+  const runtimeBuild = decodeRuntimeBuild(p["runtimeBuild"], runtime);
+  // A catalog build runs from its catalog path; a probed one from any file named for its runtime.
+  const executableValid = runtimeBuild === null ? executable === (runtime === "node" ? "/usr/bin/node" : "/usr/local/bin/bun")
+    : canonicalPath(executable) && new TextEncoder().encode(executable).byteLength < 4096 && executable.endsWith(runtime === "node" ? "/node" : "/bun");
   if (!Array.isArray(values) || values.length > NATIVE_MAX_ARTIFACTS) protocol("Invalid native artifact list");
   const artifacts = values.map((value: unknown): NativeProcessProfile["artifacts"][number] => {
     const artifact = record(value, "native artifact"), kind = artifact["kind"]; exactKeys(artifact, ["kind", "path", "sha256", "inode", ...(kind === "shared-library" ? ["soname"] : [])]);
@@ -241,12 +294,17 @@ export function decodeNativeProcessProgram(input: unknown): Extract<UserspaceCom
   });
   const libraries = artifacts.filter(artifact => artifact.kind === "shared-library"), addons = artifacts.filter(artifact => artifact.kind === "node-api");
   if (libraries.length > 32 || new Set(libraries.map(library => library.soname)).size !== libraries.length || addons.length + libraries.length !== artifacts.length) protocol("Duplicate or excessive native artifacts");
-  if (basis !== "qualified" && basis !== "no-addons" || (basis === "qualified") !== (artifacts.length > 0)) protocol("Invalid native admission basis");
+  // A trial loads exactly its entry add-on; the other bases have add-ons exactly when they vouch for some.
+  if (basis !== "qualified" && basis !== "no-addons" && basis !== "verified" && basis !== "trial" || (basis !== "no-addons") !== (artifacts.length > 0)
+    || (basis === "trial") !== (source.kind === "probe") || basis === "trial" && (addons.length !== 1 || libraries.length !== 0 || addons[0]?.path !== entry)) protocol("Invalid native admission basis");
   const search = p["moduleSearchPaths"];
   if (!Array.isArray(search) || search.length > 4096) protocol("Invalid native module search paths");
   const moduleSearchPaths = search.map(value => string(value, "native module search path"));
-  if (program["kind"] !== "native-node" || (source.kind === "file" ? !(workspacePath(entry) || canonicalPath(entry) && insideRoot(entry, roots.filter(root => root.kind === "image"))) || entry.length >= 4096 : entry !== NATIVE_EVAL_ENTRY) || fdInput === output
-    || runtime !== "node" && runtime !== "bun" || executable !== "/usr/bin/node" && executable !== "/usr/local/bin/bun" || executable !== (runtime === "node" ? "/usr/bin/node" : "/usr/local/bin/bun") || identity !== "node24-bun1-v1" && identity !== "native-parity-fixture-v1"
+  // A program's entry is workspace source or qualified image code; a trial load's is its add-on, which may sit in a store root.
+  const entryValid = source.kind === "eval" ? entry === NATIVE_EVAL_ENTRY : source.kind === "probe" ? canonicalPath(entry) && insideRoot(entry, roots) && entry.endsWith(".node")
+    : workspacePath(entry) || canonicalPath(entry) && insideRoot(entry, roots.filter(root => root.kind === "image"));
+  if (program["kind"] !== "native-node" || !entryValid || entry.length >= 4096 || fdInput === output
+    || runtime !== "node" && runtime !== "bun" || !executableValid || identity !== "node24-bun1-v1" && identity !== "native-parity-fixture-v1"
     || typeof dependencyGeneration !== "bigint" || dependencyGeneration <= 0n || dependencyGeneration >= 1n << 62n
     || moduleSearchPaths.some(path => !canonicalPath(path) || new TextEncoder().encode(path).byteLength >= 4096 || !insideRoot(path, roots))
     || new Set(artifacts.map(artifact => artifact.path)).size !== artifacts.length) protocol("Unqualified native JavaScript process");
@@ -266,5 +324,6 @@ export function decodeNativeProcessProgram(input: unknown): Extract<UserspaceCom
     context = { kind: "thread", tid, parent, stdio: [one, two, three] };
   } else protocol("Unknown native environment context");
   if (source.kind === "eval" && context.kind !== "thread") protocol("Eval source requires a native worker context");
-  return { kind: "native-node", entry, source, input: fdInput, output, profile: { runtime, executable, runtimeSHA256, identity, roots, basis, dependencyGeneration, artifacts, moduleSearchPaths, requiredCapabilities, bridgeVersion }, context };
+  if (source.kind === "probe" && context.kind !== "main") protocol("A trial load runs as a main native process");
+  return { kind: "native-node", entry, source, input: fdInput, output, profile: { runtime, executable, runtimeSHA256, identity, roots, basis, dependencyGeneration, artifacts, moduleSearchPaths, requiredCapabilities, bridgeVersion, operationSet, sharedBufferBudget, runtimeBuild }, context };
 }

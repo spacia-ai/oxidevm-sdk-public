@@ -5,6 +5,7 @@ import { createWarningEmitter } from "./node-warnings.ts";
 import { decodeForkExecArgv } from "../../protocol/assistance-fork.js";
 import { linuxSignalConstants, listenableEvent, listenableNumber, type ListenableSignal } from "../../process-signals.js";
 import { unavailableNodeApi } from "./node-capability.js";
+import { nodeOptionsTokens, readNodeExecutionOptions, type NodeExecutionOptions } from "../../protocol/node-options.js";
 
 const monotonicNow = performance.now.bind(performance);
 
@@ -87,19 +88,19 @@ export function installSignalListeners(process: NodeProcess, watch: (signal: num
   });
 }
 
-/** Admit only implemented Node options before any application module runs. */
-export function validateNodeEnvironment(env: Readonly<Record<string, string>>, entry: string, execArgv: readonly string[] = []): boolean {
-  const input = (env["NODE_OPTIONS"] ?? "").trim();
-  let sourceMaps = false;
-  for (const token of input === "" ? [] : input.split(/\s+/u)) {
-    if (token === "--enable-source-maps" || token === '"--enable-source-maps"') sourceMaps = true;
-    else if (token === "--no-enable-source-maps" || token === '"--no-enable-source-maps"') sourceMaps = false;
-    else throw new VMError("FEATURE_NOT_AVAILABLE", "NODE_OPTIONS contains an unsupported option", {
-      api: "NODE_OPTIONS", importer: entry, backend: "assisted-node",
-    });
+/** Admit only implemented Node options before any application module runs (ADR 0026, 1.11):
+ * NODE_OPTIONS as Node tokenizes it, whose options end at the first token that is not one (Node
+ * ignores the rest), then the command line's execution arguments over them. */
+export function validateNodeEnvironment(env: Readonly<Record<string, string>>, entry: string, execArgv: readonly string[] = [],
+  runtime: "node" | "bun" = "node"): NodeExecutionOptions {
+  const tokens = nodeOptionsTokens(env["NODE_OPTIONS"] ?? "");
+  const environment = tokens === undefined ? undefined : readNodeExecutionOptions(tokens, undefined, runtime);
+  if (environment === undefined || (runtime === "bun" && environment.end !== tokens?.length)) {
+    throw new VMError("FEATURE_NOT_AVAILABLE", "NODE_OPTIONS contains an unsupported option", { api: "NODE_OPTIONS", importer: entry, backend: "assisted-node" });
   }
-  for (const flag of decodeForkExecArgv(execArgv)) sourceMaps = flag === "--enable-source-maps";
-  return sourceMaps;
+  const command = readNodeExecutionOptions(decodeForkExecArgv(execArgv), environment.options, runtime);
+  if (command?.end !== execArgv.length) throw new VMError("PROTOCOL_ERROR", "Unqualified Node execution arguments");
+  return command.options;
 }
 
 /** The process owns exit listeners and status; only its trusted worker owner
@@ -113,7 +114,8 @@ export class NodeProcess extends EventEmitter {
   readonly versions: Readonly<{ node: string }>;
   readonly memoryUsage = processMemoryUsage;
   readonly emitWarning: ReturnType<typeof createWarningEmitter>;
-  noDeprecation = false;
+  /** Node defines it only for --no-deprecation (read-only); applications may set it. */
+  declare noDeprecation: boolean | undefined;
   throwDeprecation = false;
   traceDeprecation = false;
   traceProcessWarnings = false;

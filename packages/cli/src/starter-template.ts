@@ -1,6 +1,6 @@
 import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { VMError } from "@oxidevm/sdk";
+import { VMError } from "@oxvm/sdk";
 import { object } from "./validation.js";
 import { file } from "./template-files.js";
 
@@ -27,5 +27,5 @@ export async function writeStarter(directory: string): Promise<void> {
     if (path.endsWith(".woff2") || path.endsWith(".png")) await writeFile(join(directory, path), Buffer.from(value, "base64"), { flag: "wx" });
     else await file(directory, path, value);
   }
-  await file(directory, "tsconfig.node.json", `${JSON.stringify({ extends: "./tsconfig.json", compilerOptions: { lib: ["ES2024"], types: ["node"] }, include: ["vite.config.ts", "dev/**/*.ts", "oxidevm.config.ts"] }, null, 2)}\n`);
+  await file(directory, "tsconfig.node.json", `${JSON.stringify({ extends: "./tsconfig.json", compilerOptions: { lib: ["ES2024"], types: ["node"] }, include: ["vite.config.ts", "dev/**/*.ts", "oxvm.config.ts"] }, null, 2)}\n`);
 }
