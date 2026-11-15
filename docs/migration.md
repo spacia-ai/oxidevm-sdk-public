@@ -92,6 +92,15 @@ unchanged. Existing binaries need no rebuild.
 The old `oxidevm-bridge` crate remains available for existing releases. Publish
 and verify the new SDK and crate before releasing rebuilt Rust modules.
 
+## Native Node-API buffer inspection
+
+Operation set 2 reports `Float16Array` creation and inspection requests with
+`FEATURE_NOT_AVAILABLE`. Its current guest bridge supports typed-array kinds
+0 through 10. Creation and inspection share one kind table and admission check.
+DataView inspection reads its actual backing store, byte offset and byte length
+through captured intrinsic getters. Instance and subclass properties cannot
+replace that window. Shared-backed DataViews return `FEATURE_NOT_AVAILABLE`.
+
 ## Execution bootstrap deadline: typed reasons
 
 A missed execution bootstrap deadline keeps its code, `CORE_LOAD_FAILED`, and gains a

@@ -316,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn outside_oxidevm_running_is_unavailable() {
+    fn outside_oxvm_running_is_unavailable() {
         assert_eq!(Command::new("/bin/true").output(), Err(Error::Unavailable));
     }
 }

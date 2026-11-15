@@ -3,9 +3,9 @@ import { integer } from "../../decode.js";
 import { VMError } from "../../errors.js";
 import { protocol } from "../../js-process/codec.js";
 import { nativeMapSize } from "./collection-size.js";
+import { nativeTypedArrayKind, nativeTypedArrayTypes } from "./arraybuffers.js";
 
 const MAX_BYTES = 128 * 1024 * 1024;
-const types = [Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array, BigInt64Array, BigUint64Array];
 interface Backing { readonly weak: WeakRef<ArrayBuffer>; readonly token: object; readonly length: number; readonly original: Uint8Array | undefined }
 const backings = new Map<number, Backing>(), apply = Reflect.apply;
 const backingGet = Reflect.get(backings, "get"), backingSet = Reflect.get(backings, "set"), backingDelete = Reflect.get(backings, "delete"), backingKeys = Reflect.get(backings, "keys");
@@ -65,8 +65,8 @@ export class NativeBuffers {
   inspect(value: ArrayBufferView, owned = false) {
     const buffer = value.buffer;
     if (!(buffer instanceof ArrayBuffer)) throw new VMError("FEATURE_NOT_AVAILABLE", "Concurrent shared native buffers are unsupported");
-    const type = types.findIndex(constructor => value instanceof constructor);
-    const size = types[type]?.BYTES_PER_ELEMENT;
+    const type = nativeTypedArrayTypes.findIndex(([, , target]) => typeof target === "function" && value instanceof target);
+    const size = nativeTypedArrayKind(type, "napi_get_typedarray_info")?.[1];
     if (size === undefined) protocol("Native buffer is not a typed array");
     return { identity: this.#identity(buffer, owned), type, length: value.byteLength / size, offset: value.byteOffset, buffer, bytes: new Uint8Array(buffer) };
   }

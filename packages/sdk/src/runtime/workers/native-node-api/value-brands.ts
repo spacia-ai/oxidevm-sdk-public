@@ -16,6 +16,7 @@ function getter(prototype: object, key: PropertyKey): unknown {
   const descriptor = Object.getOwnPropertyDescriptor(prototype, key);
   return descriptor === undefined ? undefined : Reflect.get(descriptor, "get");
 }
+export { getter as nativeIntrinsicGetter };
 
 function readIntrinsic(value: unknown, getter: unknown, api: Query): unknown {
   if (typeof getter !== "function") throw new VMError("FEATURE_NOT_AVAILABLE", "Native value query intrinsic is unavailable", { api });

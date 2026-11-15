@@ -1,7 +1,7 @@
 //! Linux integration for Rust programs that run as WebAssembly (`wasm32-wasip1`) inside an
 //! [OXVM](https://oxvm.dev) virtual machine.
 //!
-//! A OXVM module runs your compiled program with the SDK's `host.kit.wasi`: standard Rust I/O, files, arguments,
+//! An OXVM module runs your compiled program with the SDK's `host.kit.wasi`: standard Rust I/O, files, arguments,
 //! environment, clocks and randomness work through WASI on the VM's live Linux files. WASI Preview1 has no processes,
 //! no sockets and no working directory, so this crate adds them through the `oxvm_bridge_v1` imports the kit serves:
 //!
@@ -71,9 +71,9 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Host(errno) => write!(f, "the OxideVM host failed with WASI errno {errno}"),
-            Self::Unavailable => f.write_str("the OxideVM bridge is not available to this program"),
-            Self::Protocol(reason) => write!(f, "the OxideVM bridge broke its ABI: {reason}"),
+            Self::Host(errno) => write!(f, "the OXVM host failed with WASI errno {errno}"),
+            Self::Unavailable => f.write_str("the OXVM bridge is not available to this program"),
+            Self::Protocol(reason) => write!(f, "the OXVM bridge broke its ABI: {reason}"),
             Self::InvalidCommand(reason) => write!(f, "invalid native command: {reason}"),
             Self::TimedOut => {
                 f.write_str("the native command ran past its deadline and was killed")
@@ -92,7 +92,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn outside_oxidevm_every_call_is_unavailable() {
+    fn outside_oxvm_every_call_is_unavailable() {
         assert_eq!(process::info(), Err(Error::Unavailable));
         assert_eq!(process::cwd(), Err(Error::Unavailable));
     }
@@ -100,11 +100,17 @@ mod tests {
     #[test]
     fn errors_name_their_cause() {
         assert_eq!(Error::from_errno(8), Error::Host(8));
-        assert!(Error::Unavailable.to_string().contains("not available"));
-        assert!(
-            Error::Protocol("x")
-                .to_string()
-                .contains("broke its ABI: x")
+        assert_eq!(
+            Error::Host(44).to_string(),
+            "the OXVM host failed with WASI errno 44"
+        );
+        assert_eq!(
+            Error::Unavailable.to_string(),
+            "the OXVM bridge is not available to this program"
+        );
+        assert_eq!(
+            Error::Protocol("x").to_string(),
+            "the OXVM bridge broke its ABI: x"
         );
     }
 }

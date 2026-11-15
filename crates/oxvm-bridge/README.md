@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 Build with `cargo build --release --target wasm32-wasip1` and run the `.wasm` file in a VM, for example with the
-`rust-wasi` command of the `oxidevm-rust` module, or from your own module with the SDK's `host.kit.wasi`.
+`rust-wasi` command of the `oxvm-rust` module, or from your own module with the SDK's `host.kit.wasi`.
 
 The program's module must declare the capabilities a call uses: `process.info` for `process::info`, `process.sync` for
 `Command`, and `net.vm` or `net.internet` for sockets. A call the module does not provide returns
@@ -49,7 +49,7 @@ Guide: <https://oxvm.dev/docs/guides/rust-programs/> · Interface reference:
 
 `oxvm-bridge` imports `oxvm_bridge_v1` and requires the matching OXVM SDK.
 The SDK also serves the retained `oxidevm_bridge_v1` namespace through the same v1
-implementation, so previously compiled programs still work. Function signatures
+implementation, so previously compiled programs still work. Public error labels use OXVM. Function signatures
 and records retain ABI major 1. Its only unsafe code is those calls, in one module.
 
 Licensed under the Apache License, Version 2.0.

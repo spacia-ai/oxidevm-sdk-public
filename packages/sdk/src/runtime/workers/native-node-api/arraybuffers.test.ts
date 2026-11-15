@@ -10,19 +10,48 @@ function value(values: NativeValues, result: { readonly status: number; readonly
 }
 function pending(values: NativeValues): unknown { return value(values, values.dispatch("napi_get_and_clear_last_exception", [], empty)); }
 
-it("creates every typed array kind over an ArrayBuffer, as napi_typedarray_type numbers them", () => {
+it("creates and inspects every supported typed array kind with its napi_typedarray_type identity", () => {
   const values = owner(), buffer = new ArrayBuffer(64), handle = values.add(buffer);
-  const kinds = [Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array, BigInt64Array, BigUint64Array, Float16Array];
+  const kinds = [Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array, BigInt64Array, BigUint64Array];
   kinds.forEach((kind, type) => {
-    const made = value(values, values.dispatch("napi_create_typedarray", [BigInt(type), 2n, handle, 16n], empty));
+    const created = values.dispatch("napi_create_typedarray", [BigInt(type), 2n, handle, 16n], empty);
+    const made = value(values, created);
     expect(made).toBeInstanceOf(kind);
     expect(made).toMatchObject({ buffer, byteOffset: 16, length: 2 });
+    const inspected = values.dispatch("napi_get_typedarray_info", [created.args[0] ?? 0n], empty);
+    expect(inspected.status).toBe(0); expect(inspected.args.slice(0, 4)).toEqual([1n, BigInt(type), 2n, 16n]);
+    expect(inspected.bytes).toEqual(new Uint8Array(buffer)); expect(values.get(inspected.args[4] ?? 0n)).toBe(buffer);
   });
   expect(values.dispatch("napi_create_typedarray", [12n, 1n, handle, 0n], empty).status).toBe(1);
   expect(values.dispatch("napi_create_typedarray", [1n, 1n, values.add({}), 0n], empty).status).toBe(1);
   expect(values.dispatch("napi_create_typedarray", [1n, 1n, values.add(new Uint8Array(4)), 0n], empty).status).toBe(1);
   expect(() => values.dispatch("napi_create_typedarray", [1n, 1n, values.add(new SharedArrayBuffer(8)), 0n], empty)).toThrow(/SharedArrayBuffer/u);
   expect(() => values.dispatch("napi_create_typedarray", [1n, 1n, handle], empty)).toThrow(/argument shape/u);
+});
+
+it("explicitly refuses Float16Array creation and inspection until the guest bridge admits type 11", () => {
+  const values = owner(), handle = values.add(new ArrayBuffer(8));
+  const code = "FEATURE_NOT_AVAILABLE", lateFailure = "unsupported-node-api";
+  expect(() => values.dispatch("napi_create_typedarray", [11n, 2n, handle, 0n], empty)).toThrow(expect.objectContaining({ code, detail: { lateFailure, subject: "napi_create_typedarray" } }));
+  expect(() => values.dispatch("napi_get_typedarray_info", [values.add(new Float16Array(2))], empty)).toThrow(expect.objectContaining({ code, detail: { lateFailure, subject: "napi_get_typedarray_info" } }));
+});
+
+it("reads a DataView's actual window without invoking shadowed instance or subclass getters", () => {
+  const buffer = new ArrayBuffer(8), bytes = new Uint8Array(buffer); bytes.set([1, 2, 3, 4, 5, 6, 7, 8]);
+  const shadow = { buffer: { get: () => { throw new Error("application buffer getter ran"); } }, byteOffset: { get: () => 99 }, byteLength: { get: () => 99 } };
+  class ShadowedView extends DataView<ArrayBuffer> {}
+  Object.defineProperties(ShadowedView.prototype, shadow);
+  for (const view of [Object.defineProperties(new DataView(buffer, 2, 4), shadow), new ShadowedView(buffer, 2, 4)]) {
+    const values = owner(), result = values.dispatch("napi_get_dataview_info", [values.add(view)], empty);
+    expect(result.status).toBe(0); expect(result.args.slice(0, 4)).toEqual([1n, 1n, 4n, 2n]);
+    expect(result.bytes).toEqual(bytes); expect(values.get(result.args[4] ?? 0n)).toBe(buffer);
+  }
+});
+
+it("does not admit a shared DataView when its buffer property claims an ordinary ArrayBuffer", () => {
+  const values = owner(), view = new DataView(new SharedArrayBuffer(8));
+  Object.defineProperty(view, "buffer", { value: new ArrayBuffer(8) });
+  expect(() => values.dispatch("napi_get_dataview_info", [values.add(view)], empty)).toThrow(/SharedArrayBuffer/u);
 });
 
 it("refuses a misaligned or oversized typed array with Node's RangeError and napi_generic_failure", () => {
