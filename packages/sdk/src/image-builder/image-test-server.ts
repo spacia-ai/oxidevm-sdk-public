@@ -22,14 +22,15 @@ interface ImageTestServingOptions {
   /** A built module release served at /module/, and again at /module-tampered/ with the first byte of `tamper` inverted. */
   readonly module?: { readonly directory: string; readonly tamper: string };
   /**
-   * The SDK's built module frame (engine ADR 0028), served at `/oxidevm/runtime/module-frame/`, where the page's
+   * The SDK's built module frame (engine ADR 0028), served at `/oxvm/runtime/module-frame/` and its legacy alias, where the page's
    * `<runtime.baseUrl>module-frame/` resolves, with the headers its `frame.json` names instead of the page's.
    */
   readonly moduleFrameDir?: string;
 }
 export interface ImageTestServer { readonly origin: string; close(): Promise<void> }
 
-const MODULE_FRAME_PREFIX = "/oxidevm/runtime/module-frame/", MODULE_FRAME_FILES: ReadonlySet<string> = new Set(["index.html", "broker.js", "runner.js"]);
+const RUNTIME_PREFIXES = ["/oxvm/runtime/", "/oxidevm/runtime/"] as const;
+const MODULE_FRAME_FILES: ReadonlySet<string> = new Set(["index.html", "broker.js", "runner.js"]);
 const MAX_FRAME_JSON_BYTES = 64 * 1024, HEADER_NAME = /^[A-Za-z][A-Za-z0-9-]{0,63}$/u, MAX_FRAME_HEADERS = 16;
 
 /** The response headers a built module frame directory must be served with, from its `frame.json`. */
@@ -64,6 +65,7 @@ export async function startImageTestServer(options: ImageTestServingOptions): Pr
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     isolatedHeaders(response);
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const runtimePrefix = RUNTIME_PREFIXES.find(prefix => url.pathname.startsWith(prefix));
     if ((request.method !== "GET" && request.method !== "HEAD") || url.search !== "") { response.writeHead(404); response.end(); return; }
     if (url.pathname === "/fixture.json") { response.setHeader("Content-Type", "application/json"); response.end(request.method === "HEAD" ? undefined : configuration); return; }
     if (url.pathname === "/") { response.setHeader("Content-Type", "text/html"); response.end(request.method === "HEAD" ? undefined : '<!doctype html><html><head><meta charset="UTF-8"><title>OXVM image qualification</title></head><body><script type="module" src="/qualification/' + entry + '"></script></body></html>'); return; }
@@ -74,20 +76,21 @@ export async function startImageTestServer(options: ImageTestServingOptions): Pr
       response.setHeader("Content-Type", "application/octet-stream");
       response.end(request.method === "HEAD" ? undefined : bytes); return;
     }
-    if (frameDir !== undefined && frameHeaders !== undefined && url.pathname.startsWith(MODULE_FRAME_PREFIX)) {
-      const name = decodeURIComponent(url.pathname.slice(MODULE_FRAME_PREFIX.length)) || "index.html";
+    const framePrefix = runtimePrefix === undefined ? undefined : `${runtimePrefix}module-frame/`;
+    if (frameDir !== undefined && frameHeaders !== undefined && framePrefix !== undefined && url.pathname.startsWith(framePrefix)) {
+      const name = decodeURIComponent(url.pathname.slice(framePrefix.length)) || "index.html";
       if (!MODULE_FRAME_FILES.has(name)) { response.writeHead(404); response.end(); return; }
       // The frame's own headers (its sandboxing CSP, CORP cross-origin), never the page's opener policy.
       response.removeHeader("Cross-Origin-Opener-Policy");
       for (const [header, value] of Object.entries(frameHeaders)) response.setHeader(header, value);
       await serveStaticFile(request, response, frameDir, name); return;
     }
-    const compliancePrefix = compliance === undefined ? undefined : `/oxidevm/runtime/compliance/${compliance.sha256}/`;
+    const compliancePrefix = compliance === undefined || runtimePrefix === undefined ? undefined : `${runtimePrefix}compliance/${compliance.sha256}/`;
     const route = compliancePrefix !== undefined && compliance !== undefined && url.pathname.startsWith(compliancePrefix) ? { prefix: compliancePrefix, directory: compliance.directory }
       : imagePrefix !== undefined && bundleDir !== undefined && url.pathname.startsWith(imagePrefix) ? { prefix: imagePrefix, directory: bundleDir }
       : module !== undefined && url.pathname.startsWith("/module/") ? { prefix: "/module/", directory: module.directory }
       : module !== undefined && url.pathname.startsWith("/module-tampered/") ? { prefix: "/module-tampered/", directory: module.directory }
-      : url.pathname.startsWith("/oxidevm/runtime/") ? { prefix: "/oxidevm/runtime/", directory: options.engineDir }
+      : runtimePrefix !== undefined ? { prefix: runtimePrefix, directory: options.engineDir }
         : url.pathname.startsWith("/qualification/") ? { prefix: "/qualification/", directory: options.browserDir } : undefined;
     if (route === undefined) { response.writeHead(404); response.end(); return; }
     const relative = decodeURIComponent(url.pathname.slice(route.prefix.length));

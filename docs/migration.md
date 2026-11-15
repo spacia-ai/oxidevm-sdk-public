@@ -35,6 +35,8 @@ Self-hosted projects that retain the old asset base must set
 `runtime: { hosting: "self-hosted", baseUrl: "/oxidevm/runtime/" }`.
 Otherwise move the asset base and serving configuration together. The new
 self-hosted default is `/oxvm/runtime/`. Both paths remain valid when explicit.
+Image and module qualification serve engine, compliance and module-frame assets
+under both runtime paths.
 
 CLI signing and trust settings accept `OXVM_SIGNING_KEY_FILE`,
 `OXVM_IMAGE_TRUST_FILE`, and `OXVM_SNAPSHOT_TRUST_FILE`. Their `OXIDEVM_*`
