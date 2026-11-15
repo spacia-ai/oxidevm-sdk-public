@@ -39,7 +39,10 @@ export function createModuleRecord(path: string, definition: ModuleBindings, for
   )), exports: new Map(), imports: new Map(), namespace: undefined, linked: false };
 }
 
-export function linkModuleGraph(records: Iterable<ModuleRecord>): void {
+/** Explains why `module` lacks `name` for `importer`, when the program is not at fault. */
+export type MissingExport = (module: ModuleRecord, name: string, importer: ModuleRecord) => Error | undefined;
+
+export function linkModuleGraph(records: Iterable<ModuleRecord>, explain: MissingExport = () => undefined): void {
   const modules = Array.from(records);
   for (const module of modules) {
     if (module.linked) continue;
@@ -52,12 +55,12 @@ export function linkModuleGraph(records: Iterable<ModuleRecord>): void {
   for (const module of modules) {
     if (module.linked) continue;
     for (const forward of module.definition.forwards) {
-      if (!module.exports.has(forward.exported)) throw new SyntaxError(`Missing or ambiguous export '${forward.imported}' from ${forward.source}`);
+      if (!module.exports.has(forward.exported)) throw unresolved(module, forward.source, forward.imported, explain);
     }
     for (const binding of module.definition.imports) {
       const dependency = requiredDependency(module, binding.source);
       const cell = binding.imported === null ? undefined : dependency.exports.get(binding.imported);
-      if (binding.imported !== null && cell === undefined) throw new SyntaxError(`Missing or ambiguous export '${binding.imported}' from ${binding.source}`);
+      if (binding.imported !== null && cell === undefined) throw unresolved(module, binding.source, binding.imported, explain);
       module.imports.set(binding.local, {
         get value(): unknown { return cell === undefined ? dependency.namespace : cell.read(); },
         set value(_value: unknown) { throw new TypeError("Assignment to constant variable."); },
@@ -65,6 +68,32 @@ export function linkModuleGraph(records: Iterable<ModuleRecord>): void {
     }
   }
   for (const module of modules) module.linked = true;
+}
+
+/** A name no module provides is the program's SyntaxError, unless `explain` blames the module
+ * that would provide it through re-exports; an ambiguous name stays the program's error. */
+function unresolved(importer: ModuleRecord, source: string, name: string | null, explain: MissingExport): Error {
+  const dependency = requiredDependency(importer, source);
+  const cause = name === null || resolveExport(dependency, name, new Set()) === ambiguous
+    ? undefined : lacking(dependency, name, importer, explain, new Set());
+  return cause ?? new SyntaxError(`Missing or ambiguous export '${name}' from ${source}`);
+}
+
+function lacking(module: ModuleRecord, name: string, importer: ModuleRecord, explain: MissingExport, visited: Set<string>): Error | undefined {
+  const key = JSON.stringify([module.path, name]);
+  if (visited.has(key) || module.definition.exports.some(binding => binding.exported === name)) return undefined;
+  visited.add(key);
+  const forward = module.definition.forwards.find(binding => binding.exported === name);
+  if (forward !== undefined) {
+    return forward.imported === null ? undefined : lacking(requiredDependency(module, forward.source), forward.imported, importer, explain, visited);
+  }
+  const cause = explain(module, name, importer);
+  if (cause !== undefined || name === "default") return cause;
+  for (const source of module.definition.stars) {
+    const star = lacking(requiredDependency(module, source), name, importer, explain, visited);
+    if (star !== undefined) return star;
+  }
+  return undefined;
 }
 
 function requiredDependency(module: ModuleRecord, source: string): ModuleRecord {

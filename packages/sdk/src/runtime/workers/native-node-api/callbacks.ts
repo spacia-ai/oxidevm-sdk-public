@@ -44,10 +44,20 @@ export class NativeCallbacks {
     }
   }
   add(value: object, identity: bigint, kind: Kind, environment: bigint): void {
+    apply(register, this.#registry, [value, identity, this.#claim(identity, kind, environment)]);
+  }
+  /** node_api_post_finalizer (ADR 0026, 2.13): the slot stays claimed until `later` runs the
+   * finalizer, or teardown runs it with the other finalizers; whichever is first runs it once. */
+  post(identity: bigint, environment: bigint, later: (run: () => void) => void): void {
+    this.#claim(identity, "finalizer", environment);
+    later(() => { this.#finish(identity, true); });
+  }
+  #claim(identity: bigint, kind: Kind, environment: bigint): object {
     this.validate(identity); this.effects.claim(identity, environment);
     const local = Number(identity & 0xffff_ffffn), token = {};
     this.#generations[local % 4096] = floor(local / 4096);
-    apply(entrySet, this.#entries, [identity, { kind, token }]); apply(register, this.#registry, [value, identity, token]);
+    apply(entrySet, this.#entries, [identity, { kind, token }]);
+    return token;
   }
   #finish(identity: bigint, collect: boolean): void {
     const entry = apply(entryGet, this.#entries, [identity]); if (entry === undefined) return;

@@ -10,8 +10,8 @@
   },
   "include": [
     "examples/*/vite.config.ts",
-    "examples/*/oxidevm.config.ts",
-    "examples/*/oxidevm.image.ts",
+    "examples/*/oxvm.config.ts",
+    "examples/*/oxvm.image.ts",
     "examples/*/image/*.ts",
     "scripts/**/*.ts",
     "tests/integration/**/*.ts"

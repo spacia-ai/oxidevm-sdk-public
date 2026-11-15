@@ -1,4 +1,4 @@
-import { VMError } from "@oxidevm/sdk";
+import { VMError } from "@oxvm/sdk";
 import { expect, it } from "vitest";
 import { savedWithAnotherImageKey } from "./workspace.ts";
 

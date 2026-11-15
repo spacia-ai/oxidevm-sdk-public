@@ -13,10 +13,16 @@ it("exports the relay protocol version its relay specification declares, and no 
 
 it("exposes exactly the advanced values the barrel names, so a new runtime export needs an explicit decision", () => {
   const expected = [
-    "MINIMUM_BROWSERS", "RELAY_VERSION", "VMError", "acquireLocalDataLease", "backupFileName", "configureJSProcessTrace",
+    "MINIMUM_BROWSERS", "NATIVE_FRAME_VERSION", "NATIVE_OPERATION_SET", "RELAY_VERSION", "VMError", "acquireLocalDataLease", "backupFileName", "configureJSProcessTrace",
     "createRuntimeVM", "decodeSystemTraceSnapshot", "describeSnapshotError", "detectBrowserSupport", "engineRelease",
     "engineReleaseId", "eraseLocalData", "getDiagnostics", "instructionIdentities", "isPreviewSessionOrigin",
     "readJSProcessTrace", "requestWorkspaceHandoff", "validateRuntimeVMOptions", "watchAccelerationNotices",
   ];
   expect(Object.keys(diagnostics).sort()).toEqual([...expected].sort());
+});
+
+it("exports the native frame version and highest operation set this SDK serves (ADR 0026, 2.8)", () => {
+  // The engine's compatibility check compares them with the Node-API host it builds.
+  expect(diagnostics.NATIVE_FRAME_VERSION).toBe(17);
+  expect(diagnostics.NATIVE_OPERATION_SET).toBe(2);
 });

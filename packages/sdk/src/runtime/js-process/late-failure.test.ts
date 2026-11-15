@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { VMError } from "../errors.js";
-import { decodeAccelerationNotice, decodeLateFailure, decodeLateFailureNotice, encodeAccelerationNotice, encodeLateFailureReport, lateFailureOf, lateFailureReporter, lateFailureSentence, lateFailureDetail } from "./late-failure.js";
+import { decodeAccelerationNotice, decodeLateFailure, decodeLateFailureNotice, decodeTrialFailure, encodeAccelerationNotice, encodeLateFailureReport, encodeTrialDeadline, encodeTrialReport, encodeTrialSuspend, lateFailureKind, lateFailureOf, lateFailureReporter, lateFailureSentence, lateFailureDetail } from "./late-failure.js";
 
 it("reads only the fast-path limitations an error names in its structured detail", () => {
   expect(lateFailureOf(new VMError("FEATURE_NOT_AVAILABLE", "builtin is not supported", { lateFailure: "unavailable-builtin", subject: "node:sqlite" }))).toEqual({ kind: "unavailable-builtin", detail: "node:sqlite" });
@@ -10,6 +10,8 @@ it("reads only the fast-path limitations an error names in its structured detail
     expect(lateFailureOf(error)).toBeUndefined();
   }
   expect(lateFailureOf(new VMError("FEATURE_NOT_AVAILABLE", "x", { lateFailure: "unsupported-node-api", subject: "napi_x\nsecret" }))).toEqual({ kind: "unsupported-node-api", detail: "napi_xsecret" });
+  expect(lateFailureOf(new VMError("FEATURE_NOT_AVAILABLE", "x", { lateFailure: "host-crash", subject: "signal 11" }))).toBeUndefined();
+  expect(lateFailureSentence({ kind: "host-crash", detail: "signal 11" })).toBe("This program's add-on stopped the fast path with signal 11; its next run uses full Linux.");
   expect(lateFailureDetail("é".repeat(300)).length).toBeLessThanOrEqual(255);
 });
 
@@ -99,4 +101,35 @@ it("reports a missing export a failing process touched, once, and nothing for a 
   const structured = run(touched);
   structured.reporter.uncaught(new VMError("FEATURE_NOT_AVAILABLE", "builtin is not supported", { lateFailure: "unavailable-builtin", subject: "node:sqlite" }));
   expect(structured.received).toEqual([{ kind: "unavailable-builtin", detail: "node:sqlite" }]);
+});
+
+it("encodes the trial operations Rust validates (Userspace API 148)", () => {
+  const report = encodeTrialReport({ generation: 7n, id: 9n }, { kind: "addon-init-threw", detail: "TypeError" });
+  const view = new DataView(report.buffer);
+  expect([view.getUint32(0, true), report[4], view.getBigUint64(5, true), view.getBigUint64(13, true)]).toEqual([1, 8, 7n, 9n]);
+  expect(Array.from(report.subarray(21, 23))).toEqual([6, 9]);
+  expect(new TextDecoder().decode(report.subarray(23))).toBe("TypeError");
+  expect(encodeTrialReport({ generation: 7n, id: 9n }, { kind: "unsupported-node-api", detail: "napi_x" })[21]).toBe(3);
+  const deadline = encodeTrialDeadline({ generation: 7n, id: 9n }, true);
+  expect([deadline[4], deadline.byteLength, deadline[21]]).toEqual([9, 22, 1]);
+  expect(encodeTrialDeadline({ generation: 7n, id: 9n }, false)[21]).toBe(0);
+  const suspend = encodeTrialSuspend(true), suspendView = new DataView(suspend.buffer);
+  expect([suspend[4], suspendView.getBigUint64(5, true), suspendView.getBigUint64(13, true), suspend[21]]).toEqual([10, 0n, 0n, 1]);
+  expect(encodeTrialSuspend(false)[21]).toBe(0);
+});
+
+it("decodes only the trial failures a probe may report", () => {
+  expect(decodeTrialFailure({ kind: "addon-init-threw", detail: "TypeError" })).toEqual({ kind: "addon-init-threw", detail: "TypeError" });
+  expect(decodeTrialFailure({ kind: "unsupported-node-api", detail: "napi_x" })).toEqual({ kind: "unsupported-node-api", detail: "napi_x" });
+  for (const bad of [{ kind: "host-crash", detail: "" }, { kind: "addon-init-threw", detail: "a\nb" }, { kind: "addon-init-threw" }, { kind: "addon-init-threw", detail: "x", extra: 1 }, "text"]) {
+    expect(() => decodeTrialFailure(bad)).toThrow();
+  }
+});
+
+it("names a launch over its shared-buffer budget and reports it with Rust's code 7", () => {
+  const failure = lateFailureOf(new VMError("FEATURE_NOT_AVAILABLE", "x", { lateFailure: "shared-buffer-budget", subject: "9437184 of 8388608 bytes" }));
+  expect(failure).toEqual({ kind: "shared-buffer-budget", detail: "9437184 of 8388608 bytes" });
+  expect(lateFailureKind(7)).toBe("shared-buffer-budget");
+  expect(lateFailureSentence({ kind: "shared-buffer-budget", detail: "9437184 of 8388608 bytes" })).toBe("This program's add-on shared more memory with JavaScript than the fast path allows (9437184 of 8388608 bytes); its next run uses full Linux.");
+  expect(decodeLateFailure({ kind: "shared-buffer-budget", detail: "1 of 0 bytes" })).toEqual({ kind: "shared-buffer-budget", detail: "1 of 0 bytes" });
 });

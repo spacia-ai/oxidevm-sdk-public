@@ -178,7 +178,7 @@ async function buildImageOnce(input: ImageRecipe, options: BuildImageOptions, re
       await writeFile(join(bundle, "manifest.json"), manifestBytes);
       await writeFile(join(bundle, "image.lock.json"), `${JSON.stringify({ schemaVersion: 2, mode: recipe.mode, id: recipe.id, version: recipe.version, manifestUrl: finalManifestURL, manifestSHA256: digest, trust: signing.trust, distribution, smokeTest: recipe.smokeTest, sourceIdentity: source?.identity ?? "boot-files", sourceDateEpoch: recipe.sourceDateEpoch, buildInputs }, null, 2)}\n`);
       const reference = `${recipe.id}.image.ts`;
-      await writeFile(join(bundle, reference), `import { defineImage } from "@oxidevm/sdk";\nexport default defineImage(${JSON.stringify({ mode: image.mode, manifestUrl: image.manifestUrl, manifestSHA256: image.manifestSHA256, trust: image.trust }, null, 2)});\n`);
+      await writeFile(join(bundle, reference), `import { defineImage } from "@oxvm/sdk";\nexport default defineImage(${JSON.stringify({ mode: image.mode, manifestUrl: image.manifestUrl, manifestSHA256: image.manifestSHA256, trust: image.trust }, null, 2)});\n`);
       await inspectImage(bundle, { trust: signing.trust, ...(options.signal === undefined ? {} : { signal: options.signal }) });
       options.onProgress?.({ phase: "done", manifestSHA256: digest });
       return { mode: recipe.mode, image, bundleDir: out, manifestPath: join(out, "manifest.json"), referencePath: join(out, reference), lockPath: join(out, "image.lock.json"), distribution };

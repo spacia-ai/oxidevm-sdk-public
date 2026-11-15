@@ -41,7 +41,7 @@ export function decodeDestination(bytes: Uint8Array): Destination {
 }
 
 /**
- * The socket part of `oxidevm_bridge_v1`: client streams on the module process's own VM sockets, under its declared
+ * The socket part of `oxvm_bridge_v1`: client streams on the module process's own VM sockets, under its declared
  * reach (Rust enforces it); TLS is the engine's client, verified against the VM's trust store. A write to a closed peer
  * is PIPE, never SIGPIPE.
  */

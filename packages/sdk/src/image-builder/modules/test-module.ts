@@ -59,7 +59,7 @@ export function pageOutcome(page: Readonly<Record<string, unknown>>): { readonly
 }
 
 /**
- * Runs the runner-contract properties against a built module (`oxidevm wasm build` output) in a real browser,
+ * Runs the runner-contract properties against a built module (`oxvm wasm build` output) in a real browser,
  * with the pinned engine and a Userspace image. The release is verified before any browser starts. A browser or
  * image that cannot run the module at all gives a `refused` report, not a failure.
  */

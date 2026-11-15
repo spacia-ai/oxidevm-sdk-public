@@ -198,3 +198,50 @@ it("bounds queued work and releases immediate capacity on cancellation", () => {
     expect(() => scheduler.nextTick(() => {})).not.toThrow();
   } finally { scheduler.dispose(); }
 });
+
+it("runs native immediates first in the check phase, untracked, and leaves ticks to the end of the batch (ADR 0026, 2.13)", async () => {
+  const context = createAsyncContext(), hooks = createNodeAsyncHooks(context, { deprecate, format, inspect });
+  const storage = new context.AsyncLocalStorage<string>();
+  const scheduler = new ProcessScheduler(context, error => { throw error; });
+  const order: unknown[] = [], types: string[] = [];
+  hooks.createHook({ init(_id: number, type: string) { types.push(type); } }).enable();
+  try {
+    // Pinned Node's order for node_api_post_finalizer (engine experimental.cjs, row post/order):
+    // the turn's ticks and microtasks, then Environment::SetImmediate work, then JS immediates.
+    storage.enterWith("entered");
+    scheduler.run(() => {
+      scheduler.nativeImmediate(() => {
+        order.push(["native", storage.getStore(), hooks.executionAsyncId(), hooks.triggerAsyncId()]);
+        scheduler.nativeImmediate(() => order.push("nested native"));
+        scheduler.nextTick(() => order.push("native tick"));
+        scheduler.enqueue(() => order.push("native's callback"));
+        scheduler.setImmediate(() => order.push("native's immediate"));
+      });
+      order.push("sync");
+      queueMicrotask(() => order.push("microtask"));
+      scheduler.nextTick(() => order.push("nextTick"));
+      scheduler.setImmediate(() => order.push("immediate"));
+    });
+    await scheduler.idle();
+    // Immediates the native work set still belong to this check phase; its callback waits for the next turn.
+    expect(order).toEqual(["sync", "nextTick", "microtask", ["native", undefined, 0, 0], "nested native", "native tick", "immediate", "native's immediate", "native's callback"]);
+    // A native immediate is no async resource.
+    expect(types).toEqual(["TickObject", "Immediate", "TickObject", "OxideVMCallback", "Immediate"]);
+  } finally { scheduler.dispose(); }
+});
+
+it("keeps the process alive for native immediates, bounds them and drops them on disposal", async () => {
+  const scheduler = new ProcessScheduler(createAsyncContext(), error => { throw error; });
+  const ran: string[] = [];
+  scheduler.nativeImmediate(() => ran.push("first"));
+  expect(scheduler.hasPending).toBe(true);
+  await scheduler.idle();
+  expect(ran).toEqual(["first"]);
+  for (let index = 0; index < 4096; index++) scheduler.nativeImmediate(() => ran.push("dropped"));
+  expect(() => { scheduler.nextTick(() => undefined); }).toThrow("queue exhausted");
+  scheduler.dispose();
+  expect(scheduler.hasPending).toBe(false);
+  await new Promise<void>(resolve => { setImmediate(resolve); });
+  expect(ran).toEqual(["first"]);
+  expect(() => { scheduler.nativeImmediate(() => undefined); }).toThrow("disposed");
+});

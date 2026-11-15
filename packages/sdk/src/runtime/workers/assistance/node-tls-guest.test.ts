@@ -280,7 +280,11 @@ it("closes normally when the TLS peer ends before the application ends its writa
 const lateFailure = (subject: string): unknown => expect.objectContaining({ code: "FEATURE_NOT_AVAILABLE", detail: { lateFailure: "unavailable-builtin", subject } });
 
 it("tls.connect ignores keys Node does not read and refuses a set lookup", async () => {
-  const server = createServer({ key, cert }, socket => socket.pipe(socket));
+  const server = createServer({ key, cert }, socket => {
+    // The client is destroyed after secureConnect, so the peer can receive a reset.
+    socket.on("error", error => { expect(error).toMatchObject({ code: "ECONNRESET" }); });
+    socket.pipe(socket);
+  });
   server.listen(0, "127.0.0.1"); await once(server, "listening");
   const address = server.address(); if (address === null || typeof address === "string") throw new Error("Missing port");
   const f = assistedTls();

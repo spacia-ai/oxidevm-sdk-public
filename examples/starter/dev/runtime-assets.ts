@@ -7,7 +7,7 @@ import { isPreviewHost } from "./preview-host.ts";
 export async function developmentAsset(root: string, request: string): Promise<string | undefined> {
   let path: string;
   try { path = decodeURIComponent(request.split("?")[0] ?? ""); } catch { return undefined; }
-  if (!path.startsWith("/oxidevm/") || path.includes("\\") || path.split("/").slice(1).some(part => ["", ".", ".."].includes(part)) || Array.from(path).some(char => char.charCodeAt(0) < 32)) return undefined;
+  if (!path.startsWith("/oxvm/") || path.includes("\\") || path.split("/").slice(1).some(part => ["", ".", ".."].includes(part)) || Array.from(path).some(char => char.charCodeAt(0) < 32)) return undefined;
   const target = resolve(root, `.${path}`), base = resolve(root);
   if (!target.startsWith(`${base}${sep}`)) return undefined;
   let current = base;
@@ -24,9 +24,9 @@ export async function developmentAsset(root: string, request: string): Promise<s
 export function runtimeAssets(): Plugin {
   let projectRoot = "", publicDir = "";
   return { name: "oxidevm-development-assets", configResolved(config) { projectRoot = config.root; publicDir = config.publicDir; }, configureServer(server) {
-    const root = join(server.config.root, ".oxidevm/assets");
+    const root = join(server.config.root, ".oxvm/assets");
     const middleware: Connect.NextHandleFunction = (request, response, next) => {
-      if (isPreviewHost(request.headers.host ?? "") || !(request.url ?? "").startsWith("/oxidevm/")) { next(); return; }
+      if (isPreviewHost(request.headers.host ?? "") || !(request.url ?? "").startsWith("/oxvm/")) { next(); return; }
       void (async () => {
         if (request.method !== "GET" && request.method !== "HEAD") { response.writeHead(405).end(); return; }
         const file = await developmentAsset(root, request.url ?? "");
@@ -39,9 +39,11 @@ export function runtimeAssets(): Plugin {
     };
     server.middlewares.use(middleware);
   }, async generateBundle(_options, bundle) {
-    if (publicDir !== "" && await lstat(join(publicDir, "oxidevm")).catch(() => undefined) !== undefined) throw new Error("Move development assets from public/oxidevm to .oxidevm/assets before building for production");
+    for (const directory of ["oxvm", "oxidevm"]) {
+      if (publicDir !== "" && await lstat(join(publicDir, directory)).catch(() => undefined) !== undefined) throw new Error(`Move development assets from public/${directory} to .oxvm/assets before building for production`);
+    }
     for (const name of Object.keys(bundle)) if (/oxidevm_(?:core|core_shared|userspace|netstack)(?:[.-]|$)/u.test(name)) throw new Error("The starter production build must not redistribute engine binaries");
-    const sdk = resolve(dirname(createRequire(import.meta.url).resolve("@oxidevm/sdk")), "..");
+    const sdk = resolve(dirname(createRequire(import.meta.url).resolve("@oxvm/sdk")), "..");
     for (const [source, name] of [[join(projectRoot, "LICENSE"), "LICENSE.txt"], [join(projectRoot, "NOTICE"), "NOTICE.txt"], [join(projectRoot, "LICENSES.md"), "GUIDE.md"], [join(sdk, "LICENSE"), "SDK-LICENSE.txt"], [join(sdk, "NOTICE"), "SDK-NOTICE.txt"], [join(sdk, "THIRD_PARTY_NOTICES.txt"), "THIRD_PARTY_NOTICES.txt"]]) {
       if (source === undefined || name === undefined) throw new Error("Invalid production notice mapping");
       this.emitFile({ type: "asset", fileName: `licenses/${name}`, source: await readFile(source, "utf8") });

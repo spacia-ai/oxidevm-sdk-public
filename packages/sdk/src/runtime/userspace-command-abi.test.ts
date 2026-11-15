@@ -27,10 +27,10 @@ it("rejects invalid and oversized eval source before encoding or evaluation", ()
 
 it("binds captured eval source to a worker context and rejects forged origins", () => {
   const code = "/*\0" + String.fromCharCode(0xd800) + "*/require('node:fs');";
-  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(19).u64(7n).u64(19n)
+  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(21).u64(7n).u64(19n)
     .u32(23).u8(0).path("/workspace").u8(2).u8(1).blob(encodeNativeEvalSource(code)).u32(3).u32(4)
     .u8(0).path("/usr/bin/node").path("af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab").path("native-parity-fixture-v1").u32(1).u8(0).path("/workspace/node_modules").u8(1).u64(11n)
-    .u32(0).strings([]).u32(0).u8(16).u8(1).u32(24).u64(17n).u32(5).u32(6).u32(7)
+    .u32(0).strings([]).u32(0).u8(16).u32(0).u32(134217728).u8(0).u8(1).u32(24).u64(17n).u32(5).u32(6).u32(7)
     .strings(["node", "[worker eval]"]).strings([]).finish();
   const program = decodeUserspaceCommandRequest(bytes).program;
   expect(program).toMatchObject({ kind: "native-node", entry: "[worker eval]", source: { kind: "eval", code }, context: { kind: "thread", tid: 24, parent: 17n } });
@@ -44,14 +44,16 @@ it("binds captured eval source to a worker context and rejects forged origins", 
   expect(() => decodeUserspaceCommandRequest(stale)).toThrow(/version mismatch/u);
   new DataView(stale.buffer).setUint32(4, 15, true);
   expect(() => decodeUserspaceCommandRequest(stale)).toThrow(/version mismatch/u);
+  new DataView(stale.buffer).setUint32(4, 17, true);
+  expect(() => decodeUserspaceCommandRequest(stale)).toThrow(/version mismatch/u);
 });
 
 it("binds generic native artifacts to hashes, canonical inode identity and dependency generation", () => {
   const path = "/workspace/node_modules/unrelated/addon.node", sha256 = "a".repeat(64);
-  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(19).u64(7n).u64(19n)
+  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(21).u64(7n).u64(19n)
     .u32(23).u8(0).path("/workspace").u8(2).u8(0).path("/workspace/probe.cjs").u32(3).u32(4)
     .u8(0).path("/usr/bin/node").path("af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab").path("native-parity-fixture-v1").u32(1).u8(0).path("/workspace/node_modules").u8(0).u64(11n)
-    .u32(1).u8(0).path(path).path(sha256).u64(71n).strings([]).u32(0).u8(16).u8(0)
+    .u32(1).u8(0).path(path).path(sha256).u64(71n).strings([]).u32(0).u8(16).u32(0).u32(134217728).u8(0).u8(0)
     .strings(["node", "probe.cjs"]).strings([]).finish();
   const program = decodeUserspaceCommandRequest(bytes).program;
   expect(program).toMatchObject({ profile: { identity: "native-parity-fixture-v1", dependencyGeneration: 11n, artifacts: [{ kind: "node-api", path, sha256, inode: 71n }] } });
@@ -62,7 +64,7 @@ it("binds generic native artifacts to hashes, canonical inode identity and depen
 });
 
 it("decodes only the pinned compiler service and rejects malformed compiler launches", () => {
-  const compiler = (executable = "/workspace/esbuild", version = "0.25.12", args = [executable, "--service=0.25.12", "--ping"], protocol = 19) => new Writer()
+  const compiler = (executable = "/workspace/esbuild", version = "0.25.12", args = [executable, "--service=0.25.12", "--ping"], protocol = 21) => new Writer()
     .raw(new TextEncoder().encode("OXCR")).u32(protocol).u64(7n).u64(19n).u32(23).u8(0).path("/workspace")
     .u8(3).path(executable).path(version).strings(args).strings(["PATH=/usr/bin:/bin"]).finish();
   expect(decodeUserspaceCommandRequest(compiler())).toMatchObject({ program: { kind: "esbuild", executable: "/workspace/esbuild", version: "0.25.12" }, args: ["/workspace/esbuild", "--service=0.25.12", "--ping"] });
@@ -74,11 +76,11 @@ it("decodes only the pinned compiler service and rejects malformed compiler laun
 });
 
 it("keeps shared-library identities separate from loadable addons and rejects stale launch peers", () => {
-  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(19).u64(7n).u64(19n)
+  const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(21).u64(7n).u64(19n)
     .u32(23).u8(0).path("/workspace").u8(2).u8(0).path("/workspace/probe.cjs").u32(3).u32(4)
     .u8(0).path("/usr/bin/node").path("af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab").path("native-parity-fixture-v1").u32(1).u8(0).path("/workspace/node_modules").u8(0).u64(11n)
     .u32(1).u8(1).path("libuv.so.1").path("/usr/lib/libuv.so.1").path("a".repeat(64)).u64(71n)
-    .strings([]).u32(0).u8(16).u8(0).strings(["node", "probe.cjs"]).strings([]).finish();
+    .strings([]).u32(0).u8(16).u32(0).u32(134217728).u8(0).u8(0).strings(["node", "probe.cjs"]).strings([]).finish();
   const program = decodeUserspaceCommandRequest(bytes).program; if (program.kind !== "native-node") throw new Error("Missing native program");
   const library = program.profile.artifacts[0]; expect(library).toMatchObject({ kind: "shared-library", soname: "libuv.so.1", path: "/usr/lib/libuv.so.1", inode: 71n });
   const vendored = { ...library, path: "/workspace/node_modules/.pnpm/bundle/lib/libuv.so.1" };
@@ -89,20 +91,36 @@ it("keeps shared-library identities separate from loadable addons and rejects st
   const stale = bytes.slice(); new DataView(stale.buffer).setUint32(4, 10, true); expect(() => decodeUserspaceCommandRequest(stale)).toThrow(/version mismatch/u);
 });
 
-function launch({ version = 19, bridge = 16, fork = false, input = 3, output = 4, entry = "/workspace/scripts/custom.cjs", runtime = 1, executable = "/usr/local/bin/bun", profile = "node24-bun1-v1", generation = 11n, moduleSearchPaths = ["/workspace/node_modules/.pnpm/node_modules"], addon = "/workspace/node_modules/@next/swc-linux-x64-musl/next-swc.linux-x64-musl.node" } = {}, runtimeSHA256?: string) {
+function launch({ version = 21, bridge = 16, build = Uint8Array.of(0), operationSet = 0, budget = 128 * 1024 * 1024, fork = false, input = 3, output = 4, entry = "/workspace/scripts/custom.cjs", runtime = 1, executable = "/usr/local/bin/bun", profile = "node24-bun1-v1", generation = 11n, moduleSearchPaths = ["/workspace/node_modules/.pnpm/node_modules"], addon = "/workspace/node_modules/@next/swc-linux-x64-musl/next-swc.linux-x64-musl.node" } = {}, runtimeSHA256?: string) {
   const writer = new Writer().raw(new TextEncoder().encode("OXCR")).u32(version).u64(7n).u64(19n)
     .u32(23).u8(1).path("/workspace").u8(2).u8(0).path(entry).u32(input).u32(output)
-    .u8(runtime).path(executable).path(runtimeSHA256 ?? (runtime === 0 ? "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab" : "500e6edbf321ddf490adcc55a6a01639993a07924616ab67492e1256c15557e2")).path(profile).u32(1).u8(0).path("/workspace/node_modules").u8(0).u64(generation).u32(1).u8(0).path(addon).path("a".repeat(64)).u64(71n).strings(moduleSearchPaths).u32(0).u8(bridge).u8(fork ? 2 : 0);
+    .u8(runtime).path(executable).path(runtimeSHA256 ?? (runtime === 0 ? "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab" : "500e6edbf321ddf490adcc55a6a01639993a07924616ab67492e1256c15557e2")).path(profile).u32(1).u8(0).path("/workspace/node_modules").u8(0).u64(generation).u32(1).u8(0).path(addon).path("a".repeat(64)).u64(71n).strings(moduleSearchPaths).u32(0).u8(bridge).u32(operationSet).u32(budget).raw(build).u8(fork ? 2 : 0);
   if (fork) writer.u64(8n);
   return writer.strings(["node", "scripts/custom.cjs"]).strings(["PATH=/usr/bin:/bin"]).finish();
 }
-it("carries the host helper's bridge version from the acceleration profile (OXCR 19): 15 or 16, anything else refused", () => {
-  for (const bridge of [15, 16]) expect(decodeUserspaceCommandRequest(launch({ bridge })).program).toMatchObject({ kind: "native-node", profile: { bridgeVersion: bridge } });
-  for (const bridge of [0, 14, 17, 255]) expect(() => decodeUserspaceCommandRequest(launch({ bridge }))).toThrow(/bridge version/u);
-  expect(() => decodeUserspaceCommandRequest(launch({ version: 18 }))).toThrow(/version mismatch/u);
+it("carries the host helper's bridge version from the acceleration profile (OXCR 19): 15, 16 or 17, anything else refused", () => {
+  for (const bridge of [15, 16, 17]) expect(decodeUserspaceCommandRequest(launch({ bridge })).program).toMatchObject({ kind: "native-node", profile: { bridgeVersion: bridge } });
+  for (const bridge of [0, 14, 18, 255]) expect(() => decodeUserspaceCommandRequest(launch({ bridge }))).toThrow(/bridge version/u);
+  for (const version of [19, 20, 22]) expect(() => decodeUserspaceCommandRequest(launch({ version }))).toThrow(/version mismatch/u);
   const program = decodeUserspaceCommandRequest(launch()).program;
   if (program.kind !== "native-node") throw new Error("Expected native profile");
-  for (const bridgeVersion of [undefined, 14, 17, "16", 16n]) expect(() => decodeNativeProcessProgram({ ...program, profile: { ...program.profile, bridgeVersion } })).toThrow();
+  for (const bridgeVersion of [undefined, 14, 18, "16", 16n]) expect(() => decodeNativeProcessProgram({ ...program, profile: { ...program.profile, bridgeVersion } })).toThrow();
+});
+it("carries the bytes a launch may share with native code and rejects a budget outside the bridge's limit (OXCR 21)", () => {
+  const program = decodeUserspaceCommandRequest(launch({ budget: 8 * 1024 * 1024 })).program;
+  if (program.kind !== "native-node") throw new Error("Expected native profile");
+  expect(program.profile.sharedBufferBudget).toBe(8 * 1024 * 1024);
+  for (const sharedBufferBudget of [1, 8 * 1024 * 1024, 128 * 1024 * 1024]) expect(decodeNativeProcessProgram({ ...program, profile: { ...program.profile, sharedBufferBudget } }).profile).toMatchObject({ sharedBufferBudget });
+  for (const sharedBufferBudget of [undefined, null, 0, -1, 128 * 1024 * 1024 + 1, 0.5, "1", 1n]) expect(() => decodeNativeProcessProgram({ ...program, profile: { ...program.profile, sharedBufferBudget } })).toThrow();
+  for (const budget of [0, 128 * 1024 * 1024 + 1]) expect(() => decodeUserspaceCommandRequest(launch({ budget }))).toThrow();
+});
+it("carries the operation set the host speaks and rejects one outside its bound (ADR 0026, 2.8)", () => {
+  const program = decodeUserspaceCommandRequest(launch({ operationSet: 1 })).program;
+  if (program.kind !== "native-node") throw new Error("Expected native profile");
+  expect(program.profile.operationSet).toBe(1);
+  for (const operationSet of [0, 1, 0xffff]) expect(decodeNativeProcessProgram({ ...program, profile: { ...program.profile, operationSet } }).profile).toMatchObject({ operationSet });
+  for (const operationSet of [undefined, null, -1, 0x1_0000, 0.5, "1", 1n]) expect(() => decodeNativeProcessProgram({ ...program, profile: { ...program.profile, operationSet } })).toThrow();
+  expect(() => decodeUserspaceCommandRequest(launch({ operationSet: 0x1_0000 }))).toThrow();
 });
 it("retains Rust-admitted fork parent identity separately from a thread environment", () => {
   expect(decodeUserspaceCommandRequest(launch({ fork: true })).program).toMatchObject({ context: { kind: "fork", parent: 8n } });
@@ -144,14 +162,14 @@ it("preserves editable module placement, runtime identity, generation and privat
 });
 
 type Root = readonly [kind: number, path: string];
-function rootsLaunch(roots: readonly Root[], { basis = 1, artifacts = [] as readonly string[], moduleSearchPaths = [] as readonly string[], entry = "/workspace/app/main.cjs" } = {}) {
-  const writer = new Writer().raw(new TextEncoder().encode("OXCR")).u32(19).u64(7n).u64(19n)
-    .u32(23).u8(0).path("/workspace/app").u8(2).u8(0).path(entry).u32(3).u32(4)
+function rootsLaunch(roots: readonly Root[], { basis = 1, artifacts = [] as readonly string[], moduleSearchPaths = [] as readonly string[], entry = "/workspace/app/main.cjs", source = 0 } = {}) {
+  const writer = new Writer().raw(new TextEncoder().encode("OXCR")).u32(21).u64(7n).u64(19n)
+    .u32(23).u8(0).path("/workspace/app").u8(2).u8(source).path(entry).u32(3).u32(4)
     .u8(0).path("/usr/bin/node").path("af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab").path("node24-bun1-v1").u32(roots.length);
   for (const [kind, path] of roots) writer.u8(kind).path(path);
   writer.u8(basis).u64(11n).u32(artifacts.length);
   for (const path of artifacts) writer.u8(0).path(path).path("a".repeat(64)).u64(71n);
-  return writer.strings(moduleSearchPaths).u32(0).u8(16).u8(0).strings(["node", "main.cjs"]).strings([]).finish();
+  return writer.strings(moduleSearchPaths).u32(0).u8(16).u32(0).u32(134217728).u8(0).u8(0).strings(["node", "main.cjs"]).strings([]).finish();
 }
 
 it("decodes Rust's ordered dependency and store roots with the admission basis", () => {
@@ -188,7 +206,7 @@ it("rejects roots, add-ons and search paths Rust cannot have admitted", () => {
 });
 
 /** An OXCR 19 module command launch (ADR 0027): tag 4 with the registration, name, stub path and terminal bits, then the full argv. */
-function moduleLaunch({ version = 19, registration = 3, name = "typst", path = `/usr/local/bin/${name}`, terminals = 0b011, tty = 1, args = ["typst", "compile", "a.typ"] }: { readonly version?: number; readonly registration?: number; readonly name?: string; readonly path?: string; readonly terminals?: number; readonly tty?: number; readonly args?: readonly string[] } = {}) {
+function moduleLaunch({ version = 21, registration = 3, name = "typst", path = `/usr/local/bin/${name}`, terminals = 0b011, tty = 1, args = ["typst", "compile", "a.typ"] }: { readonly version?: number; readonly registration?: number; readonly name?: string; readonly path?: string; readonly terminals?: number; readonly tty?: number; readonly args?: readonly string[] } = {}) {
   return new Writer().raw(new TextEncoder().encode("OXCR")).u32(version).u64(7n).u64(19n).u32(23).u8(tty).path("/workspace/doc")
     .u8(4).u32(registration).blob(new TextEncoder().encode(name)).blob(new TextEncoder().encode(path)).u8(terminals)
     .strings(args).strings(["PATH=/usr/local/bin:/usr/bin:/bin"]).finish();
@@ -208,8 +226,8 @@ it("decodes a module command launch (OXCR 19 tag 4) with its registration, stub 
 });
 
 it("refuses OXCR 18 and module command launches Rust cannot have admitted", () => {
-  expect(() => decodeUserspaceCommandRequest(moduleLaunch({ version: 18 }))).toThrow(/version mismatch/u);
-  expect(() => decodeUserspaceCommandRequest(launch({ version: 17 }))).toThrow(/version mismatch/u);
+  expect(() => decodeUserspaceCommandRequest(moduleLaunch({ version: 19 }))).toThrow(/version mismatch/u);
+  expect(() => decodeUserspaceCommandRequest(launch({ version: 18 }))).toThrow(/version mismatch/u);
   for (const bytes of [
     moduleLaunch({ registration: 0 }),
     ...["Typst", "oxidevm-tool", "", "a".repeat(65), "a/b", "-x", ".x", "x y", "é"].map(name => moduleLaunch({ name })),
@@ -264,4 +282,70 @@ it("ends a JS process killed by a trappable signal (command operation 7) with an
   expect(Array.from(encodeCommandSignalExit(identity, 2))).toEqual([1, 0, 0, 0, 7, 7, 0, 0, 0, 0, 0, 0, 0, 19, 0, 0, 0, 0, 0, 0, 0, 2]);
   for (const signal of [1, 3, 10, 12, 15, 35, 64]) expect(encodeCommandSignalExit(identity, signal).at(-1)).toBe(signal);
   for (const signal of [0, 9, 19, 32, 34, 65, 1.5]) expect(() => encodeCommandSignalExit(identity, signal)).toThrow();
+});
+
+it("decodes a trial load of its one add-on and launches a trial verified (OXCR 17)", () => {
+  const roots: readonly Root[] = [[0, "/workspace/app/node_modules"]];
+  const addon = "/workspace/app/node_modules/pkg/pkg.node", other = "/workspace/app/node_modules/other/other.node";
+  expect(decodeUserspaceCommandRequest(rootsLaunch(roots, { basis: 3, artifacts: [addon], entry: addon, source: 2 })).program).toMatchObject({
+    kind: "native-node", entry: addon, source: { kind: "probe" }, profile: { basis: "trial", artifacts: [{ kind: "node-api", path: addon }] },
+  });
+  expect(decodeUserspaceCommandRequest(rootsLaunch(roots, { basis: 2, artifacts: [addon] })).program).toMatchObject({ source: { kind: "file" }, profile: { basis: "verified" } });
+  for (const bytes of [
+    rootsLaunch(roots, { basis: 3, artifacts: [addon] }),
+    rootsLaunch(roots, { basis: 0, artifacts: [addon], entry: addon, source: 2 }),
+    rootsLaunch(roots, { basis: 3, artifacts: [addon, other], entry: addon, source: 2 }),
+    rootsLaunch(roots, { basis: 3, artifacts: [other], entry: addon, source: 2 }),
+    rootsLaunch(roots, { basis: 4, artifacts: [addon] }),
+    rootsLaunch(roots, { basis: 3, artifacts: [addon], entry: addon, source: 3 }),
+  ]) expect(() => decodeUserspaceCommandRequest(bytes)).toThrow();
+  const program = decodeUserspaceCommandRequest(rootsLaunch(roots, { basis: 3, artifacts: [addon], entry: addon, source: 2 })).program;
+  if (program.kind !== "native-node") throw new Error("Expected native profile");
+  expect(() => decodeNativeProcessProgram({ ...program, context: { kind: "thread", tid: 2, parent: 3n, stdio: [5, 6, 7] } })).toThrow("main native process");
+});
+
+it("admits a trial load of an add-on in a package store root", () => {
+  const store = "/home/user/.local/share/pnpm/store/v10/links/pkg/1.0.0/abc/node_modules", addon = `${store}/pkg/pkg.node`;
+  const roots: readonly Root[] = [[0, "/workspace/app/node_modules"], [1, store]];
+  expect(decodeUserspaceCommandRequest(rootsLaunch(roots, { basis: 3, artifacts: [addon], entry: addon, source: 2 })).program).toMatchObject({ entry: addon, source: { kind: "probe" } });
+  expect(() => decodeUserspaceCommandRequest(rootsLaunch(roots, { basis: 3, artifacts: ["/home/user/elsewhere/pkg.node"], entry: "/home/user/elsewhere/pkg.node", source: 2 }))).toThrow();
+});
+
+/** The probe's report as Rust forwards it: five u16-prefixed fields, then the u32-prefixed configuration. */
+function probedBuild({ version = "v24.11.0", node = "24.11.0", uv = "1.51.0", napi = "10", bun = "", config = '{"target_defaults":{},"variables":{"node_module_version":137}}' } = {}): Uint8Array<ArrayBuffer> {
+  const writer = new Writer().u8(1);
+  for (const field of [version, node, uv, napi, bun]) { const bytes = new TextEncoder().encode(field); writer.raw(Uint8Array.of(bytes.byteLength & 0xff, bytes.byteLength >> 8)).raw(bytes); }
+  const bytes = new TextEncoder().encode(config);
+  return writer.u32(bytes.byteLength).raw(bytes).finish();
+}
+
+it("decodes a runtime binary in no catalog row with the build its probe reported (OXCR 18)", () => {
+  const nvm = "/home/user/.nvm/versions/node/v24.11.0/bin/node", digest = "b".repeat(64);
+  const program = decodeUserspaceCommandRequest(launch({ runtime: 0, executable: nvm, build: probedBuild() }, digest)).program;
+  if (program.kind !== "native-node") throw new Error("Expected native profile");
+  expect(program.profile).toMatchObject({ runtime: "node", executable: nvm, runtimeSHA256: digest,
+    runtimeBuild: { version: "v24.11.0", node: "24.11.0", uv: "1.51.0", napi: "10", bun: "", config: '{"target_defaults":{},"variables":{"node_module_version":137}}' } });
+  expect(decodeNativeProcessProgram(program).profile.runtimeBuild).toEqual(program.profile.runtimeBuild);
+  const bun = decodeUserspaceCommandRequest(launch({ runtime: 1, executable: "/home/user/.bun/bin/bun", build: probedBuild({ version: "v24.3.0", node: "24.3.0", bun: "1.3.2" }) }, digest)).program;
+  expect(bun).toMatchObject({ profile: { runtime: "bun", runtimeBuild: { bun: "1.3.2" } } });
+  // The catalog builds keep their paths and present the SDK's own data.
+  expect(decodeUserspaceCommandRequest(launch()).program).toMatchObject({ profile: { runtimeBuild: null } });
+  for (const bytes of [
+    launch({ runtime: 0, executable: nvm }, digest),
+    launch({ runtime: 0, executable: "/home/user/.volta/bin/volta-shim", build: probedBuild() }, digest),
+    launch({ runtime: 1, executable: "/home/user/.nvm/bin/node", build: probedBuild({ bun: "1.3.2" }) }, digest),
+    launch({ runtime: 0, executable: nvm, build: probedBuild({ bun: "1.3.2" }) }, digest),
+    launch({ runtime: 1, executable: "/opt/bun", build: probedBuild() }, digest),
+    launch({ runtime: 0, executable: "relative/node", build: probedBuild() }, digest),
+    launch({ runtime: 0, executable: nvm, build: probedBuild({ uv: "1.51\n0" }) }, digest),
+    launch({ runtime: 0, executable: nvm, build: probedBuild({ version: "v24.12.0" }) }, digest),
+    launch({ runtime: 0, executable: nvm, build: probedBuild({ napi: "1".repeat(65) }) }, digest),
+    launch({ runtime: 0, executable: nvm, build: probedBuild({ config: "[1]" }) }, digest),
+    launch({ runtime: 0, executable: nvm, build: probedBuild({ config: "{not json}" }) }, digest),
+    launch({ runtime: 0, executable: nvm, build: probedBuild({ config: "{" + " ".repeat(64 * 1024) + "}" }) }, digest),
+    launch({ runtime: 0, executable: nvm, build: Uint8Array.of(2) }, digest),
+  ]) expect(() => decodeUserspaceCommandRequest(bytes)).toThrow();
+  for (const runtimeBuild of [undefined, {}, { ...program.profile.runtimeBuild, extra: 1 }, { ...program.profile.runtimeBuild, config: 1 }]) {
+    expect(() => decodeNativeProcessProgram({ ...program, profile: { ...program.profile, runtimeBuild } })).toThrow();
+  }
 });

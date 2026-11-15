@@ -13,7 +13,7 @@ export interface Identity {
 type ImportFunction = (...args: never[]) => number;
 export const PROCESS_FUNCTIONS = ["process_info", "process_cwd"] as const;
 
-/** The process part of `oxidevm_bridge_v1`. Every out-pointer is checked before anything is written. */
+/** The process part of `oxvm_bridge_v1`. Every out-pointer is checked before anything is written. */
 export function bridgeProcess(memory: () => GuestMemory, identity: Identity | undefined, cwdPath: string): Readonly<Record<(typeof PROCESS_FUNCTIONS)[number], ImportFunction>> {
   const cwd = new TextEncoder().encode(cwdPath);
   const guarded = (body: () => void): WasiErrno => {

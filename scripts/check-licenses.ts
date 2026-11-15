@@ -33,7 +33,7 @@ const run = promisify(execFile);
 const root = resolve(import.meta.dirname, "..");
 await verifyLicensePolicy(root);
 const LICENSE_IDENTIFIER = /^[A-Za-z0-9.+-]+(?: WITH [A-Za-z0-9.+-]+)?$/u;
-const FIRST_PARTY_NAME = /^(?:oxidevm-sdk-workspace|@oxidevm\/[^/]+|@oxidevm-example\/[^/]+)$/u;
+const FIRST_PARTY_NAME = /^(?:(?:oxvm|oxidevm)-sdk-workspace|@(?:oxvm|oxidevm)\/[^/]+|@(?:oxvm|oxidevm)-example\/[^/]+)$/u;
 
 const allowed: ReadonlySet<string> = new Set(await readAllowlist("config/allowed-licenses.json"));
 const toolAllowed: ReadonlySet<string> = new Set([
@@ -191,8 +191,8 @@ function selfCheck(): void {
   const listing = (expression: string, ...packages: readonly InventoryPackage[]): Inventory =>
     new Map([[expression, packages]]);
   const thirdParty = { name: "left-pad", versions: ["1.0.0"], paths: [installed("left-pad")] };
-  const workspace = { name: "@oxidevm/sdk", versions: ["0.1.0"], paths: [`${repository}/packages/sdk`] };
-  const registry = { name: "@oxidevm/sdk", versions: ["0.1.0"], paths: [installed("@oxidevm/sdk")] };
+  const workspace = { name: "@oxvm/sdk", versions: ["0.1.0"], paths: [`${repository}/packages/sdk`] };
+  const registry = { name: "@oxvm/sdk", versions: ["0.1.0"], paths: [installed("@oxvm/sdk")] };
   const empty: Inventory = new Map();
   const failuresOf = (productionInventory: Inventory, developmentInventory: Inventory): readonly string[] =>
     licenseFailures(productionInventory, developmentInventory, allowed, toolAllowed, repository);
@@ -206,10 +206,10 @@ function selfCheck(): void {
   ]);
   // A first-party package in this working tree needs no allowlisted license; a registry copy does.
   assert.deepEqual(failuresOf(listing("UNLICENSED", workspace), empty), []);
-  assert.deepEqual(failuresOf(listing("UNLICENSED", registry), empty), ["@oxidevm/sdk@0.1.0: UNLICENSED (production)"]);
+  assert.deepEqual(failuresOf(listing("UNLICENSED", registry), empty), ["@oxvm/sdk@0.1.0: UNLICENSED (production)"]);
   assert.deepEqual(failuresOf(listing("Apache-2.0", registry), empty), []);
   assert.deepEqual(failuresOf(listing("UNLICENSED", { ...workspace, paths: ["/elsewhere/packages/sdk"] }), empty), [
-    "@oxidevm/sdk@0.1.0: UNLICENSED (production)",
+    "@oxvm/sdk@0.1.0: UNLICENSED (production)",
   ]);
   assert.deepEqual(failuresOf(listing("UNLICENSED", { ...workspace, name: "left-pad" }), empty), [
     "left-pad@0.1.0: UNLICENSED (production)",

@@ -1,11 +1,11 @@
 import { expect, it } from "vitest";
 import { NativeBridge } from "./bridge.js";
-import { encodeNativeFrame, type NativeFrame } from "./codec.js";
+import { decodeNativeFrame, encodeNativeFrame, type NativeFrame } from "./codec.js";
 
 const readMin = Math.min;
 
 function fixture(frames: readonly NativeFrame[], poll = false, uncaught?: (error: unknown) => void, deferException = false,
-  options: { readonly readSize?: number; readonly merged?: boolean; readonly waitForAbort?: boolean; readonly runtime?: "node" | "bun"; readonly bridgeVersion?: 15 | 16 } = {}) {
+  options: { readonly readSize?: number; readonly merged?: boolean; readonly waitForAbort?: boolean; readonly runtime?: "node" | "bun"; readonly bridgeVersion?: 15 | 16 | 17 } = {}) {
   const encoded = frames.map(frame => encodeNativeFrame(frame, options.bridgeVersion)), merged = new Uint8Array(encoded.reduce((size, bytes) => size + bytes.length, 0));
   let start = 0; for (const bytes of encoded) { merged.set(bytes, start); start += bytes.length; }
   const input = options.merged === true ? [merged] : encoded; let offset = 0, writes = 0, reads = 0;
@@ -18,9 +18,14 @@ function fixture(frames: readonly NativeFrame[], poll = false, uncaught?: (error
       if (signal === undefined) return;
       signal.addEventListener("abort", () => { reject(new Error("aborted")); }, { once: true });
     });
-    const bytes = new Uint8Array(8), view = new DataView(bytes.buffer);
-    view.setInt32(0, 3, true); view.setUint16(4, 1, true); view.setUint16(6, 1, true);
-    return polls++ === 0 ? Promise.resolve(operation.decode({ value: 1n, bytes })) : new Promise(() => undefined);
+    // The input (3) is readable; the output (4), which a deferred turn grant polls, is writable.
+    const reply = (fd: number, events: number) => {
+      const bytes = new Uint8Array(8), view = new DataView(bytes.buffer);
+      view.setInt32(0, fd, true); view.setUint16(4, events, true); view.setUint16(6, events, true);
+      return operation.decode({ value: 1n, bytes });
+    };
+    if (polls++ !== 0) return new Promise(() => undefined);
+    try { return Promise.resolve(reply(3, 1)); } catch { return Promise.resolve(reply(4, 4)); }
   } }, {
     read(_fd, count) {
       reads++;
@@ -402,3 +407,49 @@ function thrown(run: () => unknown): unknown {
   try { run(); } catch (error: unknown) { return error; }
   throw new Error("expected a throw");
 }
+
+// Bridge 17 (engine ADR 0026, crossed calls): the helper asks for a turn before it runs an asynchronous completion.
+const queuedScope = 0x1_0000_0001n, turnScope = 0x1_0000_0002n, nothing = new Uint8Array();
+const queuedWork: NativeFrame = { kind: 6, sequence: 1, scope: queuedScope, environment: 0n, operation: "async-queued", status: 0, args: [1n], bytes: nothing };
+const completedWork: NativeFrame = { kind: 5, sequence: 1, scope: queuedScope, environment: 0n, operation: "async-complete", status: 0, args: [1n], bytes: nothing };
+const turn = (state: bigint): NativeFrame => ({ kind: 10, sequence: 2, scope: turnScope, environment: 0n, operation: "turn", status: 0, args: [state], bytes: nothing });
+const sent = (test: ReturnType<typeof fixture>) => test.written.map(bytes => decodeNativeFrame(bytes.subarray(4))).map(frame => `${String(frame.kind)}:${frame.operation}:${frame.args.join(",")}`);
+const settle = async (): Promise<void> => { for (let round = 0; round < 8; round++) await Promise.resolve(); };
+
+it("grants a turn at once while JavaScript is idle and serves the completion inside it", async () => {
+  const test = fixture([
+    queuedWork, turn(1n),
+    { kind: 3, sequence: 1, scope: queuedScope, environment: 0n, operation: "napi_create_object", status: 0, args: [], bytes: nothing },
+    completedWork, turn(0n),
+  ], true);
+  test.bridge.watch(); await settle();
+  expect(sent(test)).toEqual(["10:turn:1", expect.stringMatching(/^4:napi_create_object:/u)]);
+  expect(test.bridge.pending).toBe(0); expect(test.failures).toEqual([]);
+});
+
+it("does not grant a turn asked for during a synchronous call until JavaScript is idle again", async () => {
+  const test = fixture([queuedWork, turn(1n), completion, completedWork, turn(0n)], true);
+  expect(test.bridge.load("/fixture.node")).toBeUndefined();
+  // The call returned to JavaScript: only its own invocation has been written, and the work is still pending.
+  expect(sent(test).map(frame => frame.split(":").slice(0, 2).join(":"))).toEqual(["1:load"]);
+  expect(test.bridge.pending).toBe(1);
+  test.bridge.watch();
+  // Idle is a later task, not the rest of this one.
+  expect(test.written).toHaveLength(1);
+  await settle();
+  expect(sent(test).slice(1)).toEqual(["10:turn:1"]);
+  expect(test.bridge.pending).toBe(0); expect(test.failures).toEqual([]);
+});
+
+it("refuses a turn request from an older helper, a second request and a malformed one", async () => {
+  expect(() => fixture([turn(1n), completion], false, undefined, false, { bridgeVersion: 16 })).toThrow();
+  const twice = fixture([turn(1n), { ...turn(1n), sequence: 3, scope: 0x1_0000_0003n }, completion]);
+  expect(() => twice.bridge.load("/fixture.node")).toThrow(/turn/u);
+  for (const patch of [{ args: [2n] }, { args: [] }, { status: 1 }, { operation: "grant" }, { bytes: new Uint8Array([1]) }] satisfies Partial<NativeFrame>[]) {
+    const test = fixture([{ ...turn(1n), ...patch }, completion]);
+    expect(() => test.bridge.load("/fixture.node")).toThrow();
+  }
+  const ended = fixture([queuedWork, turn(1n), completedWork, { ...turn(0n), sequence: 3, scope: 0x1_0000_0003n }], true);
+  ended.bridge.watch(); await settle();
+  expect(ended.failures).toHaveLength(1);
+});

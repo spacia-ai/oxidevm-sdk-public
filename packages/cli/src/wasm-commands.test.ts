@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { formatSums } from "@oxidevm/sdk/image-builder";
-import { decodeResolvedManifest, encodeModuleManifest } from "@oxidevm/sdk/wasm";
+import { formatSums } from "@oxvm/sdk/image-builder";
+import { decodeResolvedManifest, encodeModuleManifest } from "@oxvm/sdk/wasm";
 import { runCLI, type CLIEnvironment } from "./run.js";
 import { decodeCliReport } from "./report.js";
 
@@ -13,7 +13,7 @@ afterEach(async () => { await Promise.all(directories.splice(0).map(directory =>
 async function temporary(): Promise<string> { const directory = await mkdtemp(join(tmpdir(), "oxidevm-cli-wasm-")); directories.push(directory); return directory; }
 const sha = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
-/** A release directory the way `oxidevm wasm build` will write it, built here from SDK pieces. */
+/** A release directory the way `oxvm wasm build` will write it, built here from SDK pieces. */
 async function release(directory: string, extra: Record<string, unknown> = {}, version = "1.0.0"): Promise<void> {
   const adapter = new TextEncoder().encode("export default () => ({ main: () => 0 });"), wasm = Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 0);
   const manifest = encodeModuleManifest(decodeResolvedManifest({
@@ -40,16 +40,16 @@ async function run(directory: string, args: readonly string[], answer?: boolean)
   return { code, stdout, stderr: err.join(""), asked, report: args.includes("--json") ? decodeCliReport(JSON.parse(stdout) as unknown) : undefined };
 }
 
-describe("oxidevm wasm add", () => {
+describe("oxvm wasm add", () => {
   it("installs a local release after --yes, writing the declaration, lock, committed module.json, staged files and handles", async () => {
     const dir = await temporary();
     await release(join(dir, "dist"));
     const added = await run(dir, ["wasm", "add", "file:dist", "--yes", "--json"]);
     expect(added.code).toBe(0);
-    expect(added.report).toMatchObject({ kind: "result", command: "wasm add", result: { id: "tool", version: "1.0.0", status: "added", consent: "approved", source: "file:dist", capabilities: ["files.sync"], generatedFile: "src/oxidevm.modules.generated.ts" } });
+    expect(added.report).toMatchObject({ kind: "result", command: "wasm add", result: { id: "tool", version: "1.0.0", status: "added", consent: "approved", source: "file:dist", capabilities: ["files.sync"], generatedFile: "src/oxvm.modules.generated.ts" } });
     // A local source never touches the download cache.
-    expect((await readdir(dir)).sort()).toEqual([".oxidevm", "dist", "modules", "oxidevm.modules.json", "oxidevm.modules.lock.json", "src"]);
-    expect(await readFile(join(dir, "src/oxidevm.modules.generated.ts"), "utf8")).toContain("export const tool = moduleHandle(");
+    expect((await readdir(dir)).sort()).toEqual([".oxvm", "dist", "modules", "oxvm.modules.json", "oxvm.modules.lock.json", "src"]);
+    expect(await readFile(join(dir, "src/oxvm.modules.generated.ts"), "utf8")).toContain("export const tool = moduleHandle(");
     const again = await run(dir, ["wasm", "add", "file:dist", "--yes", "--json"]);
     expect(again.report).toMatchObject({ result: { status: "unchanged", consent: "none-needed" } });
   });
@@ -123,7 +123,7 @@ describe("oxidevm wasm add", () => {
   });
 });
 
-describe("oxidevm wasm stage, doctor and inspect", () => {
+describe("oxvm wasm stage, doctor and inspect", () => {
   async function installed() {
     const dir = await temporary();
     await release(join(dir, "dist"));
@@ -133,11 +133,11 @@ describe("oxidevm wasm stage, doctor and inspect", () => {
 
   it("rebuilds the staged files after a fresh checkout", async () => {
     const dir = await installed();
-    await rm(join(dir, ".oxidevm"), { recursive: true });
+    await rm(join(dir, ".oxvm"), { recursive: true });
     await rm(join(dir, "src"), { recursive: true });
     const staged = await run(dir, ["wasm", "stage", "--json"]);
-    expect(staged.report).toMatchObject({ kind: "result", command: "wasm stage", result: { modules: [{ id: "tool", rebuilt: true }], generatedFile: "src/oxidevm.modules.generated.ts" } });
-    expect(await readdir(join(dir, "src"))).toEqual(["oxidevm.modules.generated.ts"]);
+    expect(staged.report).toMatchObject({ kind: "result", command: "wasm stage", result: { modules: [{ id: "tool", rebuilt: true }], generatedFile: "src/oxvm.modules.generated.ts" } });
+    expect(await readdir(join(dir, "src"))).toEqual(["oxvm.modules.generated.ts"]);
   });
 
   it("passes a healthy project and exits 3 when a check fails", async () => {
@@ -145,7 +145,7 @@ describe("oxidevm wasm stage, doctor and inspect", () => {
     const healthy = await run(dir, ["wasm", "doctor", "--json"]);
     expect(healthy.code).toBe(0);
     expect(healthy.report).toMatchObject({ kind: "result", command: "wasm doctor", result: { result: "passed", modules: ["tool"] } });
-    await rm(join(dir, ".oxidevm"), { recursive: true });
+    await rm(join(dir, ".oxvm"), { recursive: true });
     const broken = await run(dir, ["wasm", "doctor", "--json"]);
     expect(broken.code).toBe(3);
     expect(broken.report).toMatchObject({ result: { result: "failed" } });
@@ -172,7 +172,7 @@ describe("oxidevm wasm stage, doctor and inspect", () => {
   });
 });
 
-describe("oxidevm wasm init, build and release", () => {
+describe("oxvm wasm init, build and release", () => {
   async function scaffold(kind: "command" | "service" = "command"): Promise<{ readonly dir: string; readonly tool: string }> {
     const dir = await temporary();
     const created = await run(dir, ["wasm", "init", "tool", "--kind", kind, "--json"]);

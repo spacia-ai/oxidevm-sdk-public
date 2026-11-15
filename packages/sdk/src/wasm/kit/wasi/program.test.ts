@@ -3,10 +3,16 @@ import { kit } from "../index.js";
 import { AdmissionError } from "./admission.js";
 import { LIMITS } from "./limits.js";
 import { compile, ProgramTooLarge, readProgram } from "./program.js";
-import { streams } from "./streams.test-support.js";
+import { descriptor, streams } from "./streams.test-support.js";
 import { wasm } from "./wasm-builder.test-support.js";
 
 describe("kit.wasi programs", () => {
+  it.each([["oxvm_bridge_v1"], ["oxidevm_bridge_v1"], ["oxvm_bridge_v1", "oxidevm_bridge_v1"]])("compiles and instantiates a program importing %j", async (...namespaces) => {
+    const program = await compile(wasm({ functionImports: namespaces.map(namespace => [namespace, "process_info"]) }));
+    const fake = streams();
+    expect(await kit.wasi.run(fake.host, program, { env: {}, cwd: "/workspace", stdin: descriptor(0), stdout: descriptor(1), stderr: descriptor(2) }, { argv: ["bridge.wasm"] })).toBe(0);
+  });
+
   it("reads a program through one descriptor, in chunks, and closes it", () => {
     const bytes = Uint8Array.from({ length: 200_000 }, (_, index) => index % 251);
     const fake = streams({ programs: { "/workspace/p.wasm": bytes } });

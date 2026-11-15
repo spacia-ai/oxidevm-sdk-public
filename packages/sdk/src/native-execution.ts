@@ -1,5 +1,5 @@
 import type { FeatureSupport } from "./contracts.js";
-import { exactKeys, record, string } from "./runtime/decode.js";
+import { exactKeys, integer, record, string } from "./runtime/decode.js";
 import { decodeSerializedError, deserializeError, VMError, type VMErrorCode } from "./runtime/errors.js";
 import { openExecutionFrame } from "./runtime/execution-frame.js";
 import { isTrustworthyURL } from "./trustworthy-url.js";
@@ -12,6 +12,8 @@ const DESCRIPTOR_TIMEOUT_MS = 10_000;
 export interface NativeExecutionOpen {
   readonly status: "open";
   readonly port: MessagePort;
+  /** The highest Node-API operation set the execution origin serves (ADR 0026, 2.8). */
+  readonly operationSet: number;
   dispose(): void;
 }
 
@@ -24,7 +26,7 @@ export interface NativeExecutionAbsent {
 export type NativeExecutionResult = NativeExecutionOpen | NativeExecutionAbsent;
 
 /** Shown once per VM whose `commandInterceptors: "auto"` opened without native execution. */
-export const NATIVE_EXECUTION_ABSENT_WARNING = "OxideVM: native JavaScript acceleration is off because this runtime publishes no native-node-api.json (reason: descriptor-absent). Commands run in Linux, and TypeScript command interception stays as configured. To turn command acceleration and interception off on purpose, pass commandInterceptors: \"off\". To enable native acceleration, deploy a separate execution origin and publish its native-node-api.json beside this runtime.";
+export const NATIVE_EXECUTION_ABSENT_WARNING = "OXVM: native JavaScript acceleration is off because this runtime publishes no native-node-api.json (reason: descriptor-absent). Commands run in Linux, and TypeScript command interception stays as configured. To turn command acceleration and interception off on purpose, pass commandInterceptors: \"off\". To enable native acceleration, deploy a separate execution origin and publish its native-node-api.json beside this runtime.";
 
 /** What the VM asked for: System mode has no command acceleration, and `"off"` opts out. */
 export type CommandAccelerationRequest = "not-applicable" | "off" | "auto";
@@ -60,13 +62,18 @@ export async function openNativeExecution(baseUrl: string, signal?: AbortSignal)
   const text = await readDescriptor(descriptorURL(baseUrl), request);
   if (text === undefined) return { status: "absent", reason: "descriptor-absent" };
   const input = parseDescriptor(text);
-  const connection = await openExecutionFrame(nativeExecutionURL(input, location.origin), (port, nonce) => ({ version: 1, type: "native-bootstrap", nonce, port }), (input, nonce) => {
-    const message = record(input, "native execution bootstrap");
-    if (message["type"] === "failure") { exactKeys(message, ["version", "type", "nonce", "error"]); if (message["version"] !== 1 || message["nonce"] !== nonce) throw bindingMismatch(); throw deserializeError(decodeSerializedError(message["error"])); }
-    exactKeys(message, ["version", "type", "nonce"]);
-    if (message["version"] !== 1 || message["type"] !== "native-ready" || message["nonce"] !== nonce) throw bindingMismatch();
-  }, signal);
-  return { status: "open", port: connection.port, dispose: () => connection.dispose() };
+  const connection = await openExecutionFrame(nativeExecutionURL(input, location.origin), (port, nonce) => ({ version: 1, type: "native-bootstrap", nonce, port }), decodeNativeReady, signal);
+  return { status: "open", port: connection.port, operationSet: connection.receipt.operationSet, dispose: () => connection.dispose() };
+}
+
+/** The execution origin's bootstrap answer. An origin older than ADR 0026 2.8 names no operation
+ * set and serves set 0. */
+export function decodeNativeReady(input: unknown, nonce: string): { readonly operationSet: number } {
+  const message = record(input, "native execution bootstrap");
+  if (message["type"] === "failure") { exactKeys(message, ["version", "type", "nonce", "error"]); if (message["version"] !== 1 || message["nonce"] !== nonce) throw bindingMismatch(); throw deserializeError(decodeSerializedError(message["error"])); }
+  exactKeys(message, ["version", "type", "nonce"], ["operationSet"]);
+  if (message["version"] !== 1 || message["type"] !== "native-ready" || message["nonce"] !== nonce) throw bindingMismatch();
+  return { operationSet: message["operationSet"] === undefined ? 0 : integer(message["operationSet"], "native operation set", 0, 0xffff) };
 }
 
 interface DescriptorRequest {

@@ -1,7 +1,7 @@
 // The module networking standard in generated projects (engine ADR 0029, N-1 to N-10): the reach a module declares, its
 // README section and AGENTS.md rules, and for a module with a reach a small request helper with its tests.
 
-/** How far a generated module reaches on the network; `oxidevm wasm init --network`. */
+/** How far a generated module reaches on the network; `oxvm wasm init --network`. */
 export type TemplateReach = "none" | "vm" | "internet";
 export const TEMPLATE_REACHES: readonly TemplateReach[] = ["none", "vm", "internet"];
 
@@ -10,11 +10,11 @@ export function reachToken(reach: TemplateReach): "net.vm" | "net.internet" | un
   return reach === "vm" ? "net.vm" : reach === "internet" ? "net.internet" : undefined;
 }
 
-/** The disclosure an internet module starts with (N-2): shown at install and by `oxidevm wasm doctor`, never enforced. */
+/** The disclosure an internet module starts with (N-2): shown at install and by `oxvm wasm doctor`, never enforced. */
 export const NETWORK_DISCLOSURE = `    network: { purpose: "Describe in one sentence what this module contacts on the internet, and why." },\n`;
 
 /** `src/net.ts` of a module with a reach: one bounded request, cancelled with the module, that throws on failure. */
-export const NET_SOURCE = `import type { BaseHost } from "@oxidevm/sdk/wasm";
+export const NET_SOURCE = `import type { BaseHost } from "@oxvm/sdk/wasm";
 
 /** How long one request may take before it is abandoned. */
 export const REQUEST_TIMEOUT_MS = 10_000;
@@ -81,8 +81,8 @@ export function netTest(reach: "vm" | "internet"): string {
 `
     : "";
   return `import { describe, expect, it } from "vitest";
-import { defineModule, MODULE_EXIT } from "@oxidevm/sdk/wasm";
-import { testHost } from "@oxidevm/sdk/wasm/testing";
+import { defineModule, MODULE_EXIT } from "@oxvm/sdk/wasm";
+import { testHost } from "@oxvm/sdk/wasm/testing";
 import { fetchText } from "../src/net.ts";
 
 /** A command that prints what fetchText answers for its argument, the way the module's own code uses it. */
@@ -135,7 +135,7 @@ ${body}
 export const NETWORK_RULES = `
 ## Networking rules
 
-The module networking standard (OxideVM engine ADR 0029; the SDK's \`docs/wasm-modules.md\`, "Networking"):
+The module networking standard (OXVM engine ADR 0029; the SDK's \`docs/wasm-modules.md\`, "Networking"):
 
 1. Declare one reach in \`requires.host\`: none, \`net.vm\` or \`net.internet\`. Rust enforces it for every process of the module.
 2. With \`net.internet\`, disclose default hosts and the purpose in \`network\`; it is shown at install and never an allowlist.
@@ -145,6 +145,6 @@ The module networking standard (OxideVM engine ADR 0029; the SDK's \`docs/wasm-m
 6. Every request carries \`host.signal\` (or a signal derived from it) and a timeout; read bodies as streams or bounded.
 7. TLS always verifies against the VM's \`/etc/ssl/cert.pem\`. Credentials come only from options or guest files.
 8. Internet means TCP 80 and 443 plus DNS; nothing connects in. Programs started with \`process.spawn\` follow the VM's own policy.
-9. Test with \`testHost\` from \`@oxidevm/sdk/wasm/testing\` (local-only by default); \`oxidevm wasm test\` checks \`network-direct\`, \`network-declared\` and \`network-offline\`.
+9. Test with \`testHost\` from \`@oxvm/sdk/wasm/testing\` (local-only by default); \`oxvm wasm test\` checks \`network-direct\`, \`network-declared\` and \`network-offline\`.
 10. Keep the README's "Network" section true: reach, disclosed hosts, purpose, and behaviour offline.
 `;

@@ -3,7 +3,7 @@
 | Component | Terms |
 | --- | --- |
 | SDK, CLI, and starter application code | Apache-2.0 |
-| OxideVM engine | Proprietary. Free non-commercial use and local development. Paid commercial production use. |
+| OXVM engine | Proprietary. Free non-commercial use and local development. Paid commercial production use. |
 | Guest programs and libraries | Each program's original license |
 | WebAssembly modules you install | Each module's own license, declared in its manifest |
 | Fonts and other assets | Their original licenses and notices |
@@ -32,7 +32,7 @@ The verified cache retains `RUNTIME-LICENSE.txt`, `THIRD_PARTY_NOTICES.txt`,
 `sbom.cdx.json`, and `license-policy.json` under a separate immutable compliance
 revision. Check the runtime license supplied with your release. Hosted-runtime
 service terms and privacy notices also apply. The existing hosted service
-describes its boot telemetry at [run.oxidevm.dev/telemetry](https://run.oxidevm.dev/telemetry).
+describes its boot telemetry at [run.oxvm.dev/telemetry](https://run.oxvm.dev/telemetry).
 
 ## Image use and redistribution
 
@@ -41,7 +41,7 @@ Python, NumPy, pandas, Toybox, dash, mksh, musl, OpenSSL and their required libr
 NumPy and pandas compile from their pinned sources. NumPy uses its internal
 BLAS/LAPACK fallback. The default image excludes libquadmath, libgfortran and
 OpenBLAS. GCC runtime libraries retain their explicit Runtime Library Exception.
-It contains no OxideVM engine or Linux kernel. Engine restrictions do not
+It contains no OXVM engine or Linux kernel. Engine restrictions do not
 restrict rights granted by guest or dependency licenses.
 
 Image materials include `OPEN-SOURCE-NOTICE.md`, SPDX and CycloneDX inventories,
@@ -73,7 +73,7 @@ you redistribute the fonts. You may replace the fonts in your own app.
 
 A [module](wasm-modules.md) is separate software from the SDK, the CLI and the
 engine. Its license is the `license.spdx` expression in its manifest, which
-`oxidevm wasm add` shows before it installs anything and which is committed in
+`oxvm wasm add` shows before it installs anything and which is committed in
 `modules/<id>/module.json`. The SDK's Apache-2.0 license does not apply to a
 module, and installing one does not change the engine's terms.
 

@@ -203,7 +203,8 @@ export function createCommonJSLoader(
   }
   Module._extensions[".js"] = (module: Module, filename: string) => {
     const input = files.read(filename);
-    if (input.format === "module") throw unsupported("synchronous ESM loading");
+    // Node 24 loads an ES module through require; a program that dies of this refusal is remembered and next runs in Linux.
+    if (input.format === "module") throw new VMError("FEATURE_NOT_AVAILABLE", "synchronous ESM loading is not available", { backend: "assisted-node", path: filename, lateFailure: "unavailable-builtin", subject: "require(esm)" });
     module._compile(input.source, filename);
   };
   Module._extensions[".json"] = (module: Module, filename: string) => {
@@ -245,6 +246,13 @@ export function createCommonJSLoader(
     require: (request: unknown, parent?: string): unknown => parent === undefined
       ? Module._load(request, undefined, main === undefined)
       : Module.createRequire(parent)(request),
+    /** Node's `Module._preloadModules` for `--require` (ADR 0026, 1.11): a dummy parent deemed
+     * to exist in the working directory, so no preload becomes the main module. */
+    preload: (requests: readonly string[]): void => {
+      const parent = new Module("internal/preload", null);
+      parent.paths = Module._nodeModulePaths(context.cwd());
+      for (const request of requests) parent.require(request);
+    },
   };
 }
 

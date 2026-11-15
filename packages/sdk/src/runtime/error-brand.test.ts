@@ -22,6 +22,11 @@ it("rejects missing and accessor Error capabilities without evaluating the acces
     const brand = await import("./error-brand.js");
     expect(brand.nativeErrorCapability).toBe(0);
     expect(() => brand.nativeIsError({}, "node")).toThrow("Native Error predicate is unavailable");
+    let thrown: unknown;
+    try { brand.nativeIsError({}, "node"); } catch (error) { thrown = error; }
+    // The matcher inspects Error objects through Error.isError itself, so the throwing accessor goes first.
+    Object.defineProperty(Error, "isError", { configurable: true, value: undefined });
+    expect(thrown).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", detail: { api: "napi_is_error", lateFailure: "unsupported-node-api", subject: "napi_is_error" } });
   }
 });
 

@@ -6,7 +6,7 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildModule, extractManifest } from "@oxidevm/sdk/image-builder";
+import { buildModule, extractManifest } from "@oxvm/sdk/image-builder";
 import { registryConfig } from "./templates.js";
 import { ADD_WASM, TEMPLATE_PLAYWRIGHT, ciWorkflow, releaseWorkflow } from "./wasm-template-files.js";
 import { initText } from "./wasm-text.js";
@@ -74,7 +74,7 @@ const SDK_PACKAGE = fileURLToPath(new URL("../../sdk", import.meta.url));
 /** Gives a generated project the dependencies it declares: this SDK itself, and this repository's pinned tools. */
 async function linkDependencies(project: string): Promise<void> {
   const links: readonly (readonly [string, string])[] = [
-    ["@oxidevm/sdk", SDK_PACKAGE],
+    ["@oxvm/sdk", SDK_PACKAGE],
     ...["vitest", "typescript", "@types/node", "eslint", "@eslint/js", "typescript-eslint"].map(name => [name, installed(name)] as const),
   ];
   for (const [name, target] of links) {
@@ -253,7 +253,7 @@ describe("initializeModule", () => {
     const readme = await readFile(join(root, "my-tool", "README.md"), "utf8");
     const shell = readme.slice(readme.indexOf("## Run it from a shell"), readme.indexOf("## Develop it"));
     for (const fragment of [
-      "import { myTool } from \"./oxidevm.modules.generated\";", "const commands = await enableModuleCommands(vm, myTool);",
+      "import { myTool } from \"./oxvm.modules.generated\";", "const commands = await enableModuleCommands(vm, myTool);",
       "// A terminal in the VM now runs `my-tool 2 3`, which prints 5.", "await commands.disable();", "a stub at `/usr/local/bin/my-tool`",
       "lists `/usr/local/bin` before `/usr/bin`", "takes the place of an image program with the same name",
       "as the guest user, with the caller's arguments, environment, working directory and standard streams",
@@ -366,8 +366,8 @@ describe("initializeModule", () => {
     const wanted = stringsOf(generated["devDependencies"]), have = stringsOf(repository["devDependencies"]), scripts = stringsOf(generated["scripts"]);
     for (const name of ["@eslint/js", "@types/node", "eslint", "typescript", "typescript-eslint", "vitest"]) expect(wanted[name], name).toBe(have[name]);
     expect(Object.keys(scripts).sort()).toEqual(["build", "check", "release", "test", "test:conformance"]);
-    expect(scripts["test:conformance"]).toBe("oxidevm wasm build && oxidevm wasm test --arg 2 --arg 3");
-    expect(scripts["check"]).toContain("oxidevm wasm build --check");
+    expect(scripts["test:conformance"]).toBe("oxvm wasm build && oxvm wasm test --arg 2 --arg 3");
+    expect(scripts["check"]).toContain("oxvm wasm build --check");
     expect(scripts["check"]).toContain("tsc --noEmit -p test");
   });
 
@@ -491,7 +491,7 @@ describe("the conformance step of generated projects", () => {
     expect(pinned).toBe(TEMPLATE_PLAYWRIGHT);
   });
 
-  it("installs Chromium and runs oxidevm wasm test after the unit tests", () => {
+  it("installs Chromium and runs oxvm wasm test after the unit tests", () => {
     for (const manual of [false, true]) {
       const workflow = ciWorkflow(manual);
       expect(workflow.indexOf("pnpm test")).toBeLessThan(workflow.indexOf("pnpm exec playwright install --with-deps chromium"));

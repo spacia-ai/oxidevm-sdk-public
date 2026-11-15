@@ -39,7 +39,7 @@ export async function generatePackageNotices(root: string, name: "sdk" | "cli"):
   for (const [declared, values] of Object.entries(inventory)) for (const value of array(values)) {
     const pkg = record(value, "dependency"), packageName = string(pkg["name"], "dependency name");
     const paths = array(pkg["paths"]).map(value => string(value, "installed package path").replace(`${root}/node_modules/.pnpm/`, `${virtualStore}/`));
-    if (/^(?:oxidevm-sdk-workspace|@oxidevm\/[^/]+|@oxidevm-example\/[^/]+)$/u.test(packageName) && paths.length > 0 && paths.every(path => (path === root || path.startsWith(`${root}/packages/`) || path.startsWith(`${root}/examples/`)) && !path.includes("/node_modules/"))) continue;
+    if (/^(?:(?:oxvm|oxidevm)-sdk-workspace|@(?:oxvm|oxidevm)\/[^/]+|@(?:oxvm|oxidevm)-example\/[^/]+)$/u.test(packageName) && paths.length > 0 && paths.every(path => (path === root || path.startsWith(`${root}/packages/`) || path.startsWith(`${root}/examples/`)) && !path.includes("/node_modules/"))) continue;
     const selected = selectedLicense(declared, allowed); assert(selected !== undefined, `Unapproved distributed license: ${packageName}: ${declared}`);
     for (const version of array(pkg["versions"]).map(value => string(value, "dependency version"))) {
       const key = `${packageName}@${version}`; if (seen.has(key)) continue; seen.add(key);

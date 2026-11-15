@@ -2,8 +2,8 @@ import type { CliCommand } from "./contracts.js";
 
 export const wasmHelp = `
   wasm add <github:owner/repo@tag | file:directory> [--project <directory>] [--yes] [--offline]
-    Resolves a module release, shows what it declares and asks before installing it. Writes oxidevm.modules.json,
-    oxidevm.modules.lock.json, modules/<id>/module.json and the staged files, and generates src/oxidevm.modules.generated.ts.
+    Resolves a module release, shows what it declares and asks before installing it. Writes oxvm.modules.json,
+    oxvm.modules.lock.json, modules/<id>/module.json and the staged files, and generates src/oxvm.modules.generated.ts.
     A source whose owner is listed under "trusted" is installed without a question the first time; a release that asks for
     more authority than the installed one always asks again. --yes accepts after you have reviewed the module.
   wasm stage [--project <directory>] [--offline]
@@ -38,5 +38,5 @@ Every wasm command accepts --json.
 `;
 
 export function wasmCommandHelp(command: CliCommand): string {
-  return `oxidevm ${command}\n${wasmHelp}`;
+  return `oxvm ${command}\n${wasmHelp}`;
 }

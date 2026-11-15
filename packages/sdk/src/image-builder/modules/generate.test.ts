@@ -14,14 +14,14 @@ describe("module identifiers", () => {
 
 describe("generated handles", () => {
   const release = buildReleaseFiles({ id: "my-tool", artifacts: { "tool.wasm": Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 0), "NOTICE": new TextEncoder().encode("n") } });
-  const spec = (id = "my-tool", directory = "../.oxidevm/modules/my-tool/abc") => ({
+  const spec = (id = "my-tool", directory = "../.oxvm/modules/my-tool/abc") => ({
     manifest: { ...release.manifest, id }, release: "r".repeat(64), directory,
     files: [{ name: "adapter.mjs", sha256: "a".repeat(64), bytes: 10 }, { name: "tool.wasm", sha256: "b".repeat(64), bytes: 8 }, { name: "NOTICE", sha256: "c".repeat(64), bytes: 1 }],
   });
 
   it("starts with the marker and imports only the handle constructor", () => {
     const text = renderHandles([spec()]);
-    expect(text.startsWith(`${GENERATED_MARKER}\nimport { moduleHandle } from "@oxidevm/sdk/wasm";\n`)).toBe(true);
+    expect(text.startsWith(`${GENERATED_MARKER}\nimport { moduleHandle } from "@oxvm/sdk/wasm";\n`)).toBe(true);
     expect(text.endsWith("\n")).toBe(true);
   });
 
@@ -30,8 +30,8 @@ describe("generated handles", () => {
     expect(text.indexOf("export const alpha")).toBeGreaterThan(0);
     expect(text.indexOf("export const alpha")).toBeLessThan(text.indexOf("export const zeta"));
     expect(text).toContain('"id": "alpha"');
-    expect(text).toContain('adapter: { url: new URL("../.oxidevm/modules/my-tool/abc/adapter.mjs.bin", import.meta.url).href, sha256: "' + "a".repeat(64) + '", bytes: 10 },');
-    expect(text).toContain('"tool.wasm": { url: new URL("../.oxidevm/modules/my-tool/abc/tool.wasm", import.meta.url).href');
+    expect(text).toContain('adapter: { url: new URL("../.oxvm/modules/my-tool/abc/adapter.mjs.bin", import.meta.url).href, sha256: "' + "a".repeat(64) + '", bytes: 10 },');
+    expect(text).toContain('"tool.wasm": { url: new URL("../.oxvm/modules/my-tool/abc/tool.wasm", import.meta.url).href');
     expect(text).toContain('release: "' + "r".repeat(64) + '"');
   });
 
@@ -40,11 +40,11 @@ describe("generated handles", () => {
       { name: "adapter.mjs", sha256: "a".repeat(64), bytes: 10 }, { name: "worker.js", sha256: "d".repeat(64), bytes: 20 }, { name: "style.css", sha256: "e".repeat(64), bytes: 30 },
       { name: "tool.wasm", sha256: "b".repeat(64), bytes: 8 }, { name: "pyodide-lock.json", sha256: "f".repeat(64), bytes: 40 },
     ] }]);
-    expect(text).toContain('adapter: { url: new URL("../.oxidevm/modules/my-tool/abc/adapter.mjs.bin", import.meta.url).href, sha256: "' + "a".repeat(64) + '", bytes: 10 }');
-    expect(text).toContain('"worker.js": { url: new URL("../.oxidevm/modules/my-tool/abc/worker.js.bin", import.meta.url).href, sha256: "' + "d".repeat(64) + '", bytes: 20 }');
-    expect(text).toContain('"style.css": { url: new URL("../.oxidevm/modules/my-tool/abc/style.css.bin", import.meta.url).href');
-    expect(text).toContain('"tool.wasm": { url: new URL("../.oxidevm/modules/my-tool/abc/tool.wasm", import.meta.url).href');
-    expect(text).toContain('"pyodide-lock.json": { url: new URL("../.oxidevm/modules/my-tool/abc/pyodide-lock.json", import.meta.url).href');
+    expect(text).toContain('adapter: { url: new URL("../.oxvm/modules/my-tool/abc/adapter.mjs.bin", import.meta.url).href, sha256: "' + "a".repeat(64) + '", bytes: 10 }');
+    expect(text).toContain('"worker.js": { url: new URL("../.oxvm/modules/my-tool/abc/worker.js.bin", import.meta.url).href, sha256: "' + "d".repeat(64) + '", bytes: 20 }');
+    expect(text).toContain('"style.css": { url: new URL("../.oxvm/modules/my-tool/abc/style.css.bin", import.meta.url).href');
+    expect(text).toContain('"tool.wasm": { url: new URL("../.oxvm/modules/my-tool/abc/tool.wasm", import.meta.url).href');
+    expect(text).toContain('"pyodide-lock.json": { url: new URL("../.oxvm/modules/my-tool/abc/pyodide-lock.json", import.meta.url).href');
   });
 
   it("is deterministic and valid even with no modules", () => {

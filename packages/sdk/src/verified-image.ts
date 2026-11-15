@@ -18,7 +18,7 @@ export async function verifyImage<M extends RuntimeMode>(image: ImageRef<M>, bas
   const manifest = image.mode === "system" ? decodeManagedImageManifest(input, url) : decodeUserspaceRootfsManifest(input, url);
   if ("kind" in manifest) {
     // Retained starts accept only whole-manifest identities; refuse a legacy image before it is retained.
-    if (manifest.schemaVersion < 5) throw new VMError("PROTOCOL_ERROR", "Userspace public images must authenticate the whole manifest; rebuild this image with `oxidevm image build`");
+    if (manifest.schemaVersion < 5) throw new VMError("PROTOCOL_ERROR", "Userspace public images must authenticate the whole manifest; rebuild this image with `oxvm image build`");
     await verifyUserspaceRootfsManifest(manifest, trust);
   } else {
     if (manifest.schemaVersion !== 9) throw new VMError("PROTOCOL_ERROR", "System public images must authenticate the whole manifest");

@@ -1,6 +1,6 @@
 /**
  * Running wasm32-wasip1 programs as the module's Linux process (`host.kit.wasi`): WASI Preview1 over the VM's live
- * descriptors and files, the VM's clocks and entropy, and the `oxidevm_bridge_v1` imports (process identity, native
+ * descriptors and files, the VM's clocks and entropy, and the `oxvm_bridge_v1` imports (process identity, native
  * children, VM sockets) that the `oxidevm-bridge` Rust crate calls.
  */
 export { admit, run, BRIDGE_FUNCTIONS, type WasiIO, type WasiRunOptions } from "./run.js";

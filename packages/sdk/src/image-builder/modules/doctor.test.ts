@@ -111,7 +111,7 @@ describe("the module doctor", () => {
 
   it("finds generated handles that no longer match what is staged", async () => {
     const { dir } = await installed();
-    const path = join(dir, "src/oxidevm.modules.generated.ts");
+    const path = join(dir, "src/oxvm.modules.generated.ts");
     await writeFile(path, `${await readFile(path, "utf8")}// hand edit\n`);
     expect(status(await doctorModules(dir), "generated")).toMatchObject({ status: "failed", message: expect.stringContaining("out of date") as unknown });
     await rm(path);
@@ -135,7 +135,7 @@ describe("the module doctor", () => {
   });
 
   it("fails copyleft without a source link and notes copyleft with one", async () => {
-    // `oxidevm wasm add` refuses a copyleft release that names no source, so the project is assembled the way an older
+    // `oxvm wasm add` refuses a copyleft release that names no source, so the project is assembled the way an older
     // tool, or a person editing the lock, could have left it: the doctor is the check that remains.
     const without = await assembled(buildReleaseFiles({ id: "tool", extra: { license: { spdx: "GPL-3.0-only" } } }));
     expect(status(await doctorModules(without), "license")).toMatchObject({ status: "failed", message: expect.stringContaining("without a source link") as unknown });

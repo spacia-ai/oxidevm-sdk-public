@@ -65,6 +65,19 @@ it("retains original source content for the pinned compiler budget", async () =>
   }
 });
 
+it("tells scripts that declare global bindings from scripts that do not (ADR 0026, 2.12)", async () => {
+  const root = dirname(createRequire(import.meta.url).resolve("@swc/wasm-web"));
+  const compiler = initializeCompiler(compilerNamespace, await WebAssembly.compile(await readFile(join(root, "wasm_bg.wasm"))));
+  const none = ["40 + 2", "", "'use strict'; this", "1; if (false) 2;", "{ let scoped = 1; scoped }", "for (const item of [1]) item;",
+    "(function named() { var inner = 1; function local() {} return inner; })()", "(() => { var inner = 1; return inner; })()",
+    "globalThis.x = 1", "eval('var y = 1')", "({ method() { var z; } })", "({ get value() { var g; return g; }, set value(v) { var s = v; } })", "(class { static { var w; } })", "try { 1 } catch (error) { let e = error; }"];
+  const declares = ["var a = 1", "let b = 1", "const c = 1", "class D {}", "function e() {}", "if (true) { var f = 1; }",
+    "{ function g() {} }", "for (var h = 0; h < 1; h++);", "for (var i in {});", "l: { var j; }", "'use strict'; var k = 1", "switch (1) { case 1: var m; }"];
+  for (const source of none) expect(compiler.scriptBindings(source), source).toBe("none");
+  for (const source of declares) expect(compiler.scriptBindings(source), source).toBe("global");
+  expect(compiler.scriptBindings("1 +")).toBe("unparsed");
+});
+
 it("keeps empty async-generator expressions native for intrinsic inspection", async () => {
   const require = createRequire(import.meta.url), root = dirname(require.resolve("@swc/wasm-web"));
   const compiler = initializeCompiler(compilerNamespace, await WebAssembly.compile(await readFile(join(root, "wasm_bg.wasm"))));

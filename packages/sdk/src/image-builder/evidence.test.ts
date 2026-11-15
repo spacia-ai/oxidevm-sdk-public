@@ -8,7 +8,7 @@ import { hash } from "./files.js";
 it("binds reviewed SPDX file coverage, notices and retrievable sources to the final inventory", async () => {
   const root = await mkdtemp(join(tmpdir(), "oxidevm-evidence-"));
   try {
-    const text = "MIT License\nCopyright OxideVM test fixture authors\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software.";
+    const text = "MIT License\nCopyright OXVM test fixture authors\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software.";
     const packageId = "SPDXRef-Package-hello";
     const sbom = { spdxVersion: "SPDX-2.3", SPDXID: "SPDXRef-DOCUMENT", dataLicense: "CC0-1.0",
       packages: [{ SPDXID: packageId, name: "hello", versionInfo: "1", licenseConcluded: "MIT" }],

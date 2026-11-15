@@ -54,10 +54,10 @@ it("checks the project lock against this SDK release with the same explanation a
   const root = await mkdtemp(join(tmpdir(), "oxidevm-doctor-lock-"));
   try {
     expect(await doctorLockCheck(undefined)).toEqual({ check: "lock", status: "not-configured" });
-    const config = { mode: "userspace" as const, image: { ...legacyImageLocations.userspace, manifestUrl: "/oxidevm/images/custom/manifest.json" } };
+    const config = { mode: "userspace" as const, assetBaseUrl: "/oxidevm/", image: { ...legacyImageLocations.userspace, manifestUrl: "/oxidevm/images/custom/manifest.json" } };
     const configPath = join(root, "oxidevm.config.json"), lockPath = join(root, "oxidevm.lock.json");
     await writeFile(configPath, JSON.stringify(config));
-    expect(await doctorLockCheck(configPath)).toEqual({ check: "lock", status: "failed", message: "project lock oxidevm.lock.json is missing; run `npx oxidevm assets install` to write it" });
+    expect(await doctorLockCheck(configPath)).toEqual({ check: "lock", status: "failed", message: "project lock is missing; run `npx oxvm assets install` to write it" });
     const lock = createProjectLock(config);
     await writeFile(lockPath, JSON.stringify(lock));
     expect(await doctorLockCheck(configPath)).toEqual({ check: "lock", status: "passed" });

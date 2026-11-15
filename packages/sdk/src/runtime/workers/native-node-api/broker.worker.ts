@@ -5,6 +5,7 @@ import { createBrokerRelay } from "../../js-process/broker-relay.js";
 import { decodeNativeProcessProgram } from "../../userspace-command-abi.js";
 import { NativeThreadRouter } from "./thread-router.js";
 import { NATIVE_PROCESS_BOOTSTRAP_VERSION } from "./thread-metadata.js";
+import { NATIVE_OPERATION_SET } from "./versions.js";
 // Keep the large compiler payload out of the bounded bootstrap handshake.
 const modules = import("./compiler-modules.js").then(module => module.modules);
 // Retain a prefetch failure for later spawns without an unhandled rejection.
@@ -29,7 +30,7 @@ self.onmessage = (event: MessageEvent<unknown>) => {
     } catch (error) { connection.postMessage({ version: NATIVE_BROKER_PROCESS_VERSION, type: "error", message: error instanceof Error ? error.message : "Native broker failed" }); connection.close(); }
   };
   broker.onmessageerror = () => { for (const worker of workers) worker.terminate(); workers.clear(); broker.close(); };
-  broker.start(); broker.postMessage({ version: 1, type: "native-ready", nonce: input["nonce"] });
+  broker.start(); broker.postMessage({ version: 1, type: "native-ready", nonce: input["nonce"], operationSet: NATIVE_OPERATION_SET });
 };
 
 function serve(connection: MessagePort, pid: number, workers: Set<Worker>, compilerModule: WebAssembly.Module, httpParserModule: WebAssembly.Module, threads: NativeThreadRouter, retired: () => void): void {

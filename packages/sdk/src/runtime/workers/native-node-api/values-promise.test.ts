@@ -30,8 +30,23 @@ it("rejects wrong shape, stale handles and foreign generations before calling th
   expect(() => values.dispatch("napi_is_promise", [stale], empty)).toThrow();
   values.dispose(); expect(() => values.dispatch("napi_is_promise", [handle], empty)).toThrow();
 });
-it("does not fabricate a Boolean or application exception when the primitive is missing", async () => {
+it("answers with its own brand check when the primitive is missing, without an application exception", async () => {
   const values = await owner(false);
+  for (const [input, expected] of [[Promise.resolve(), 1n], [{ then() { throw new Error("Then ran"); } }, 0n], [Object.create(Promise.prototype), 0n]] as const) {
+    expect(values.dispatch("napi_is_promise", [values.add(input)], empty)).toMatchObject({ status: 0, args: [expected] });
+  }
+  expect(values.dispatch("napi_is_exception_pending", [], empty).args).toEqual([0n]);
+  values.dispose();
+});
+it("does not fabricate a Boolean or application exception when neither the primitive nor a brand check exists", async () => {
+  const has = Object.getOwnPropertyDescriptor(Map.prototype, "has");
+  if (has === undefined) throw new Error("Missing Map.prototype.has");
+  // An engine whose Map.prototype.has accepts any receiver gives the brand check nothing to compare with.
+  Object.defineProperty(Promise, "isPromise", { configurable: true, value: undefined }); vi.resetModules();
+  Object.defineProperty(Map.prototype, "has", { ...has, value: () => false });
+  // Only the brand module captures the changed method; the value owner loads afterwards and shares that module.
+  try { await import("../../promise-brand.js"); } finally { Object.defineProperty(Map.prototype, "has", has); }
+  const { NativeValues } = await import("./values.js"), values = new NativeValues(() => undefined, () => undefined);
   expect(() => values.dispatch("napi_is_promise", [values.add({})], empty)).toThrow("Native Promise predicate is unavailable");
   expect(values.dispatch("napi_is_exception_pending", [], empty).args).toEqual([0n]);
   values.dispose();

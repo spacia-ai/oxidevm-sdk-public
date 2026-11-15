@@ -1,40 +1,40 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/spacia-ai/oxidevm-skills",
-  "revision": "30ad55428460c4fd8c578b449a9f1fbaaeaa4fbb",
-  "skillsVersion": "0.0.6",
+  "revision": "50c9078f3eea440973e264f6790a25adf225f352",
+  "skillsVersion": "0.0.27",
   "files": [
     {
-      "path": "oxidevm-debugging/SKILL.md",
-      "sha256": "05d44c0798975da71a825a7f5195c6a40c45a5c7da25413212806b73623a7790"
+      "path": "oxvm-debugging/SKILL.md",
+      "sha256": "7c3f660af895ac946081c920b8115e617a436952eba55550bfe5d85cb43d1cbf"
     },
     {
-      "path": "oxidevm-debugging/agents/openai.yaml",
-      "sha256": "2a589335404d9415a32eeb4dabd41e527a7d1019a5696669bd3bbb253058c438"
+      "path": "oxvm-debugging/agents/openai.yaml",
+      "sha256": "ec750392a5b5fd08d71da90f11e00531a03e093bf4308ce64aa74cbe677bfec8"
     },
     {
-      "path": "oxidevm-module-author/SKILL.md",
-      "sha256": "761a2dc53ce952ba2f96d93f23f973b41ab45fd7f401cb01acd5424e6c44b55a"
+      "path": "oxvm-module-author/SKILL.md",
+      "sha256": "376e94ceb81bf071ddd5e00052f4eddc1f4dc262cb820c1941f43fcf5daf6a19"
     },
     {
-      "path": "oxidevm-module-author/agents/openai.yaml",
-      "sha256": "47be630c886752ed4947ce5021356109a33972d451c4ab21947c3cb9fd9bc3de"
+      "path": "oxvm-module-author/agents/openai.yaml",
+      "sha256": "e06571ad50f6d8a560e067312ef3509d0dd5c74c7a8977bae274076a4a7b1221"
     },
     {
-      "path": "oxidevm-sdk/SKILL.md",
-      "sha256": "63d89aee0a1a9fd2a8ac064eb5bcf4dfae321e0855d68d0793fa49c3d18d0b38"
+      "path": "oxvm-sdk/SKILL.md",
+      "sha256": "2f07061b0b2bf8f3ac3128fcfe789f4c831202a3b0058386827043dac866595a"
     },
     {
-      "path": "oxidevm-sdk/agents/openai.yaml",
-      "sha256": "aa58f1efcf2397111188f52e0384b1a7db0ed60503beb5543b6b6f1f0ef22825"
+      "path": "oxvm-sdk/agents/openai.yaml",
+      "sha256": "7efffd8e16addecafb05c3df1844cfb8ea33ef63d33290fdaad607bc6f199aec"
     },
     {
-      "path": "oxidevm-starter/SKILL.md",
-      "sha256": "2ccb8d379f746c68b73dee525629f52d2d44c874d375c2c5c81c1b0175851a3a"
+      "path": "oxvm-starter/SKILL.md",
+      "sha256": "a961278b26794710fd57dd42f4ac03cfd48e1c94a11b56a8f091dcb10c673f71"
     },
     {
-      "path": "oxidevm-starter/agents/openai.yaml",
-      "sha256": "92c315f3a195b5c945169e5e05f05545bc582f6d02d611f999cf392f04cd25c9"
+      "path": "oxvm-starter/agents/openai.yaml",
+      "sha256": "6990d0822d93fe437543a9ede178f4484bd51d2b321e784d6e0e21812a9ff727"
     }
   ]
 }

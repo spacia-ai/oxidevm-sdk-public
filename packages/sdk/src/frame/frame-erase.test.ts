@@ -35,7 +35,7 @@ describe("runtime frame local data erasure (protocol 3)", () => {
   });
 
   it("returns the frame's erasure failure with its code", async () => {
-    const frame = serve(() => Promise.reject(new VMError("STORAGE_ERROR", "Close other OxideVM tabs, then retry cleanup", { reason: "local-data-in-use" })));
+    const frame = serve(() => Promise.reject(new VMError("STORAGE_ERROR", "Close other OXVM tabs, then retry cleanup", { reason: "local-data-in-use" })));
     try {
       expect(await rejection(eraseOverPort(frame.port))).toMatchObject({ code: "STORAGE_ERROR", detail: { reason: "local-data-in-use" } });
     } finally { frame.close(); }

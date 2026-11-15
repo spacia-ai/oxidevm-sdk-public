@@ -180,7 +180,7 @@ export interface ProjectConfig {
   readonly image?: ImageLocation<RuntimeMode>;
 }
 
-/** The release `oxidevm.lock.json` pins: the SDK version, the engine release and the image's manifest digest. */
+/** The release the project lock pins: the SDK version, the engine release and the image's manifest digest. */
 export interface ProjectLockIdentity {
   readonly sdkVersion: string;
   /** `sha256:` and the engine release ID. */
@@ -189,7 +189,7 @@ export interface ProjectLockIdentity {
 }
 
 /**
- * What asset installation did to `oxidevm.lock.json`. `updated` is true when it wrote the file, `from` names
+ * What asset installation did to the project lock. `updated` is true when it wrote the file, `from` names
  * the lock it replaced (absent when there was none) and `to` the lock the project now has.
  */
 export interface ProjectLockChange {

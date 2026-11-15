@@ -261,9 +261,9 @@ export async function verifyEngineRelease(directory: string, pin: EngineReleaseP
 function unavailable(pin: EngineReleasePin, invalidCache: string | undefined): VMError {
   const cache = invalidCache === undefined ? "" : ` (the cached copy at ${invalidCache} does not match it)`;
   const sources = pin.download === null
-    ? "pass --engine-dir or set OXIDEVM_ENGINE_DIR to a local copy of it; this SDK build records no download location for it"
-    : pin.download.kind === "cdn" ? `pass --engine-dir, set OXIDEVM_ENGINE_DIR, or make ${pin.download.baseUrl} reachable`
-      : "pass --engine-dir, set OXIDEVM_ENGINE_DIR, or provide OXIDEVM_DOWNLOAD_TOKEN for the private release";
+    ? "pass --engine-dir or set OXVM_ENGINE_DIR (legacy OXIDEVM_ENGINE_DIR) to a local copy of it; this SDK build records no download location for it"
+    : pin.download.kind === "cdn" ? `pass --engine-dir, set OXVM_ENGINE_DIR (legacy OXIDEVM_ENGINE_DIR), or make ${pin.download.baseUrl} reachable`
+      : "pass --engine-dir, set OXVM_ENGINE_DIR (legacy OXIDEVM_ENGINE_DIR), or provide OXIDEVM_DOWNLOAD_TOKEN for the private release";
   return failure(`engine release ${pin.id} is unavailable${cache}: ${sources}`, { releaseId: pin.id });
 }
 
@@ -296,7 +296,9 @@ async function downloadRelease(pin: EngineReleasePin, download: EngineDownload, 
 async function resolveEnginePayloadDirectory(options: ResolveEngineOptions, pin: EngineReleasePin): Promise<string> {
   const { signal } = options;
   abortIfRequested(signal);
-  const environment = process.env["OXIDEVM_ENGINE_DIR"];
+  const current = process.env["OXVM_ENGINE_DIR"], legacy = process.env["OXIDEVM_ENGINE_DIR"];
+  if (options.engineDir === undefined && current !== undefined && legacy !== undefined && current !== legacy) throw new VMError("INVALID_ARGUMENT", "OXVM_ENGINE_DIR and OXIDEVM_ENGINE_DIR differ; set one value or pass --engine-dir");
+  const environment = current ?? legacy;
   const selected = options.engineDir ?? (environment === "" ? undefined : environment);
   if (selected !== undefined) {
     const directory = resolve(selected);

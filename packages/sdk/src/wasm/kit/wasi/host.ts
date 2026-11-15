@@ -17,7 +17,7 @@ export interface WasiHost {
 /**
  * What `kit.wasi.run` takes: the WASI members plus failure reporting, and optionally the process's identity
  * (`process.info`), synchronous native runs (`process.sync`) and its network reach (`net.vm` or `net.internet`), which
- * serve the `oxidevm_bridge_v1` imports.
+ * serve the `oxvm_bridge_v1` imports.
  */
 export interface WasiRunHost extends WasiHost {
   readonly fail: BaseHost["fail"];

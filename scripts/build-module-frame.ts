@@ -23,7 +23,7 @@ async function bundle(entry: string): Promise<string> {
 export function moduleFrameDocument(bootstrap: string): { readonly html: string; readonly sha256: string } {
   if (bootstrap.includes("</script")) throw new Error("The module frame bootstrap cannot contain a closing script tag");
   return {
-    html: `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>OxideVM module frame</title></head><body><script>${bootstrap}</script></body></html>\n`,
+    html: `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>OXVM module frame</title></head><body><script>${bootstrap}</script></body></html>\n`,
     sha256: createHash("sha256").update(bootstrap, "utf8").digest("base64"),
   };
 }

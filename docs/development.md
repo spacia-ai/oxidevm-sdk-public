@@ -1,7 +1,7 @@
 # Development and archive installation
 
 Use Node.js 24 or newer, pnpm 11.17.0, Go 1.26.8 and OpenSSL. Go builds the
-qualified browser compiler asset. It does not build the OxideVM engine.
+qualified browser compiler asset. It does not build the OXVM engine.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -21,7 +21,7 @@ declarations, package exports, exact versions, CLI image initialization and
 the starter build, fonts, and canonical CLI template.
 
 The SDK contains a required esbuild compiler Wasm asset. It contains no
-OxideVM engine or guest binaries. The pinned engine is a separate artifact.
+OXVM engine or guest binaries. The pinned engine is a separate artifact.
 For applicable worker/engine compatibility tests:
 
 ```sh
@@ -51,7 +51,7 @@ Verify their checksums before installation. Add these entries to the consumer's
 packages:
   - .
 overrides:
-  '@oxidevm/sdk': file:/absolute/path/oxidevm-sdk-0.0.2.tgz
+  '@oxvm/sdk': file:/absolute/path/oxidevm-sdk-0.0.2.tgz
 allowBuilds:
   esbuild: true
 ```
@@ -59,7 +59,7 @@ allowBuilds:
 ```sh
 pnpm add /absolute/path/oxidevm-sdk-0.0.2.tgz
 pnpm add -D /absolute/path/oxidevm-cli-0.0.2.tgz
-pnpm exec oxidevm --version
+pnpm exec oxvm --version
 ```
 
 The override ensures that the CLI resolves the supplied SDK archive. Do not
@@ -70,13 +70,13 @@ mix archives from different releases. Public packages also install from npm.
 Use the public npm package:
 
 ```sh
-npx @oxidevm/cli@latest init data-starter --start
+npx @oxvm/cli@latest init data-starter --start
 ```
 
 Or use Bun:
 
 ```sh
-bunx --package @oxidevm/cli@latest oxidevm init data-starter-bun --use-bun --start
+bunx --package @oxvm/cli@latest oxvm init data-starter-bun --use-bun --start
 ```
 
 For a fixed release, replace `@latest` with an exact version such as `0.0.2`.

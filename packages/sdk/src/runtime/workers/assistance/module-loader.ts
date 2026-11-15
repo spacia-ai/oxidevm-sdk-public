@@ -14,6 +14,13 @@ import type { LocalModuleFiles } from "./module-files.ts";
 import { realmEvaluator } from "./node-vm.ts";
 export type { LocalModuleFiles } from "./module-files.ts";
 
+export interface LocalModuleLoaderOptions {
+  readonly onNextMemoryException?: (path: string) => void;
+  /** The pinned runtime's exports of each built-in: a named ESM import of one this layer lacks
+   * fails before the graph runs, as a late failure the engine remembers (ADR 0026). */
+  readonly realExports?: Readonly<Record<string, readonly string[]>>;
+}
+
 // Capture before installing the application-facing generated-code adapter.
 const Evaluator = Function, syntaxErrorPrototype = SyntaxError.prototype, prototypeOf = Object.getPrototypeOf;
 
@@ -24,7 +31,7 @@ export function createLocalModuleLoader(
   files: LocalModuleFiles,
   builtinValues: Readonly<Record<string, object>> = {},
   cwd: string | (() => string) = "/",
-  onNextMemoryException?: (path: string) => void,
+  { onNextMemoryException, realExports }: LocalModuleLoaderOptions = {},
 ) {
   const builtins: Record<string, object> = { ...builtinValues };
   const modules = new Map<string, ModuleRecord>();
@@ -142,7 +149,8 @@ export function createLocalModuleLoader(
       for (const dependency of record.dependencies.values()) visit(dependency);
     }
     visit(module);
-    linkModuleGraph(graph);
+    linkModuleGraph(graph, (dependency, name, importer) => dependency.path.startsWith("node:") &&
+      realExports?.[dependency.path.slice(5)]?.includes(name) === true ? unsupportedExport(dependency.path, name, importer.path) : undefined);
     await Reflect.apply(importModule, system, [path]);
     return record(module.namespace, "module namespace");
   }
@@ -197,6 +205,7 @@ export function createLocalModuleLoader(
   return {
     sources,
     require: commonjs.require,
+    preload: commonjs.preload,
     import: importLocal,
     evaluateScript(source: string, install: (name: string, value: unknown) => void): unknown {
       const entry = commonjs.createEvalEntry();
@@ -232,6 +241,11 @@ function callable(value: unknown, name: string): (...args: unknown[]) => unknown
 
 function unsupported(path: string, operation: string, importer?: string): VMError {
   return new VMError("FEATURE_NOT_AVAILABLE", operation, { path, backend: "assisted-node", ...(importer === undefined ? {} : { importer }) });
+}
+
+/** A real export of a provided built-in the browser layer lacks, imported by name (ADR 0026). */
+function unsupportedExport(path: string, name: string, importer: string): VMError {
+  return new VMError("FEATURE_NOT_AVAILABLE", "builtin export is not supported", { path, backend: "assisted-node", importer, lateFailure: "unavailable-builtin", subject: `${path}.${name}` });
 }
 
 /** A Node built-in the browser layer lacks: Linux has it, so a late failure is remembered (ADR 0026). */

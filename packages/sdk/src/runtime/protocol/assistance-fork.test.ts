@@ -10,12 +10,18 @@ describe("fork request codec", () => {
     const bytes = encodeForkRequest(request);
     expect(decodeForkRequestBytes(bytes)).toEqual(request);
     expect(decodeForkRequestBytes(encodeForkRequest({ ...request, args: [], execArgv: [], silent: true }))).toEqual({ ...request, args: [], execArgv: [], silent: true });
+    // A child inherits the implemented execution options (ADR 0026, 1.11), repeated or not.
+    const options = ["-r", "dotenv/config", "--conditions=development", "--no-warnings", "--enable-source-maps", "--enable-source-maps"];
+    expect(decodeForkRequestBytes(encodeForkRequest({ ...request, execArgv: options }))).toEqual({ ...request, execArgv: options });
   });
   it("rejects unresolved paths, unsupported execArgv, extra authority and malformed bytes", () => {
     expect(() => decodeForkRequest({ ...request, entry: "server.js" })).toThrow();
     expect(() => decodeForkRequest({ ...request, cwd: "app" })).toThrow();
     expect(() => decodeForkRequest({ ...request, execArgv: ["--inspect"] })).toThrow();
-    expect(() => decodeForkRequest({ ...request, execArgv: ["--enable-source-maps", "--enable-source-maps", "--no-enable-source-maps"] })).toThrow();
+    // Only options: an execution argument list ends with its last option.
+    for (const execArgv of [["--import", "tsx"], ["-r"], ["-r", "x", "script.js"], [1], Array.from({ length: 65 }, () => "--no-warnings")]) {
+      expect(() => decodeForkRequest({ ...request, execArgv }), JSON.stringify(execArgv)).toThrow();
+    }
     expect(() => decodeForkRequest({ ...request, silent: "yes" })).toThrow();
     expect(() => decodeForkRequest({ ...request, uid: 0 })).toThrow();
     expect(() => decodeForkRequest({ ...request, env: { "1BAD": "x" } })).toThrow();

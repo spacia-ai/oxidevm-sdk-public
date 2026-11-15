@@ -20,10 +20,10 @@ export interface DoctorOptions {
    * application serves the SDK's doctor probe at its asset base, and the hosted frame otherwise; the report names which.
    */
   readonly hosting?: "frame" | "self-hosted";
-  /** The runtime frame's origin when the frame is checked; `https://run.oxidevm.dev` by default. */
+  /** The runtime frame's origin when the frame is checked; `https://run.oxvm.dev` by default. */
   readonly frameOrigin?: string;
   readonly previewOrigin?: string;
-  /** The project configuration whose `oxidevm.lock.json` the `lock` check compares with this SDK; without it that check is `not-configured`. */
+  /** The project configuration whose project lock the `lock` check compares with this SDK; without it that check is `not-configured`. */
   readonly project?: string;
   readonly signal?: AbortSignal;
 }
@@ -38,7 +38,7 @@ export async function doctorLockCheck(project: string | undefined, signal?: Abor
   try {
     const loaded = await loadProjectConfig(project);
     const bytes = await readProjectLockFile(loaded.directory, signal);
-    if (bytes === undefined) return { check: "lock", status: "failed", message: "project lock oxidevm.lock.json is missing; run `npx oxidevm assets install` to write it" };
+    if (bytes === undefined) return { check: "lock", status: "failed", message: "project lock is missing; run `npx oxvm assets install` to write it" };
     const value = decodeBundleJSON(bytes);
     // `assets install --image` records an image the configuration does not name only in the lock.
     validateProjectLock(value, loaded.config.image === undefined ? { ...loaded.config, image: lockedImage(value) } : loaded.config);

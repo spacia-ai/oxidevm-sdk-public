@@ -23,5 +23,5 @@ export const LIMITS = Object.freeze({
   programBytes: 32 * 1024 * 1024,
 } as const);
 
-/** The module-main status range the SDK carries exactly (`@oxidevm/sdk/wasm` exit codes). */
+/** The module-main status range the SDK carries exactly (`@oxvm/sdk/wasm` exit codes). */
 export const MAX_EXACT_EXIT = 119;

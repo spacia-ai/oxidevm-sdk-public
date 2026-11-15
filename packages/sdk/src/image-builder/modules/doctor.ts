@@ -6,11 +6,10 @@ import { renderHandles, type HandleSpec } from "./generate.js";
 import { DECLARATION_FILE, LOCK_FILE, loadModulesProject, readVendoredRelease, type ModulesProject } from "./project.js";
 import { parseModuleSource, type ModuleSource } from "../../wasm/declaration.js";
 import { lockedEntry, type LockedSource } from "../../wasm/lock.js";
-import { DEFAULT_GENERATED_FILE, STAGE_ROOT } from "./stage.js";
 import { manifestMinApi } from "../../wasm/capabilities.js";
 import { moduleReach } from "../../wasm/reach.js";
 import { moduleCommandPath } from "../../runtime/module-command-names.js";
-import { readProjectFile } from "./project-files.js";
+import { moduleProjectFiles, readProjectFile } from "./project-files.js";
 import { VMError } from "../../runtime/errors.js";
 import { posix, relative, dirname, sep, resolve } from "node:path";
 
@@ -146,14 +145,15 @@ export async function doctorModules(projectDir: string, options: DoctorOptions =
     fail("declaration", `${DECLARATION_FILE} or ${LOCK_FILE} cannot be read: ${error instanceof Error ? error.message : "invalid"}`);
     return { result: "failed", modules: [], checks };
   }
+  const files = await moduleProjectFiles(projectDir);
   const ids = project.declaration.modules.map(entry => entry.id);
   pass("declaration");
   const declared = new Set(ids), locked = Object.keys(project.lock.modules);
   const missing = ids.filter(id => lockedEntry(project.lock, id) === undefined), extra = locked.filter(id => !declared.has(id));
   const committed = await readCommitted(projectDir, ids);
   const inconsistent = lockInconsistencies(project, committed);
-  if (missing.length === 0 && extra.length === 0 && inconsistent.length > 0) fail("lock", `${inconsistent.join("; ")}; run "oxidevm wasm add" for the module again`);
-  else if (missing.length > 0 || extra.length > 0) fail("lock", `${[...missing.map(id => `${id} is not locked`), ...extra.map(id => `${id} is locked but not declared`)].join("; ")}; run "oxidevm wasm add"`);
+  if (missing.length === 0 && extra.length === 0 && inconsistent.length > 0) fail("lock", `${inconsistent.join("; ")}; run "oxvm wasm add" for the module again`);
+  else if (missing.length > 0 || extra.length > 0) fail("lock", `${[...missing.map(id => `${id} is not locked`), ...extra.map(id => `${id} is locked but not declared`)].join("; ")}; run "oxvm wasm add"`);
   else pass("lock");
 
   const problems: string[] = [];
@@ -167,28 +167,28 @@ export async function doctorModules(projectDir: string, options: DoctorOptions =
     else if (vendored.sha256 !== entry.manifestSha256) problems.push(`modules/${id}/module.json differs from the lock`);
     // The lock's capabilities count even without a readable module.json; the manifest adds what the lock does not record, such as commands.
     apiNeeded.set(id, Math.max(manifestMinApi({ requires: { host: entry.capabilities } }), vendored === undefined ? 0 : manifestMinApi(vendored.manifest)));
-    const staged = join(projectDir, STAGE_ROOT, id, entry.release);
+    const staged = join(projectDir, files.stageRoot, id, entry.release);
     try {
       const read = await readReleaseDirectory(staged, options.signal, { servedCopies: true });
       if (read.id !== entry.release) problems.push(`${id} is staged with a different release`);
-      else specs.push({ manifest: read.manifest, release: read.id, files: read.files, directory: relative(dirname(resolve(projectDir, options.generatedFile ?? DEFAULT_GENERATED_FILE)), staged).split(sep).join(posix.sep) });
-    } catch (error: unknown) { problems.push(`${id} is not staged${error instanceof VMError ? ` (${error.message})` : ""}: run "oxidevm wasm stage"`); }
+      else specs.push({ manifest: read.manifest, release: read.id, files: read.files, directory: relative(dirname(resolve(projectDir, options.generatedFile ?? files.generated)), staged).split(sep).join(posix.sep) });
+    } catch (error: unknown) { problems.push(`${id} is not staged${error instanceof VMError ? ` (${error.message})` : ""}: run "oxvm wasm stage"`); }
   }
   if (problems.some(problem => problem.startsWith("modules/"))) fail("vendored", problems.filter(problem => problem.startsWith("modules/")).join("; ")); else pass("vendored");
   const stagedProblems = problems.filter(problem => !problem.startsWith("modules/"));
   if (stagedProblems.length > 0) fail("staged", stagedProblems.join("; ")); else pass("staged");
 
-  const generatedPath = resolve(projectDir, options.generatedFile ?? DEFAULT_GENERATED_FILE);
+  const generatedPath = resolve(projectDir, options.generatedFile ?? files.generated);
   const generated = await readProjectFile(generatedPath, 4 * 1024 ** 2).then(bytes => bytes === undefined ? undefined : new TextDecoder().decode(bytes)).catch(() => undefined);
   if (specs.length === ids.length && ids.length > 0) {
-    if (generated === undefined) fail("generated", `${relative(projectDir, generatedPath)} is missing: run "oxidevm wasm stage"`);
-    else if (generated !== renderHandles(specs)) fail("generated", `${relative(projectDir, generatedPath)} is out of date: run "oxidevm wasm stage"`);
+    if (generated === undefined) fail("generated", `${relative(projectDir, generatedPath)} is missing: run "oxvm wasm stage"`);
+    else if (generated !== renderHandles(specs)) fail("generated", `${relative(projectDir, generatedPath)} is out of date: run "oxvm wasm stage"`);
     else pass("generated");
   } else if (ids.length === 0) pass("generated"); else fail("generated", "cannot be checked until every module is staged");
 
   const provided = options.engineApi ?? getSDKRelease().engine.identities.userspaceApi;
   const behind = [...apiNeeded].filter(([, needed]) => needed > provided);
-  if (behind.length > 0) fail("engine-api", `${behind.map(([id, needed]) => `${id} needs Userspace API ${String(needed)}`).join(", ")}; this SDK provides ${String(provided)}. Update @oxidevm/sdk.`);
+  if (behind.length > 0) fail("engine-api", `${behind.map(([id, needed]) => `${id} needs Userspace API ${String(needed)}`).join(", ")}; this SDK provides ${String(provided)}. Update @oxvm/sdk.`);
   else pass("engine-api");
 
   const copyleft: string[] = [];

@@ -12,12 +12,12 @@ import { abortIfRequested } from "../tools.js";
 import { authorityChange, consentCard, type ConsentCard } from "./consent.js";
 import { moduleIdentifier } from "./generate.js";
 import { sha256Hex } from "./sums.js";
-import { readProjectFile } from "./project-files.js";
+import { moduleProjectFiles, readProjectFile } from "./project-files.js";
 import { lockedModule, resolveLocked, resolveSource, type Resolution, type ResolveContext } from "./resolve.js";
 import { stageModules, VENDOR_ROOT, type StageInput, type StageOptions, type StageResult } from "./stage.js";
 
-export const DECLARATION_FILE = "oxidevm.modules.json";
-export const LOCK_FILE = "oxidevm.modules.lock.json";
+export const DECLARATION_FILE = "oxvm.modules.json";
+export const LOCK_FILE = "oxvm.modules.lock.json";
 
 export interface ModulesProject {
   readonly declaration: ModulesDeclaration;
@@ -34,7 +34,8 @@ async function writeAtomically(path: string, bytes: Uint8Array): Promise<void> {
 
 /** The two files of a project, or empty ones when it has no modules yet. */
 export async function loadModulesProject(projectDir: string): Promise<ModulesProject> {
-  const declarationBytes = await readProjectFile(join(projectDir, DECLARATION_FILE), MAX_DECLARATION_BYTES, DECLARATION_FILE), lockBytes = await readProjectFile(join(projectDir, LOCK_FILE), MAX_LOCK_BYTES, LOCK_FILE);
+  const files = await moduleProjectFiles(projectDir);
+  const declarationBytes = await readProjectFile(join(projectDir, files.declaration), MAX_DECLARATION_BYTES, files.declaration), lockBytes = await readProjectFile(join(projectDir, files.lock), MAX_LOCK_BYTES, files.lock);
   return {
     declaration: declarationBytes === undefined ? { schemaVersion: 1, trusted: [], modules: [] } : decodeModulesDeclarationBytes(declarationBytes),
     lock: lockBytes === undefined ? { schemaVersion: 1, modules: {} } : decodeModulesLockBytes(lockBytes),
@@ -115,8 +116,9 @@ export async function commitAdd(projectDir: string, preview: AddPreview, context
   const lock: ModulesLock = { schemaVersion: 1, modules: { ...project.lock.modules, [id]: lockedModule(preview.resolution) } };
   const declaration: ModulesDeclaration = { ...project.declaration, modules: [...project.declaration.modules.filter(entry => entry.id !== id), { id, from: preview.card.source }] };
   const stage = await stageState(projectDir, { declaration, lock }, context, options, new Map([[id, { release: preview.resolution.release, paths: preview.resolution.paths }]]));
-  await writeAtomically(join(projectDir, LOCK_FILE), encodeModulesLock(lock));
-  await writeAtomically(join(projectDir, DECLARATION_FILE), encodeModulesDeclaration(declaration));
+  const files = await moduleProjectFiles(projectDir);
+  await writeAtomically(join(projectDir, files.lock), encodeModulesLock(lock));
+  await writeAtomically(join(projectDir, files.declaration), encodeModulesDeclaration(declaration));
   return { id, status: preview.status, stage };
 }
 
@@ -128,7 +130,7 @@ export async function stageProject(projectDir: string, context: ResolveContext, 
 /** Stages the modules a declaration and lock describe; `resolved` holds releases that are already in hand and need no lookup. */
 async function stageState(projectDir: string, state: ModulesProject, context: ResolveContext, options: Pick<StageOptions, "generatedFile">, resolved: ReadonlyMap<string, StageInput> = new Map()): Promise<StageResult> {
   const declared = new Set(state.declaration.modules.map(entry => entry.id)), locked = new Set(Object.keys(state.lock.modules));
-  for (const id of declared) if (!locked.has(id)) throw new VMError("INVALID_ARGUMENT", `${id} is declared in ${DECLARATION_FILE} but not locked: run "oxidevm wasm add" for it`, { reason: MANIFEST_INVALID });
+  for (const id of declared) if (!locked.has(id)) throw new VMError("INVALID_ARGUMENT", `${id} is declared in ${DECLARATION_FILE} but not locked: run "oxvm wasm add" for it`, { reason: MANIFEST_INVALID });
   for (const id of locked) if (!declared.has(id)) throw new VMError("INVALID_ARGUMENT", `${id} is locked but not declared in ${DECLARATION_FILE}: remove it from the lock or declare it`, { reason: MANIFEST_INVALID });
   const inputs = new Map<string, StageInput>();
   for (const [id, entry] of Object.entries(state.lock.modules)) {

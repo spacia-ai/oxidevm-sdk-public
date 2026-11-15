@@ -1,7 +1,8 @@
 import { exactKeys, record } from "../../decode.js";
 import { VMError, deserializeError } from "../../errors.js";
 import { ASSISTANCE_LIMITS, decodeAssistanceEnvironment } from "../../protocol/assistance.js";
-import { FORK_EXEC_ARGUMENTS, type ForkReply, type ForkRequest } from "../../protocol/assistance-fork.js";
+import { MAX_EXEC_ARGUMENTS, type ForkReply, type ForkRequest } from "../../protocol/assistance-fork.js";
+import { readNodeExecutionOptions } from "../../protocol/node-options.js";
 import type { ChildSignal } from "../../protocol/assistance-broker.js";
 import type { AsyncContext } from "./async-context.js";
 import type { ForkExit, ProcessRuntimeIO } from "./process-io.js";
@@ -276,12 +277,13 @@ export function createForkedChildren(
   };
 }
 
+/** A child may carry the execution options the assisted runtime implements (ADR 0026, 1.11). */
 function readExecArgv(value: unknown): readonly string[] {
-  if (!Array.isArray(value) || value.length > FORK_EXEC_ARGUMENTS.length) throw new VMError("FEATURE_NOT_AVAILABLE", "child_process.fork execArgv is unsupported", { api: "child_process.fork execArgv", backend: "assisted-node" });
-  return value.map((argument: unknown) => {
-    if (typeof argument !== "string" || !FORK_EXEC_ARGUMENTS.includes(argument)) throw new VMError("FEATURE_NOT_AVAILABLE", "child_process.fork execArgv is unsupported", { api: "child_process.fork execArgv", backend: "assisted-node" });
-    return argument;
-  });
+  const unsupported = () => new VMError("FEATURE_NOT_AVAILABLE", "child_process.fork execArgv is unsupported", { api: "child_process.fork execArgv", backend: "assisted-node" });
+  if (!Array.isArray(value) || value.length > MAX_EXEC_ARGUMENTS) throw unsupported();
+  const values = value.map((argument: unknown) => { if (typeof argument !== "string") throw unsupported(); return argument; });
+  if (readNodeExecutionOptions(values)?.end !== values.length) throw unsupported();
+  return values;
 }
 
 /** Node: `silent` means piped stdio; an explicit `stdio` wins and must carry

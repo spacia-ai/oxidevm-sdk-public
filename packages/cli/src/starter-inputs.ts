@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { VMError } from "@oxidevm/sdk";
+import { VMError } from "@oxvm/sdk";
 import { fields, object, text } from "./validation.js";
 
 /** Private distribution supplies this profile beside the launcher, never in application source. */

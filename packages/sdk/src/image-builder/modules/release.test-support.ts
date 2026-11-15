@@ -26,7 +26,7 @@ export interface ReleaseSpec {
   readonly extra?: Readonly<Record<string, unknown>>;
 }
 
-/** A complete, consistent release, hashed the way `oxidevm wasm build` will. */
+/** A complete, consistent release, hashed the way `oxvm wasm build` will. */
 export function buildReleaseFiles(spec: ReleaseSpec = {}): BuiltRelease {
   const adapter = encoder.encode(spec.adapter ?? "export default () => ({ main: () => 0 });");
   const artifacts = spec.artifacts ?? { "tool.wasm": Uint8Array.of(0, 0x61, 0x73, 0x6d, 1, 0, 0, 0) };

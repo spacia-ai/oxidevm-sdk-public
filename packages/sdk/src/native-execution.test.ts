@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { nativeExecutionURL, openNativeExecution } from "./native-execution.js";
+import { decodeNativeReady, nativeExecutionURL, openNativeExecution } from "./native-execution.js";
 import { sdkVersion } from "./sdk-version.js";
 
 const frame = vi.hoisted(() => ({
-  open: vi.fn<(url: URL) => Promise<{ readonly port: MessagePort; dispose(): void }>>(),
+  open: vi.fn<(url: URL) => Promise<{ readonly port: MessagePort; readonly receipt: { readonly operationSet: number }; dispose(): void }>>(),
 }));
 vi.mock("./runtime/execution-frame.js", () => ({ openExecutionFrame: frame.open }));
 
@@ -134,7 +134,7 @@ it("opens the paired execution frame for a valid descriptor", async () => {
   fetchMock.mockResolvedValueOnce(descriptor({ version: 2, origin: "https://js.test" }));
   const channel = new MessageChannel();
   frame.open.mockResolvedValueOnce({
-    port: channel.port1,
+    port: channel.port1, receipt: { operationSet: 1 },
     dispose: () => { channel.port1.close(); channel.port2.close(); },
   });
 
@@ -143,10 +143,20 @@ it("opens the paired execution frame for a valid descriptor", async () => {
   expect(result.status).toBe("open");
   if (result.status === "open") {
     expect(result.port).toBe(channel.port1);
+    expect(result.operationSet).toBe(1);
     result.dispose();
   }
   expect(String(frame.open.mock.calls[0]?.[0]))
     .toBe(`https://js.test/v/${sdkVersion}/oxidevm-native-process/index.html`);
+});
+
+it("reads the highest operation set the execution origin serves, set 0 when it names none (ADR 0026, 2.8)", () => {
+  const ready = { version: 1, type: "native-ready", nonce: "fixture" };
+  expect(decodeNativeReady(ready, "fixture")).toEqual({ operationSet: 0 });
+  expect(decodeNativeReady({ ...ready, operationSet: 1 }, "fixture")).toEqual({ operationSet: 1 });
+  for (const operationSet of [-1, 0x1_0000, 0.5, "1", null]) expect(() => decodeNativeReady({ ...ready, operationSet }, "fixture")).toThrow();
+  expect(() => decodeNativeReady({ ...ready, operationSet: 1 }, "other")).toThrow();
+  expect(() => decodeNativeReady({ ...ready, extra: true }, "fixture")).toThrow();
 });
 
 /** A 200 answer whose body is an HTML app shell, which self-hosted hosts serve for unknown paths. */
@@ -190,7 +200,7 @@ it("accepts a descriptor of exactly 4096 bytes and refuses 4097 bytes as too lar
   const padded = (bytes: number): string => `${json}${" ".repeat(bytes - json.length)}`;
   const channel = new MessageChannel();
   frame.open.mockResolvedValueOnce({
-    port: channel.port1,
+    port: channel.port1, receipt: { operationSet: 0 },
     dispose: () => { channel.port1.close(); channel.port2.close(); },
   });
   fetchMock.mockResolvedValueOnce(new Response(padded(4096), { status: 200 }));

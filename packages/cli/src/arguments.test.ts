@@ -2,9 +2,25 @@ import { expect, it } from "vitest";
 import { parseArguments } from "./arguments.js";
 import { readFile } from "node:fs/promises";
 
+it("accepts canonical signing and trust settings while retaining legacy settings", () => {
+  expect(parseArguments(["image", "build", "oxvm.image.ts"], { OXVM_SIGNING_KEY_FILE: "canonical.pem" })).toMatchObject({ signingKey: "canonical.pem" });
+  expect(parseArguments(["image", "build", "oxvm.image.ts"], { OXIDEVM_SIGNING_KEY_FILE: "legacy.pem" })).toMatchObject({ signingKey: "legacy.pem" });
+  expect(parseArguments(["image", "test", "dist"], { OXVM_IMAGE_TRUST_FILE: "author.json" })).toMatchObject({ trust: "author.json" });
+  expect(parseArguments(["snapshot", "inspect", "backup.oxvm"], { OXVM_SNAPSHOT_TRUST_FILE: "snapshot.json" })).toMatchObject({ trust: "snapshot.json" });
+});
+
+it("refuses conflicting environment aliases without echoing their values", () => {
+  let failure: unknown;
+  try { parseArguments(["image", "build", "oxvm.image.ts"], { OXVM_SIGNING_KEY_FILE: "private-new.pem", OXIDEVM_SIGNING_KEY_FILE: "private-old.pem" }); }
+  catch (error: unknown) { failure = error; }
+  expect(failure).toMatchObject({ code: "INVALID_ARGUMENT" });
+  expect(failure instanceof Error ? failure.message : "").not.toMatch(/private-new|private-old/u);
+  expect(parseArguments(["image", "build", "oxvm.image.ts", "--signing-key", "explicit.pem"], { OXVM_SIGNING_KEY_FILE: "private-new.pem", OXIDEVM_SIGNING_KEY_FILE: "private-old.pem" })).toMatchObject({ signingKey: "explicit.pem" });
+});
+
 it("accepts the exact commands in the custom-image guide without implicit engine installation", async () => {
   const guide = await readFile(new URL("../../../docs/images.md", import.meta.url), "utf8");
-  const commands = [...guide.matchAll(/^\s*npm exec -- oxidevm (.+)$/gmu)].map(match => {
+  const commands = [...guide.matchAll(/^\s*npm exec -- oxvm (.+)$/gmu)].map(match => {
     const words = (match[1] ?? "").match(/"[^"]*"|\S+/gu) ?? [];
     const invocation = parseArguments(words.map(word => word.replace(/^"|"$/gu, "")), {});
     expect(invocation.kind).toBe("command");
@@ -13,9 +29,9 @@ it("accepts the exact commands in the custom-image guide without implicit engine
   expect(commands).toEqual(["image init", "image keygen", "image build", "image inspect", "image test", "init"]);
 });
 
-it("accepts the exact oxidevm wasm commands in the module guide", async () => {
+it("accepts the exact oxvm wasm commands in the module guide", async () => {
   const guide = await readFile(new URL("../../../docs/wasm-modules.md", import.meta.url), "utf8");
-  const commands = [...guide.matchAll(/^oxidevm (wasm \S.*?)(?:\s+#.*)?$/gmu)].map(match => {
+  const commands = [...guide.matchAll(/^oxvm (wasm \S.*?)(?:\s+#.*)?$/gmu)].map(match => {
     const invocation = parseArguments((match[1] ?? "").split(/\s+/u), {});
     expect(invocation.kind).toBe("command");
     return invocation.kind === "command" ? invocation.command : "help";

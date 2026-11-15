@@ -66,7 +66,7 @@ export async function startImageTestServer(options: ImageTestServingOptions): Pr
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if ((request.method !== "GET" && request.method !== "HEAD") || url.search !== "") { response.writeHead(404); response.end(); return; }
     if (url.pathname === "/fixture.json") { response.setHeader("Content-Type", "application/json"); response.end(request.method === "HEAD" ? undefined : configuration); return; }
-    if (url.pathname === "/") { response.setHeader("Content-Type", "text/html"); response.end(request.method === "HEAD" ? undefined : '<!doctype html><html><head><meta charset="UTF-8"><title>OxideVM image qualification</title></head><body><script type="module" src="/qualification/' + entry + '"></script></body></html>'); return; }
+    if (url.pathname === "/") { response.setHeader("Content-Type", "text/html"); response.end(request.method === "HEAD" ? undefined : '<!doctype html><html><head><meta charset="UTF-8"><title>OXVM image qualification</title></head><body><script type="module" src="/qualification/' + entry + '"></script></body></html>'); return; }
     if (module !== undefined && url.pathname.startsWith("/module-tampered/") && decodeURIComponent(url.pathname.slice("/module-tampered/".length)) === module.tamper) {
       const bytes = await readFile(join(module.directory, module.tamper));
       if (bytes.length === 0 || bytes.length > MAX_ARTIFACT_BYTES) { response.writeHead(404); response.end(); return; }

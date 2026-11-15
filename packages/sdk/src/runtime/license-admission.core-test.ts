@@ -17,8 +17,10 @@ it.each(["oxidevm_core.wasm", "oxidevm_userspace.wasm"] as const)("%s admits the
   const bytes = await readFile(engineModulePath(name));
   const admit = (runtimeOrigin: string, embedderOrigin: string, token?: string) =>
     admitLicense(bytes, { runtimeOrigin, embedderOrigin, ...(token === undefined ? {} : { token }), nowSeconds: 1_800_000_000 });
-  await expect(admit("https://run.oxidevm.dev", "https://shop.example.net")).rejects.toMatchObject({ code: "PERMISSION_DENIED", detail: { reason: "license-required", rejected: "public-requires-license" } });
-  await expect(admit("https://run.oxidevm.dev", "https://shop.example.net", "oxl1.AQ.AA")).rejects.toMatchObject({ code: "PERMISSION_DENIED", detail: { reason: "license-invalid", rejected: "malformed" } });
+  for (const origin of ["https://run.oxidevm.dev", "https://run.oxvm.dev"]) {
+    await expect(admit(origin, "https://shop.example.net")).rejects.toMatchObject({ code: "PERMISSION_DENIED", detail: { reason: "license-required", rejected: "public-requires-license" } });
+    await expect(admit(origin, "https://shop.example.net", "oxl1.AQ.AA")).rejects.toMatchObject({ code: "PERMISSION_DENIED", detail: { reason: "license-invalid", rejected: "malformed" } });
+  }
   await expect(admit("http://localhost:5173", "http://localhost:5173")).resolves.toEqual({ tier: "development" });
   await expect(admit("https://vm.example.com", "https://vm.example.com")).rejects.toMatchObject({ code: "PERMISSION_DENIED", detail: { reason: "license-required" } });
 });

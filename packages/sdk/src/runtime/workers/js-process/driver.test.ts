@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { decodeJSIdentity } from "../../js-process/codec.js";
-import { JsProcessWorkers } from "./driver.js";
+import { JsProcessWorkers, TRIAL_DEADLINES } from "./driver.js";
 import { record } from "../../decode.js";
 import { JS_PROCESS_PROTOCOL_VERSION, jsMailboxAttention, Writer } from "../../js-process/codec.js";
 import { HostAttention, postCounted } from "../../host-attention.js";
@@ -45,10 +45,12 @@ function runtime({ deferExit = false, notices = [], completions = [], onNext }: 
   let active = true, exits = 0, length = 0, resultLength = 1;
   const submitted: number[] = [], written: string[] = [], reports: { readonly kind: number; readonly detail: string }[] = [], signalExits: { readonly id: bigint; readonly signal: number; readonly length: number }[] = [];
   const answer = (queue: Uint8Array[]) => { const next = queue.shift(); resultLength = next?.byteLength ?? 0; if (next !== undefined) new Uint8Array(memory.buffer).set(next); return 0; };
+  /** Trial operations 8 to 10 by operation and payload; `trials` is what operation 10 answers. */
+  const trialOperations: { readonly operation: number; readonly payload: number[] }[] = [], trials = { running: 0 };
   const callbacks = [
     (size: number) => { length = size; return 0; }, () => 0,
     () => {
-      const bytes = new Uint8Array(memory.buffer), operation = bytes[4];
+      const bytes = new Uint8Array(memory.buffer), operation = bytes[4] ?? 0;
       if (operation === 5) {
         reports.push({ kind: bytes[21] ?? 0, detail: new TextDecoder().decode(bytes.subarray(23, 23 + (bytes[22] ?? 0))) });
         bytes.set(NOTICE); resultLength = NOTICE.byteLength; return 0;
@@ -57,6 +59,10 @@ function runtime({ deferExit = false, notices = [], completions = [], onNext }: 
       if (operation === 7) {
         signalExits.push({ id: new DataView(memory.buffer).getBigUint64(13, true), signal: bytes[21] ?? 0, length });
         resultLength = 0; if (!deferExit) active = false; return 0;
+      }
+      if (operation >= 8 && operation <= 10) {
+        trialOperations.push({ operation, payload: Array.from(bytes.subarray(21, length)) });
+        resultLength = operation === 10 ? 1 : 0; bytes[0] = trials.running; return 0;
       }
       resultLength = operation === 2 ? 8 : 1;
       if (operation === 2) new DataView(memory.buffer).setBigInt64(0, BigInt(length - 22), true);
@@ -79,7 +85,7 @@ function runtime({ deferExit = false, notices = [], completions = [], onNext }: 
   const values: WebAssembly.ModuleImports = { memory };
   for (const [index, callback] of callbacks.entries()) values[String(index)] = callback;
   const instance = new WebAssembly.Instance(module, { test: values });
-  return { instance, memory, submitted, written, reports, signalExits, notices, completions, retire: () => { active = false; }, exits: () => exits };
+  return { instance, memory, submitted, written, reports, trialOperations, trials, signalExits, notices, completions, retire: () => { active = false; }, exits: () => exits };
 }
 const request: UserspaceCommandHostRequest = {
   kind: "command", ...decodeJSIdentity(1n, 1n), pid: 3, tty: false, cwd: "/workspace", program: { kind: "typescript", entry: "/workspace/node_modules/.bun/typescript@6.0.2/node_modules/typescript/bin/tsc", executable: "/usr/bin/node" }, args: ["--noEmit"], environment: [],
@@ -110,7 +116,7 @@ it("forwards metadata, mask, PATH and signal-disposition operations, then reject
 
 it("exits an admitted native command when its isolated execution capability is absent", async () => {
   const native = runtime(), driver = new JsProcessWorkers({ runtime: native, active: () => true, wake: () => {} });
-  await expect(driver.run({ ...request, cwd: "/workspace/swc", program: { kind: "native-node", entry: "/workspace/swc/build.cjs", source: { kind: "file" }, input: 3, output: 4, context: { kind: "main" }, profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/swc/node_modules" }], basis: "no-addons", dependencyGeneration: 11n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0, bridgeVersion: 16 } } }, new AbortController().signal)).resolves.toBeUndefined();
+  await expect(driver.run({ ...request, cwd: "/workspace/swc", program: { kind: "native-node", entry: "/workspace/swc/build.cjs", source: { kind: "file" }, input: 3, output: 4, context: { kind: "main" }, profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/swc/node_modules" }], basis: "no-addons", dependencyGeneration: 11n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0, bridgeVersion: 16, operationSet: 0, sharedBufferBudget: 134217728, runtimeBuild: null } } }, new AbortController().signal)).resolves.toBeUndefined();
   expect(native.exits()).toBe(1); expect(TestWorker.latest).toBeUndefined();
 });
 
@@ -201,7 +207,7 @@ it("holds host attention for a same-origin worker's posted request until the dri
   expect(attention.size).toBe(0);
 });
 
-const NATIVE_PROGRAM = { kind: "native-node", entry: "/workspace/swc/build.cjs", source: { kind: "file" }, input: 3, output: 4, context: { kind: "main" }, profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/swc/node_modules" }], basis: "no-addons", dependencyGeneration: 11n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0, bridgeVersion: 16 } } as const;
+const NATIVE_PROGRAM = { kind: "native-node", entry: "/workspace/swc/build.cjs", source: { kind: "file" }, input: 3, output: 4, context: { kind: "main" }, profile: { runtime: "node", executable: "/usr/bin/node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", identity: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/swc/node_modules" }], basis: "no-addons", dependencyGeneration: 11n, artifacts: [], moduleSearchPaths: [], requiredCapabilities: 0, bridgeVersion: 16, operationSet: 0, sharedBufferBudget: 134217728, runtimeBuild: null } } as const;
 
 it("holds host attention for a native process's request from its broker's notice until the driver receives it", async () => {
   vi.stubGlobal("crossOriginIsolated", true);
@@ -511,4 +517,74 @@ it("ends a module command whose registration was turned off with status 125 and 
     expect(native.written.join("")).toContain("JS process failed: typst is no longer turned on in this VM");
     expect(TestWorker.latest).toBeUndefined();
   }
+});
+
+const ADDON = "/workspace/swc/node_modules/pkg/pkg.node";
+const PROBE_PROGRAM = { ...NATIVE_PROGRAM, entry: ADDON, source: { kind: "probe" }, profile: { ...NATIVE_PROGRAM.profile, basis: "trial", artifacts: [{ kind: "node-api", path: ADDON, sha256: "a".repeat(64), inode: 7n }] } } as const;
+
+/** A trial load through a fake broker: returns the connection the driver started it on. */
+async function probeLaunch(native: ReturnType<typeof runtime>, remembered: unknown[] = []) {
+  vi.stubGlobal("crossOriginIsolated", true);
+  const broker = new MessageChannel();
+  const driver = new JsProcessWorkers({ runtime: native, nativeExecution: broker.port1, knowledge: { remember: (_, failure) => { remembered.push(failure); } }, active: () => true, wake: () => {} });
+  const spawn = new Promise<MessagePort>(accept => { broker.port2.onmessage = (event: MessageEvent<unknown>) => { const port = record(event.data, "spawn")["port"]; if (port instanceof MessagePort) accept(port); }; broker.port2.start(); });
+  const running = driver.run({ ...request, cwd: "/workspace/swc", program: PROBE_PROGRAM }, new AbortController().signal);
+  const connection = await spawn;
+  await new Promise<void>(accept => { connection.onmessage = () => { accept(); }; connection.start(); });
+  const send = (value: unknown) => { connection.postMessage({ version: 2, type: "message", value }); };
+  return { driver, running, send, close: () => { connection.close(); broker.port2.close(); } };
+}
+
+it("turns a trial load's report into its add-on's verdict, never a notice", async () => {
+  const native = runtime(), remembered: unknown[] = [];
+  const probe = await probeLaunch(native, remembered);
+  probe.send({ version: JS_PROCESS_PROTOCOL_VERSION, type: "trial-failure", failure: { kind: "addon-init-threw", detail: "TypeError" } });
+  probe.send({ version: JS_PROCESS_PROTOCOL_VERSION, type: "late-failure", failure: { kind: "unsupported-node-api", detail: "napi_x" } });
+  probe.send({ version: JS_PROCESS_PROTOCOL_VERSION, type: "exit", code: 1 });
+  await probe.running; probe.close();
+  expect(native.trialOperations).toEqual([
+    { operation: 8, payload: [6, 9, ...new TextEncoder().encode("TypeError")] },
+    { operation: 8, payload: [3, 6, ...new TextEncoder().encode("napi_x")] },
+  ]);
+  expect(native.reports).toEqual([]);
+  expect(remembered).toEqual([]);
+  expect(native.exits()).toBe(1);
+});
+
+it("tells Rust when a trial load's first and hard deadlines pass", async () => {
+  vi.useFakeTimers();
+  try {
+    const native = runtime();
+    const probe = await probeLaunch(native);
+    await vi.advanceTimersByTimeAsync(TRIAL_DEADLINES.first);
+    expect(native.trialOperations).toEqual([{ operation: 9, payload: [0] }]);
+    await vi.advanceTimersByTimeAsync(TRIAL_DEADLINES.hard - TRIAL_DEADLINES.first);
+    expect(native.trialOperations).toEqual([{ operation: 9, payload: [0] }, { operation: 9, payload: [1] }]);
+    probe.send({ version: JS_PROCESS_PROTOCOL_VERSION, type: "exit", code: 0 });
+    await vi.runAllTimersAsync(); await probe.running; probe.close();
+  } finally { vi.useRealTimers(); }
+});
+
+it("ignores trial messages from an ordinary program", async () => {
+  vi.stubGlobal("Worker", TestWorker);
+  const native = runtime();
+  const driver = new JsProcessWorkers({ runtime: native, interceptor: "https://example.test/tsc.js", active: () => true, wake: () => {} });
+  const running = driver.run(request, new AbortController().signal);
+  TestWorker.latest?.onmessage?.(new MessageEvent("message", { data: { version: JS_PROCESS_PROTOCOL_VERSION, type: "trial-failure", failure: { kind: "addon-init-threw", detail: "TypeError" } } }));
+  await running;
+  expect(native.trialOperations).toEqual([]);
+  expect(native.exits()).toBe(1);
+});
+
+it("suspends trial loads for a save until none runs, then resumes them", async () => {
+  const native = runtime(); native.trials.running = 1;
+  let wakes = 0;
+  const driver = new JsProcessWorkers({ runtime: native, active: () => true, wake: () => { wakes++; if (wakes === 2) native.trials.running = 0; } });
+  await driver.suspendTrials();
+  expect(native.trialOperations.map(({ operation, payload }) => [operation, ...payload])).toEqual([[10, 1], [10, 1], [10, 1]]);
+  driver.resumeTrials();
+  expect(native.trialOperations.at(-1)).toEqual({ operation: 10, payload: [0] });
+  native.trials.running = 1;
+  const aborted = new AbortController(); aborted.abort();
+  await expect(driver.suspendTrials(aborted.signal)).rejects.toThrow("did not stop");
 });

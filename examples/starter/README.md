@@ -2,12 +2,12 @@
 
 Edit Python on the left and inspect its pandas DataFrame on the right.
 This Vite and TypeScript application runs the actual Linux x86-64 Python,
-NumPy and pandas binaries through OxideVM Userspace. It does not boot a kernel.
+NumPy and pandas binaries through OXVM Userspace. It does not boot a kernel.
 Python executes in the browser's hosted runtime iframe. There is no data-processing backend.
 
 ## Build with Codex or Claude
 
-OxideVM project skills are included. Open this folder in Codex or Claude Code
+OXVM project skills are included. Open this folder in Codex or Claude Code
 and try:
 
 > Add a revenue chart from the DataFrame result. Keep Python running in Linux.
@@ -26,13 +26,13 @@ because this page is open.
 Use Node.js 24 or newer:
 
 ```sh
-npx @oxidevm/cli@latest init app --start
+npx @oxvm/cli@latest init app --start
 ```
 
 Or use Bun:
 
 ```sh
-bunx --package @oxidevm/cli@latest oxidevm init app-bun --use-bun --start
+bunx --package @oxvm/cli@latest oxvm init app-bun --use-bun --start
 ```
 
 For a fixed release, replace `@latest` with its exact version. The generated

@@ -16,8 +16,8 @@ function browserInputs(root:string):Plugin {
   const builtins=new Set(builtinModules.map(name=>name.replace(/^node:/u,"")));
   return {name:"oxidevm-browser-author",setup(builder){
     builder.onResolve({filter:/.*/},args=>{
-      if(args.path==="@oxidevm/sdk")return {path:args.path,external:true};
-      if(args.path.startsWith("node:")||builtins.has(args.path)||args.path.startsWith("@oxidevm/sdk/"))throw new VMError("INVALID_ARGUMENT","Author modules require browser dependencies");
+      if(args.path==="@oxvm/sdk")return {path:args.path,external:true};
+      if(args.path.startsWith("node:")||builtins.has(args.path)||args.path.startsWith("@oxvm/sdk/"))throw new VMError("INVALID_ARGUMENT","Author modules require browser dependencies");
       return undefined;
     });
     builder.onLoad({filter:/.*/},async args=>{
@@ -36,7 +36,7 @@ export async function compileSnapshotModule(source:string,root:string,out:string
   abortIfRequested(signal);
   try{
     const result=await build({entryPoints:[source],bundle:true,format:"esm",platform:"browser",target:"es2024",write:false,
-      logLevel:"silent",plugins:[browserInputs(root)],external:["@oxidevm/sdk"]});
+      logLevel:"silent",plugins:[browserInputs(root)],external:["@oxvm/sdk"]});
     abortIfRequested(signal);
     const output=result.outputFiles[0];
     if(output===undefined||output.contents.length>16*1024**2)throw new VMError("INVALID_ARGUMENT","Compiled author module exceeds its bound");

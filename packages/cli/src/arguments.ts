@@ -1,11 +1,12 @@
 import { parseArgs } from "node:util";
-import { VMError } from "@oxidevm/sdk";
-import type { RuntimeMode } from "@oxidevm/sdk";
+import { VMError } from "@oxvm/sdk";
+import type { RuntimeMode } from "@oxvm/sdk";
+import { setting } from "./environment.js";
 import type { CliCommand } from "./contracts.js";
 
 interface Common { readonly kind: "command"; readonly json: boolean }
 interface SnapshotOptions {readonly browser?:"chromium"|"firefox"|"webkit";readonly timeoutMs?:number;readonly engineDir?:string}
-interface SnapshotPublicationOptions extends SnapshotOptions {readonly recipe:string;readonly signingKey:string;readonly imageTrust?:string;readonly out?:string;readonly baseUrl?:string}
+interface SnapshotPublicationOptions extends SnapshotOptions {readonly recipe?:string;readonly signingKey:string;readonly imageTrust?:string;readonly out?:string;readonly baseUrl?:string}
 export type CLIInvocation = Common & (
   | {readonly command:"snapshot init";readonly directory:string;readonly name:string;readonly mode?:RuntimeMode;readonly image?:string;readonly imageTrust?:string}
   | ({readonly command:"snapshot build"}&SnapshotPublicationOptions)
@@ -21,7 +22,7 @@ export type CLIInvocation = Common & (
   | {readonly command:"wasm init";readonly directory:string;readonly moduleKind:"command"|"service";readonly id?:string;readonly from?:string;readonly network:"none"|"vm"|"internet"}
   | {readonly command:"wasm test";readonly project:string;readonly module?:string;readonly image?:{readonly bundle:string;readonly trust:string};readonly args:readonly string[];readonly options:Readonly<Record<string,unknown>>;readonly browser:"chromium"|"firefox"|"webkit";readonly engineDir?:string;readonly timeoutMs?:number}
   | { readonly command: "init"; readonly directory: string; readonly mode: RuntimeMode; readonly skipAssets: boolean; readonly start: boolean; readonly packageManager: "npm" | "bun"; readonly archives?: { readonly sdk: string; readonly cli: string }; readonly engineDir?: string; readonly image?: { readonly bundle: string; readonly trust: string } }
-  | { readonly command: "assets install"; readonly config: string; readonly image?: string;readonly snapshot?:string;readonly trust?:string; readonly reference?: string; readonly engineDir?: string; readonly updateLock: boolean }
+  | { readonly command: "assets install"; readonly config?: string; readonly image?: string;readonly snapshot?:string;readonly trust?:string; readonly reference?: string; readonly engineDir?: string; readonly updateLock: boolean }
   | { readonly command: "doctor"; readonly url: string; readonly browser: "chromium" | "firefox" | "webkit"; readonly hosting?: "frame" | "self-hosted"; readonly frameOrigin?: string; readonly previewOrigin?: string; readonly config?: string }
   | { readonly command: "image init"; readonly directory: string; readonly mode: RuntimeMode }
   | { readonly command: "image keygen"; readonly out: string }
@@ -158,13 +159,14 @@ export function parseArguments(arguments_: readonly string[], environment: Reado
     }
     case "snapshot build":
     case "snapshot pack":{
-      const options={...common,recipe:command==="snapshot build"?positional[0]??"oxidevm.snapshot.ts":parsed.values.recipe??"oxidevm.snapshot.ts",signingKey:nonempty(parsed.values["signing-key"]??environment["OXIDEVM_SIGNING_KEY_FILE"],"snapshot signing key"),
+      const recipe = command === "snapshot build" ? positional[0] : parsed.values.recipe;
+      const options={...common,...(recipe === undefined ? {} : { recipe }),signingKey:nonempty(parsed.values["signing-key"]??setting(environment, "SIGNING_KEY_FILE"),"snapshot signing key"),
       ...(parsed.values["image-trust"]===undefined?{}:{imageTrust:nonempty(parsed.values["image-trust"],"--image-trust")}),...(parsed.values.out===undefined?{}:{out:nonempty(parsed.values.out,"--out")}),...(parsed.values["base-url"]===undefined?{}:{baseUrl:nonempty(parsed.values["base-url"],"--base-url")}),...snapshotOptions};
       return command==="snapshot build"?{...options,command}:{...options,command,backup:argument()};
     }
-    case "snapshot test":return {...common,command,bundle:argument(),trust:nonempty(parsed.values.trust??environment["OXIDEVM_SNAPSHOT_TRUST_FILE"],"snapshot author trust"),
+    case "snapshot test":return {...common,command,bundle:argument(),trust:nonempty(parsed.values.trust??setting(environment, "SNAPSHOT_TRUST_FILE"),"snapshot author trust"),
       ...(parsed.values.verify===undefined?{}:{verify:nonempty(parsed.values.verify,"--verify")}),...snapshotOptions};
-    case "snapshot inspect":{const trust=parsed.values.trust??environment["OXIDEVM_SNAPSHOT_TRUST_FILE"];return {...common,command,artifact:argument(),...(trust===undefined?{}:{trust:nonempty(trust,"snapshot author trust")})};}
+    case "snapshot inspect":{const trust=parsed.values.trust??setting(environment, "SNAPSHOT_TRUST_FILE");return {...common,command,artifact:argument(),...(trust===undefined?{}:{trust:nonempty(trust,"snapshot author trust")})};}
     case "init": {
       if (parsed.values.start === true && (parsed.values["skip-assets"] === true || json)) return invalid("--start requires installed assets and cannot be combined with --json");
       const sdk = parsed.values["sdk-archive"], cli = parsed.values["cli-archive"];
@@ -180,8 +182,8 @@ export function parseArguments(arguments_: readonly string[], environment: Reado
       if(parsed.values.snapshot!==undefined&&parsed.values.image!==undefined)return invalid("--snapshot and --image are exclusive");
       if (parsed.values.reference !== undefined && parsed.values.image === undefined&&parsed.values.snapshot===undefined) return invalid("--reference requires --image or --snapshot");
       if(parsed.values.trust!==undefined&&parsed.values.snapshot===undefined&&parsed.values.image===undefined)return invalid("--trust requires --snapshot or --image");
-      const snapshot=parsed.values.snapshot===undefined?{}:{snapshot:nonempty(parsed.values.snapshot,"--snapshot"),trust:nonempty(parsed.values.trust??environment["OXIDEVM_SNAPSHOT_TRUST_FILE"],"snapshot author trust")};
-      return { ...common, command, config: parsed.values.config ?? "oxidevm.config.ts", ...(parsed.values.image === undefined ? {} : { image: nonempty(parsed.values.image, "--image") }), ...(parsed.values.trust === undefined ? {} : { trust: nonempty(parsed.values.trust, "--trust") }), ...snapshot, ...(parsed.values.reference === undefined ? {} : { reference: nonempty(parsed.values.reference, "--reference") }), ...engineDir, updateLock: parsed.values["update-lock"] === true };
+      const snapshot=parsed.values.snapshot===undefined?{}:{snapshot:nonempty(parsed.values.snapshot,"--snapshot"),trust:nonempty(parsed.values.trust??setting(environment, "SNAPSHOT_TRUST_FILE"),"snapshot author trust")};
+      return { ...common, command, ...(parsed.values.config === undefined ? {} : { config: nonempty(parsed.values.config, "--config") }), ...(parsed.values.image === undefined ? {} : { image: nonempty(parsed.values.image, "--image") }), ...(parsed.values.trust === undefined ? {} : { trust: nonempty(parsed.values.trust, "--trust") }), ...snapshot, ...(parsed.values.reference === undefined ? {} : { reference: nonempty(parsed.values.reference, "--reference") }), ...engineDir, updateLock: parsed.values["update-lock"] === true };
     }
     case "doctor": {
       const hosting = doctorHosting(parsed.values.hosting);
@@ -197,9 +199,9 @@ export function parseArguments(arguments_: readonly string[], environment: Reado
         return { id, file };
       });
       if (new Set(secrets.map(secret => secret.id)).size !== secrets.length) return invalid("duplicate BuildKit secret id");
-      return { ...common, command, recipe: argument(), signingKey: nonempty(parsed.values["signing-key"] ?? environment["OXIDEVM_SIGNING_KEY_FILE"], "--signing-key or OXIDEVM_SIGNING_KEY_FILE"), distribution: parsed.values.distribution === true, secrets, ...(parsed.values.out === undefined ? {} : { out: nonempty(parsed.values.out, "--out") }), ...(parsed.values["base-url"] === undefined ? {} : { baseUrl: nonempty(parsed.values["base-url"], "--base-url") }) };
+      return { ...common, command, recipe: argument(), signingKey: nonempty(parsed.values["signing-key"] ?? setting(environment, "SIGNING_KEY_FILE"), "--signing-key or OXVM_SIGNING_KEY_FILE"), distribution: parsed.values.distribution === true, secrets, ...(parsed.values.out === undefined ? {} : { out: nonempty(parsed.values.out, "--out") }), ...(parsed.values["base-url"] === undefined ? {} : { baseUrl: nonempty(parsed.values["base-url"], "--base-url") }) };
     }
-    case "image test": return { ...common, command, bundle: argument(), trust: nonempty(parsed.values.trust ?? environment["OXIDEVM_IMAGE_TRUST_FILE"], "--trust or OXIDEVM_IMAGE_TRUST_FILE"), browser: browser(), distribution: parsed.values.distribution === true, ...engineDir };
+    case "image test": return { ...common, command, bundle: argument(), trust: nonempty(parsed.values.trust ?? setting(environment, "IMAGE_TRUST_FILE"), "--trust or OXVM_IMAGE_TRUST_FILE"), browser: browser(), distribution: parsed.values.distribution === true, ...engineDir };
     case "image inspect": return { ...common, command, bundle: argument(), ...(parsed.values.trust === undefined ? {} : { trust: nonempty(parsed.values.trust, "--trust") }) };
     case "image pack": return { ...common, command, bundle: argument(), trust: nonempty(parsed.values.trust, "--trust") };
   }

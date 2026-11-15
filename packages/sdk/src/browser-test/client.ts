@@ -45,8 +45,8 @@ async function run(): Promise<void> {
   await vm.workspace.writeFile("qualification.bin", expected, signal);
   const bytes = await vm.workspace.readFile("qualification.bin", signal);
   if (bytes.length !== expected.length || bytes.some((byte, index) => byte !== expected[index])) throw new Error("binary workspace roundtrip differs");
-  await vm.workspace.writeText("qualification.txt", "OxideVM ☃\n", signal);
-  if (await vm.workspace.readText("qualification.txt", signal) !== "OxideVM ☃\n") throw new Error("UTF-8 workspace roundtrip differs");
+  await vm.workspace.writeText("qualification.txt", "OXVM ☃\n", signal);
+  if (await vm.workspace.readText("qualification.txt", signal) !== "OXVM ☃\n") throw new Error("UTF-8 workspace roundtrip differs");
   if (!(await vm.workspace.list("/", signal)).some(entry => entry.name === "qualification.bin")) throw new Error("workspace listing omitted the committed file");
   passed(current);
   current = "smoke-command";
@@ -62,7 +62,7 @@ async function run(): Promise<void> {
   current = "persistence-reopen";
   await vm.dispose(); vm = undefined;
   vm = await open();
-  if (await vm.workspace.readText("qualification.txt", signal) !== "OxideVM ☃\n") throw new Error("reopened workspace lost committed text");
+  if (await vm.workspace.readText("qualification.txt", signal) !== "OXVM ☃\n") throw new Error("reopened workspace lost committed text");
   const reopened = await vm.workspace.readFile("qualification.bin", signal);
   if (reopened.length !== expected.length || reopened.some((byte, index) => byte !== expected[index])) throw new Error("reopened workspace lost committed binary bytes");
   await vm.workspace.remove("qualification.txt", { signal }); await vm.workspace.remove("qualification.bin", { signal });

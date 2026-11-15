@@ -32,7 +32,7 @@ void test("generated starter documentation uses its own release and only existin
         assert(generated.has(target.slice(root.length + 1)), `Missing generated README target: ${link}`);
       }
       for (const client of [".agents", ".claude"]) {
-        const skill = string(files[`${client}/skills/oxidevm-starter/SKILL.md`], "starter skill");
+        const skill = string(files[`${client}/skills/oxvm-starter/SKILL.md`], "starter skill");
         assert.match(skill, /README\.md/u);
         assert.match(skill, /release-pinned/u);
         assert.match(skill, /do not include.*image.*directory/iu);

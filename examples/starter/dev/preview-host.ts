@@ -12,7 +12,7 @@ export function isPreviewHost(host: string): boolean {
 
 /** One static Vite server serves the app and isolated preview hosts. Guest HTTP stays in the SDK. */
 export function previewHost(): Plugin {
-  const assets = new URL("../assets/preview/", pathToFileURL(createRequire(import.meta.url).resolve("@oxidevm/sdk")));
+  const assets = new URL("../assets/preview/", pathToFileURL(createRequire(import.meta.url).resolve("@oxvm/sdk")));
   const middleware: Connect.NextHandleFunction = (request, response, next) => {
     if (!isPreviewHost(request.headers.host ?? "")) { next(); return; }
     const pathname = new URL(request.url ?? "/", "http://preview.localhost").pathname;

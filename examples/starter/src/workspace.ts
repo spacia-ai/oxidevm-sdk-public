@@ -1,4 +1,4 @@
-import { VMError } from "@oxidevm/sdk";
+import { VMError } from "@oxvm/sdk";
 
 /**
  * Whether a VM did not start because its saved workspace was made with an image signed by another key, such as the

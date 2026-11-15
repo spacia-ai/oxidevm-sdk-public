@@ -1,4 +1,5 @@
 import { nativeIsPromise } from "../../promise-brand.js";
+import { nativeIsProxy } from "../../proxy-brand.js";
 
 /** Restricted legacy classifiers include spoofable tags and prototype checks.
  * Exact Promise queries are enabled only in profiles that require the native primitive. */
@@ -60,8 +61,8 @@ export const nodeUtilTypes = Object.freeze({
     && ["Number", "String", "Boolean", "BigInt", "Symbol"].includes(tag(value)),
   isCryptoKey: (value: unknown): boolean => typeof CryptoKey !== "undefined" && value instanceof CryptoKey,
   isKeyObject: (): boolean => false,
-  // A Proxy or a host external is indistinguishable from JavaScript.
-  isProxy: (): boolean => false, isExternal: (): boolean => false,
+  // The process realm records its proxies (ADR 0026, 2.11); a host external stays invisible.
+  isProxy: (value: unknown): boolean => nativeIsProxy(value), isExternal: (): boolean => false,
 });
 
 export const exactPromiseUtilTypes = Object.freeze({ ...nodeUtilTypes, isPromise: nativeIsPromise });

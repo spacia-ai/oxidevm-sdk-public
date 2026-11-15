@@ -7,7 +7,7 @@ import type {ProjectLock,ResolvedProjectConfig} from "./project.js";
 import type {InstallAssetsOptions,StagedAssets} from "./assets.js";
 import {checkedOutput,installSelfHostedRuntime,installStaticAssets} from "./assets.js";
 import {readSnapshotBundle} from "./snapshot-bundle.js";
-import {SNAPSHOT_REFERENCE_MARKER,snapshotReferenceSource} from "./snapshot-reference.js";
+import {SNAPSHOT_REFERENCE_MARKER,LEGACY_SNAPSHOT_REFERENCE_MARKER,snapshotReferenceSource} from "./snapshot-reference.js";
 import {pinnedEngineRelease,resolveEngineDirectory} from "./engine-source.js";
 import {copyVerified,hashFile} from "./files.js";
 import {localBundlePath,readBundleFile} from "./bundle-files.js";
@@ -18,7 +18,7 @@ export async function installSnapshotAssets(directory:string,config:ResolvedProj
   if(index.mode!==config.mode||index.sdkVersion!==lock.sdkVersion||`sha256:${index.engineReleaseId}`!==lock.engineRelease)throw new VMError("PROTOCOL_ERROR","Snapshot bundle differs from the project's SDK, engine or mode lock");
   const referencePath=await checkedOutput(directory,options.referencePath??`src/generated/${index.name}.snapshot.ts`);
   const old=await referenceContents(referencePath);
-  if(old!==undefined&&!old.startsWith(SNAPSHOT_REFERENCE_MARKER))throw new VMError("PERMISSION_DENIED","Reference path contains an existing author file");
+  if(old!==undefined&&!old.startsWith(SNAPSHOT_REFERENCE_MARKER)&&!old.startsWith(LEGACY_SNAPSHOT_REFERENCE_MARKER))throw new VMError("PERMISSION_DENIED","Reference path contains an existing author file");
   const engine=pinnedEngineRelease(),engineDir=await resolveEngineDirectory({...(options.engineDir===undefined?{}:{engineDir:resolve(directory,options.engineDir)}),...(options.engineComplianceDir===undefined?{}:{engineComplianceDir:resolve(directory,options.engineComplianceDir)}),...(options.signal===undefined?{}:{signal:options.signal})},engine);
   const publicDir=resolve(directory,config.publicDir),base=new URL(config.assetBaseUrl,"https://project.invalid"),assets=await checkedOutput(publicDir,decodeURIComponent(base.pathname).replace(/^\/+|\/+$/gu,""));
   await checkedOutput(directory,config.publicDir);await mkdir(assets,{recursive:true});

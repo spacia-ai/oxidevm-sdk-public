@@ -21,6 +21,7 @@ export class ProcessScheduler {
   readonly #ticks: PendingCallback[] = [];
   readonly #callbacks: PendingCallback[] = [];
   readonly #immediates: CheckCallback[] = [];
+  readonly #native: (() => void)[] = [];
   readonly #checkBatch: CheckCallback[] = [];
   readonly #handles = new WeakMap<object, CheckCallback>();
   readonly #externalWork: () => boolean;
@@ -48,7 +49,11 @@ export class ProcessScheduler {
         } else {
           const callback = this.#callbacks.shift();
           if (callback !== undefined) this.run(callback.run);
-          else if (this.#immediates.some(entry => entry.referenced) || this.#externalWork()) {
+          else if (this.#native.length !== 0) {
+            this.#runNative();
+            // The check phase's JavaScript immediates include those the native ones set.
+            this.#checkBatch.push(...this.#immediates.splice(0));
+          } else if (this.#immediates.some(entry => entry.referenced) || this.#externalWork()) {
             this.#checkBatch.push(...this.#immediates.splice(0));
             this.#runImmediate();
           }
@@ -115,6 +120,24 @@ export class ProcessScheduler {
     this.run(entry.run);
   }
 
+  /** Node's Environment::SetImmediate (node_api_post_finalizer, ADR 0026): keeps the process
+   * alive and runs at the next check phase before its JavaScript immediates, outside any async
+   * resource; work it queues joins the same batch, and ticks run once the batch ends. */
+  nativeImmediate(callback: () => void): void {
+    this.#admit();
+    this.#native.push(callback);
+    this.#wake();
+  }
+
+  #runNative(): void {
+    const restore = this.#context.clear();
+    try {
+      this.#context.resources.runUntracked({}, () => this.run(() => {
+        for (let callback = this.#native.shift(); callback !== undefined; callback = this.#native.shift()) callback();
+      }));
+    } finally { restore(); }
+  }
+
   enqueue(callback: () => void): void {
     this.#admit();
     this.#callbacks.push(this.#callback("OxideVMCallback", callback));
@@ -166,7 +189,7 @@ export class ProcessScheduler {
 
   #admit(): void {
     if (this.#disposed) throw new VMError("ABORTED", "Process scheduler is disposed");
-    if (this.#ticks.length + this.#callbacks.length + this.#immediates.length + this.#checkBatch.length >= maximumPending) {
+    if (this.#ticks.length + this.#callbacks.length + this.#immediates.length + this.#checkBatch.length + this.#native.length >= maximumPending) {
       throw new VMError("QUOTA_EXCEEDED", "Process callback queue exhausted");
     }
   }
@@ -182,7 +205,7 @@ export class ProcessScheduler {
   }
 
   get hasPending(): boolean { return this.#depth !== 0 || this.#ticks.length !== 0 || this.#callbacks.length !== 0
-    || this.#checkBatch.length !== 0 || this.#immediates.some(entry => entry.referenced); }
+    || this.#checkBatch.length !== 0 || this.#native.length !== 0 || this.#immediates.some(entry => entry.referenced); }
 
   async idle(): Promise<void> {
     while (this.hasPending) { this.#waiting ??= Promise.withResolvers<undefined>(); await this.#waiting.promise; }
@@ -194,6 +217,7 @@ export class ProcessScheduler {
     const error = new VMError("ABORTED", "Process scheduler is disposed");
     for (const entry of [...this.#immediates.splice(0), ...this.#checkBatch.splice(0)]) { entry.active = false; entry.cancel(error); }
     for (const callback of [...this.#ticks.splice(0), ...this.#callbacks.splice(0)]) callback.cancel(error);
+    this.#native.splice(0);
     this.#channel.port1.close(); this.#channel.port2.close();
     this.#changed();
   }

@@ -128,7 +128,10 @@
  * fetched, which the storage owner authenticates like a download instead of fetching it a second time. */
 /** 183 adds the busy `auto-save-paused` restore point event (`reason: "busy"` with a `cause` of `js-process-active` or
  * `not-quiesced`): automatic saves the VM refuses as busy pause and retry instead of failing. */
-export const PROTOCOL_VERSION = 183;
+/** 184 pairs API148 with generic admission (ADR 0026 release R2): OXCR20 trial loads, host operation sets and probed
+ * runtime builds, OXJT19 add-on placements with reasons 43 to 53, OXAK3, command operations 8 to 14, the runtime
+ * probe lifecycle, and the execution origin's served operation set in initialize. */
+export const PROTOCOL_VERSION = 184;
 /** Combined architecture, background compilation and code-profile trace layout. */
 export const SYSTEM_TRACE_SCHEMA_VERSION = 54;
 

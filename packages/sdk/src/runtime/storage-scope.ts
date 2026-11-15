@@ -1,6 +1,6 @@
 import { VMError } from "./errors.ts";
 
-// Whose OxideVM storage a VM uses in its browser storage partition, and the names that guard it.
+// Whose OXVM storage a VM uses in its browser storage partition, and the names that guard it.
 //
 // A self-hosted page's VMs use its own origin's storage, which the browser keeps apart from every
 // other origin. The runtime frame (ADR 0021) serves every page that embeds it from one origin, and
@@ -10,7 +10,7 @@ import { VMError } from "./errors.ts";
 // therefore gives each embedding origin a scope of its own. Every OPFS directory, IndexedDB
 // database, Web Lock and BroadcastChannel name the SDK uses for VM storage comes from here.
 
-/** This origin's own OxideVM storage, or the part of the runtime frame's storage that belongs to one embedding origin. */
+/** This origin's own OXVM storage, or the part of the runtime frame's storage that belongs to one embedding origin. */
 export type StorageScope =
   | { readonly kind: "origin" }
   | { readonly kind: "embedder"; readonly id: string };

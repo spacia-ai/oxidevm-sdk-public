@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { buildImage, loadImageRecipe, readImageTrust, validateImageDistribution } from "@oxidevm/sdk/image-builder";
-import { fields, run, text } from "./material-inputs.ts";
+import { buildImage, loadImageRecipe, readImageTrust, validateImageDistribution } from "@oxvm/sdk/image-builder";
+import { fields, imageSetting, run, text } from "./material-inputs.ts";
+import type { ImageSetting } from "./material-inputs.ts";
 
 function decodeBundleJSON(bytes: Uint8Array): unknown { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); }
 const recipe = import.meta.dirname, cache = join(recipe, ".cache");
-const required = (name: string) => { const value = process.env[name]; assert(value !== undefined && value !== "", `Set ${name}`); return resolve(value); };
-const baseBundle = required("OXIDEVM_PANDAS_BASE_BUNDLE"), trustFile = required("OXIDEVM_PANDAS_BASE_TRUST");
+const required = (name: ImageSetting) => { const value = imageSetting(process.env, name); assert(value !== undefined && value !== "", `Set OXVM_${name}`); return resolve(value); };
+const baseBundle = required("PANDAS_BASE_BUNDLE"), trustFile = required("PANDAS_BASE_TRUST");
 const base = await validateImageDistribution(baseBundle, { trust: await readImageTrust(trustFile) });
 const lock: unknown = JSON.parse(await readFile(join(recipe, "python-inputs.lock.json"), "utf8"));
 assert(typeof lock === "object" && lock !== null && "base" in lock);
@@ -33,7 +34,7 @@ try {
   await run("docker", ["rm", "--force", container]).catch(() => undefined);
   await run("docker", ["image", "rm", container]).catch(() => undefined);
 }
-const signingKey = process.env["OXIDEVM_IMAGE_SIGNING_KEY"];
+const signingKey = imageSetting(process.env, "IMAGE_SIGNING_KEY");
 if (signingKey !== undefined) {
   const next = await loadImageRecipe(join(output, "recipe.json"));
   // The builder validates the complete recipe and evidence. Development does not imply release approval.

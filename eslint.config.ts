@@ -4,7 +4,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["**/node_modules/**", "**/dist/**", "crates/**/target/**", "**/.cache/**", "**/.oxidevm/**", ".candidate/**", ".private/**", "config/public-files/**", "packages/sdk/assets/**", "**/public/**", "coverage/**", "test-results/**", "playwright-report/**"] },
+  { ignores: ["**/node_modules/**", "**/dist/**", "crates/**/target/**", "**/.cache/**", "**/.oxidevm/**", "**/.oxvm/**", ".candidate/**", ".private/**", "config/public-files/**", "packages/sdk/assets/**", "**/public/**", "coverage/**", "test-results/**", "playwright-report/**"] },
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked.map(config => ({ ...config, files: ["**/*.ts", "**/*.tsx"] })),
   {
@@ -48,5 +48,5 @@ export default defineConfig(
   { files: ["packages/sdk/src/browser-tools/**/*.ts", "packages/sdk/src/image-builder/**/*.ts", "packages/cli/src/**/*.ts"], languageOptions: { globals: globals.node } },
   { files: ["packages/sdk/asset-source/native-process/entry.ts"], languageOptions: { globals: globals.browser, parserOptions: { project: ["./packages/sdk/tsconfig.native-process.json"] } } },
   { files: ["packages/sdk/asset-source/module-runner/entry.ts", "packages/sdk/asset-source/module-frame/bootstrap.ts"], languageOptions: { globals: globals.browser, parserOptions: { project: ["./packages/sdk/tsconfig.module-runner.json"] } } },
-  { files: ["tests/fixtures/native-addon/*.cjs", "tests/fixtures/nextjs-process-state.cjs"], languageOptions: { globals: globals.node } },
+  { files: ["tests/fixtures/assistance/*.cjs", "tests/fixtures/native-addon/*.cjs", "tests/fixtures/native-node-api/*.cjs", "tests/fixtures/nextjs-process-state.cjs"], languageOptions: { globals: globals.node } },
 );

@@ -5,7 +5,8 @@ import { readFileRecord } from "./userspace-files.js";
 
 export type InitialUserspaceProgram =
   | { readonly kind: "elf"; readonly bytes: Uint8Array }
-  | { readonly kind: "file"; readonly filename: string };
+  | { readonly kind: "file"; readonly filename: string }
+  | { readonly kind: "runtime-probe"; readonly sha256: string };
 
 type InitialProcessInput = {
   readonly arguments: readonly string[];
@@ -53,7 +54,7 @@ async function admit(
   checkCanceled: () => void,
   serviceNextRead: () => Promise<boolean>,
 ): Promise<number> {
-  const source = program.kind === "elf" ? program.bytes : new TextEncoder().encode(program.filename);
+  const source = program.kind === "elf" ? program.bytes : new TextEncoder().encode(program.kind === "file" ? program.filename : program.sha256);
   const arguments_ = encodeUserspaceArguments(input.arguments);
   const environment = encodeUserspaceArguments(input.environment);
   const cwd = new TextEncoder().encode(input.cwd);
@@ -65,7 +66,7 @@ async function admit(
     let offset = 0;
     for (const bytes of [source, arguments_, environment, cwd]) { staging.set(bytes, offset); offset += bytes.byteLength; }
     const status = call(runtime.instance, program.kind === "elf"
-      ? "oxidevm_userspace_spawn_top_level_process" : "oxidevm_userspace_spawn_top_level_executable",
+      ? "oxidevm_userspace_spawn_top_level_process" : program.kind === "file" ? "oxidevm_userspace_spawn_top_level_executable" : "oxidevm_userspace_spawn_runtime_probe",
     source.byteLength, arguments_.byteLength, environment.byteLength, cwd.byteLength,
     input.terminal?.columns ?? 0, input.terminal?.rows ?? 0);
     if (program.kind === "elf") {
@@ -78,7 +79,7 @@ async function admit(
       throw spawnError(result.errno);
     }
     if (!await serviceNextRead()) {
-      if (program.kind === "file") throw new VMError("PROTOCOL_ERROR", "native executable read has no host request");
+      if (program.kind !== "elf") throw new VMError("PROTOCOL_ERROR", "native executable read has no host request");
       throw new VMError("INVALID_ARGUMENT", "Userspace process could not be spawned");
     }
     checkCanceled();

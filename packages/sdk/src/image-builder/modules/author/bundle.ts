@@ -35,7 +35,7 @@ export interface Bundle {
   readonly stubbed: readonly StubbedImport[];
 }
 
-const SDK_ENTRY = "@oxidevm/sdk/wasm";
+const SDK_ENTRY = "@oxvm/sdk/wasm";
 const STUB_NAMESPACE = "oxidevm-sdk";
 
 /**
@@ -46,7 +46,7 @@ const STUB_NAMESPACE = "oxidevm-sdk";
 const sdkStub: Plugin = {
   name: "oxidevm-sdk-stub",
   setup(builder) {
-    builder.onResolve({ filter: /^@oxidevm\/sdk(?:\/.*)?$/ }, args => args.path === SDK_ENTRY
+    builder.onResolve({ filter: /^@oxvm\/sdk(?:\/.*)?$/ }, args => args.path === SDK_ENTRY
       ? { path: SDK_ENTRY, namespace: STUB_NAMESPACE }
       : { errors: [{ text: `"${args.path}" cannot be bundled into an adapter: it receives everything through \`host\`. Import types with \`import type\`, and the one value \`defineModule\` from "${SDK_ENTRY}".` }] });
     builder.onLoad({ filter: /.*/, namespace: STUB_NAMESPACE }, () => ({ contents: "export const defineModule = definition => definition;\n", loader: "js" }));

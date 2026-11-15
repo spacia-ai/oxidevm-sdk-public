@@ -3,7 +3,7 @@ import { extractManifest, MAX_MODULE_SOURCE_BYTES } from "./extract.js";
 import { BuildFailure } from "./findings.js";
 
 const BASE = `{ id: "demo", version: "1.0.0", abi: "raw", artifacts: [], process: { kind: "command" }, requires: { host: ["files.sync"] }, license: { spdx: "MIT" } }`;
-const HEADER = `import { defineModule } from "@oxidevm/sdk/wasm";\n`;
+const HEADER = `import { defineModule } from "@oxvm/sdk/wasm";\n`;
 
 function module(manifest: string = BASE, before = ""): string {
   return `${HEADER}${before}export default defineModule({\n  manifest: ${manifest},\n  adapter: host => ({ main: () => (host.fs ? 0 : 1) }),\n});\n`;
@@ -84,7 +84,7 @@ describe("extractManifest", () => {
     ["no default export", `${HEADER}export const module = defineModule({ manifest: ${BASE}, adapter: () => ({ main: () => 0 }) });\n`, "no default export"],
     ["two default exports", `${module()}export default 1;\n`, "more than one default export"],
     ["a default export that is not a call", `${HEADER}const built = defineModule({ manifest: ${BASE}, adapter: () => ({ main: () => 0 }) });\nexport default built;\n`, "something else"],
-    ["a renamed defineModule", `import { defineModule as define } from "@oxidevm/sdk/wasm";\nexport default define({ manifest: ${BASE}, adapter: () => ({ main: () => 0 }) });\n`, "something else"],
+    ["a renamed defineModule", `import { defineModule as define } from "@oxvm/sdk/wasm";\nexport default define({ manifest: ${BASE}, adapter: () => ({ main: () => 0 }) });\n`, "something else"],
     ["two arguments", `${HEADER}export default defineModule({ manifest: ${BASE} }, 1);\n`, "something else"],
     ["a non-object argument", `${HEADER}export default defineModule(options);\n`, "one object literal"],
     ["no manifest property", `${HEADER}export default defineModule({ adapter: () => ({ main: () => 0 }) });\n`, "no `manifest` property"],

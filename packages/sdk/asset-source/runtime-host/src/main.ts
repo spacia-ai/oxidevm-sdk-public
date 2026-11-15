@@ -82,7 +82,7 @@ function registerOfflineShell(): void {
 }
 
 if (window.parent === window) {
-  document.body.textContent = "This page runs OxideVM inside other pages; open the page that embeds it instead.";
+  document.body.textContent = "This page runs OXVM inside other pages; open the page that embeds it instead.";
 } else {
   window.parent.postMessage(frameReady(), "*");
 }

@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
 import { nativeProcessBuild, nativeProcessVersions } from "./runtime-build.js";
 
-const node = { runtime: "node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab" } as const;
-const bun = { runtime: "bun", runtimeSHA256: "500e6edbf321ddf490adcc55a6a01639993a07924616ab67492e1256c15557e2" } as const;
+const node = { runtime: "node", runtimeSHA256: "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab", runtimeBuild: null } as const;
+const bun = { runtime: "bun", runtimeSHA256: "500e6edbf321ddf490adcc55a6a01639993a07924616ab67492e1256c15557e2", runtimeBuild: null } as const;
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 it("matches every pinned Node build flag and freezes its entire config tree", () => {
@@ -59,4 +59,21 @@ it("rejects mismatched executable bytes before returning version metadata", () =
     try { nativeProcessVersions({ ...profile, identity: "node24-bun1-v1" }); } catch (failure) { error = failure; }
     expect(error).toMatchObject({ code: "PROTOCOL_ERROR" });
   }
+});
+
+it("presents a probed binary's own build in place of the catalog data (ADR 0026, 1.5)", () => {
+  const config = '{"target_defaults":{"cflags":[]},"variables":{"node_module_version":137}}';
+  const probed = { runtime: "node", runtimeSHA256: "b".repeat(64), runtimeBuild: { version: "v24.11.0", node: "24.11.0", uv: "1.51.0", napi: "10", bun: "", config } } as const;
+  expect(nativeProcessVersions({ ...probed, identity: "node24-bun1-v1" })).toEqual({ node: "24.11.0", uv: "1.51.0", napi: "10" });
+  const build = nativeProcessBuild(probed).config;
+  expect(build.value).toEqual({ target_defaults: { cflags: [] }, variables: { node_module_version: 137 } });
+  expect(build.writable).toBe(false);
+  const variables: unknown = Reflect.get(build.value, "variables");
+  expect(Object.isFrozen(build.value) && typeof variables === "object" && variables !== null && Object.isFrozen(variables)).toBe(true);
+  const probedBun = { runtime: "bun", runtimeSHA256: "c".repeat(64), runtimeBuild: { version: "v24.3.0", node: "24.3.0", uv: "1.48.0", napi: "10", bun: "1.3.2", config } } as const;
+  expect(nativeProcessVersions({ ...probedBun, identity: "node24-bun1-v1" })).toEqual({ node: "24.3.0", uv: "1.48.0", napi: "10", bun: "1.3.2" });
+  const bunBuild = nativeProcessBuild(probedBun).config;
+  expect(bunBuild.writable).toBe(true);
+  const bunVariables: unknown = Reflect.get(bunBuild.value, "variables");
+  expect(Object.isFrozen(bunBuild.value) && typeof bunVariables === "object" && bunVariables !== null && !Object.isFrozen(bunVariables)).toBe(true);
 });

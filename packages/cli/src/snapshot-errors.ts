@@ -1,5 +1,5 @@
-import {VMError} from "@oxidevm/sdk";
-import {isSnapshotProcessName} from "@oxidevm/sdk/image-builder";
+import {VMError} from "@oxvm/sdk";
+import {isSnapshotProcessName} from "@oxvm/sdk/image-builder";
 const phases=["validate","compile","start","stage","prepare","ready","capture","export","package","verify","publish","done"];
 const checks=["bundle-signature","image-integrity","snapshot-integrity","browser-features","shipped-resume","authoring-receipt","original-processes","custom-verification"];
 const reasons=["snapshot-recipe-invalid","snapshot-input-unsafe","snapshot-process-exited","snapshot-command-failed","snapshot-readiness-timeout","snapshot-command-exit","snapshot-command-timeout","snapshot-ready-timeout","snapshot-capture-timeout","snapshot-build-timeout","snapshot-verify-failed","snapshot-unexpected-cold-boot","snapshot-browser-unavailable","snapshot-preparation-failed","snapshot-publication-incomplete","snapshot-initial-conflict"];

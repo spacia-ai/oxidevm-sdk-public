@@ -29,12 +29,12 @@ export function validateReleaseArchive(value: unknown, paths: readonly string[],
   }
   const dependencies = record(manifest["dependencies"] ?? {}, "packed dependencies");
   for (const dependency of Object.values(dependencies)) if (/^(?:workspace|file|link):/u.test(string(dependency, "dependency"))) throw new Error("Archive contains a workspace or local dependency");
-  if (name === "@oxidevm/cli" && dependencies["@oxidevm/sdk"] !== version) throw new Error("CLI must depend on the exact matching SDK version");
+  if (name === "@oxvm/cli" && dependencies["@oxvm/sdk"] !== version) throw new Error("CLI must depend on the exact matching SDK version");
   for (const path of paths) {
     if (!path.startsWith("package/") || path.split("/").some(part => part === ".." || part.startsWith(".env") || [".git", "node_modules", "src", "rootfs", "images"].includes(part) || TEST_ENTRY.test(part)) || path.includes("\\") || /(?:oxidevm_(?:core|userspace|netstack)|\.(?:pem|key|img|qcow2|oxvm|tgz)$)/iu.test(path)) throw new Error(`Forbidden archive entry: ${path}`);
     if (path.endsWith(".wasm") && compilerWasm(path) === undefined) throw new Error(`Unexpected compiler Wasm: ${path}`);
   }
-  for (const path of ["package/LICENSE", "package/NOTICE", `package/dist/${name === "@oxidevm/sdk" ? "index" : "bin"}.js`]) if (!paths.includes(path)) throw new Error(`Archive lacks ${path}`);
+  for (const path of ["package/LICENSE", "package/NOTICE", `package/dist/${name === "@oxvm/sdk" ? "index" : "bin"}.js`]) if (!paths.includes(path)) throw new Error(`Archive lacks ${path}`);
 }
 
 function run(root: string, command: string, args: readonly string[]): string {
@@ -44,13 +44,13 @@ function run(root: string, command: string, args: readonly string[]): string {
 /** Fresh consumers install the actual archives with a transitive SDK override, without a private registry. */
 export async function verifyReleaseArchives(root: string, target: "private-preview" | "public" = "private-preview"): Promise<void> {
   await mkdir(join(root, ".candidate"), { recursive: true });
-  for (const name of ["@oxidevm/sdk", "@oxidevm/cli"]) run(root, "pnpm", ["--filter", name, "pack", "--pack-destination", join(root, ".candidate")]);
+  for (const name of ["@oxvm/sdk", "@oxvm/cli"]) run(root, "pnpm", ["--filter", name, "pack", "--pack-destination", join(root, ".candidate")]);
   const archives = await packedArchives(root);
   const source: unknown = JSON.parse(await readFile(join(root, "packages/sdk/package.json"), "utf8"));
   const version = string(record(source, "SDK package")["version"], "SDK version");
   const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
   const compilers = { esbuild: digest(await readFile(join(root, "packages/sdk/assets/compilers/esbuild.wasm"))), swc: digest(await readFile(join(root, "packages/sdk/node_modules/@swc/wasm-web/wasm_bg.wasm"))) };
-  for (const [name, file] of [["@oxidevm/sdk", archives.sdk], ["@oxidevm/cli", archives.cli]] as const) {
+  for (const [name, file] of [["@oxvm/sdk", archives.sdk], ["@oxvm/cli", archives.cli]] as const) {
     const paths = run(root, "tar", ["-tzf", file]).trim().split("\n");
     const manifest: unknown = JSON.parse(run(root, "tar", ["-xzOf", file, "package/package.json"]));
     validateReleaseArchive(manifest, paths, name, version, target);
@@ -66,8 +66,8 @@ export async function verifyReleaseArchives(root: string, target: "private-previ
   }
   const consumer = await mkdtemp(join(tmpdir(), "oxidevm-archive-consumer-"));
   // Retain this disposable consumer on failure so its installation and compiler output remain inspectable.
-  await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "archive-consumer", private: true, type: "module", dependencies: { "@oxidevm/sdk": `file:${archives.sdk}`, "@oxidevm/cli": `file:${archives.cli}` }, devDependencies: { typescript: "6.0.3", "@types/node": "24.13.3", vite: "7.3.6", "@xterm/xterm": "6.0.0", "@xterm/addon-fit": "0.11.0" } }));
-  await writeFile(join(consumer, "pnpm-workspace.yaml"), `packages:\n  - examples/*\noverrides:\n  '@oxidevm/sdk': ${JSON.stringify(`file:${archives.sdk}`)}\nallowBuilds:\n  esbuild: true\n`);
+  await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "archive-consumer", private: true, type: "module", dependencies: { "@oxvm/sdk": `file:${archives.sdk}`, "@oxvm/cli": `file:${archives.cli}` }, devDependencies: { typescript: "6.0.3", "@types/node": "24.13.3", vite: "7.3.6", "@xterm/xterm": "6.0.0", "@xterm/addon-fit": "0.11.0" } }));
+  await writeFile(join(consumer, "pnpm-workspace.yaml"), `packages:\n  - examples/*\noverrides:\n  '@oxvm/sdk': ${JSON.stringify(`file:${archives.sdk}`)}\nallowBuilds:\n  esbuild: true\n`);
   await cp(join(root, "examples"), join(consumer, "examples"), { recursive: true, filter: path => !path.split("/").some(part => ["node_modules", "dist", ".cache"].includes(part)) && !path.includes("/public/oxidevm/") && !path.endsWith("/public/oxidevm") });
   await cp(join(root, "tsconfig.base.json"), join(consumer, "tsconfig.base.json"));
   await cp(join(root, "types"), join(consumer, "types"), { recursive: true });
@@ -75,12 +75,12 @@ export async function verifyReleaseArchives(root: string, target: "private-previ
   await cp(join(root, "scripts/license-expression.ts"), join(consumer, "scripts/license-expression.ts"));
   run(consumer, "pnpm", ["install", "--no-frozen-lockfile"]);
   run(consumer, "pnpm", ["install", "--frozen-lockfile"]);
-  await writeFile(join(consumer, "consumer.ts"), 'import { createVM, defineImage, defaultImage } from "@oxidevm/sdk";\nimport type { VM } from "@oxidevm/sdk";\nimport * as machine from "@oxidevm/sdk/machine";\nimport * as diagnostics from "@oxidevm/sdk/diagnostics";\nimport * as js from "@oxidevm/sdk/js-process";\nimport * as wasm from "@oxidevm/sdk/wasm";\nimport * as wasmTesting from "@oxidevm/sdk/wasm/testing";\nimport { getSDKRelease, buildImage } from "@oxidevm/sdk/image-builder";\nexport const api = { createVM, defineImage, defaultImage, machine, diagnostics, js, wasm, wasmTesting, getSDKRelease, buildImage };\nexport type ConsumerVM = VM;\n');
+  await writeFile(join(consumer, "consumer.ts"), 'import { createVM, defineImage, defaultImage } from "@oxvm/sdk";\nimport type { VM } from "@oxvm/sdk";\nimport * as machine from "@oxvm/sdk/machine";\nimport * as diagnostics from "@oxvm/sdk/diagnostics";\nimport * as js from "@oxvm/sdk/js-process";\nimport * as wasm from "@oxvm/sdk/wasm";\nimport * as wasmTesting from "@oxvm/sdk/wasm/testing";\nimport { getSDKRelease, buildImage } from "@oxvm/sdk/image-builder";\nexport const api = { createVM, defineImage, defaultImage, machine, diagnostics, js, wasm, wasmTesting, getSDKRelease, buildImage };\nexport type ConsumerVM = VM;\n');
   await writeFile(join(consumer, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2024", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2024", "DOM", "DOM.Iterable"], types: ["node"], strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, noEmit: true, skipLibCheck: false }, files: ["consumer.ts"] }));
   run(consumer, "pnpm", ["exec", "tsc", "-p", "tsconfig.json"]);
-  await writeFile(join(consumer, "verify.mjs"), `import assert from 'node:assert/strict';\nimport { readFile, mkdir } from 'node:fs/promises';\nimport { createRequire } from 'node:module';\nimport { buildImage, generateImageKey, getSDKRelease } from '@oxidevm/sdk/image-builder';\nimport { defaultImage } from '@oxidevm/sdk';\nimport '@oxidevm/sdk/machine';\nimport '@oxidevm/sdk/diagnostics';\nimport '@oxidevm/sdk/js-process';\nimport '@oxidevm/sdk/wasm';\nimport '@oxidevm/sdk/wasm/testing';\nassert.equal(getSDKRelease().sdkVersion, ${JSON.stringify(version)});\nconst cli = createRequire(import.meta.resolve('@oxidevm/cli'));\nassert.equal(cli.resolve('@oxidevm/sdk'), import.meta.resolve('@oxidevm/sdk').replace('file://', ''));\nassert.throws(() => defaultImage('userspace'), error => error.code === 'FEATURE_NOT_AVAILABLE');\nawait mkdir('rootfs');\nconst key = await generateImageKey('author.pem');\nconst built = await buildImage({ mode: 'userspace', id: 'archive-fixture', version: '1', source: {kind:'directory',path:'rootfs'}, smokeTest:{command:'/bin/true',expectedExitCode:0} }, {recipeDir:process.cwd(),signingKeyFile:key.privateKeyPath});\nconst { execFileSync } = await import('node:child_process');\nconst out = execFileSync('pnpm',['exec','oxidevm','init','app','--mode','userspace','--image',built.bundleDir,'--image-trust',key.publicKeyPath,'--skip-assets'],{encoding:'utf8'});\nassert.ok(out.length > 0);\nconst lock = JSON.parse(await readFile('app/oxidevm.lock.json','utf8'));\nassert.equal(lock.sdkVersion, ${JSON.stringify(version)});\nassert.equal(lock.image.manifestSHA256,built.image.manifestSHA256);\n`);
+  await writeFile(join(consumer, "verify.mjs"), `import assert from 'node:assert/strict';\nimport { readFile, mkdir } from 'node:fs/promises';\nimport { createRequire } from 'node:module';\nimport { buildImage, generateImageKey, getSDKRelease } from '@oxvm/sdk/image-builder';\nimport { defaultImage } from '@oxvm/sdk';\nimport '@oxvm/sdk/machine';\nimport '@oxvm/sdk/diagnostics';\nimport '@oxvm/sdk/js-process';\nimport '@oxvm/sdk/wasm';\nimport '@oxvm/sdk/wasm/testing';\nassert.equal(getSDKRelease().sdkVersion, ${JSON.stringify(version)});\nconst cli = createRequire(import.meta.resolve('@oxvm/cli'));\nassert.equal(cli.resolve('@oxvm/sdk'), import.meta.resolve('@oxvm/sdk').replace('file://', ''));\nassert.throws(() => defaultImage('userspace'), error => error.code === 'FEATURE_NOT_AVAILABLE');\nawait mkdir('rootfs');\nconst key = await generateImageKey('author.pem');\nconst built = await buildImage({ mode: 'userspace', id: 'archive-fixture', version: '1', source: {kind:'directory',path:'rootfs'}, smokeTest:{command:'/bin/true',expectedExitCode:0} }, {recipeDir:process.cwd(),signingKeyFile:key.privateKeyPath});\nconst { execFileSync } = await import('node:child_process');\nconst out = execFileSync('pnpm',['exec','oxvm','init','app','--mode','userspace','--image',built.bundleDir,'--image-trust',key.publicKeyPath,'--skip-assets'],{encoding:'utf8'});\nassert.ok(out.length > 0);\nconst lock = JSON.parse(await readFile('app/oxvm.lock.json','utf8'));\nassert.equal(lock.sdkVersion, ${JSON.stringify(version)});\nassert.equal(lock.image.manifestSHA256,built.image.manifestSHA256);\n`);
   run(consumer, "node", ["verify.mjs"]);
-  assert.match(run(consumer, "pnpm", ["exec", "oxidevm", "--version"]), new RegExp(version.replaceAll(".", "\\."), "u"));
+  assert.match(run(consumer, "pnpm", ["exec", "oxvm", "--version"]), new RegExp(version.replaceAll(".", "\\."), "u"));
   run(consumer, "pnpm", ["-r", "check"]);
   run(consumer, "pnpm", ["-r", "build"]);
   process.stdout.write(`Verified SDK and CLI ${version}, external declarations, CLI image initialization, frozen installation and example builds in ${consumer}\n`);

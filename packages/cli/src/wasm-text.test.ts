@@ -1,4 +1,4 @@
-import { WASM_TEST_PROPERTIES, type ConsentCard } from "@oxidevm/sdk/image-builder";
+import { WASM_TEST_PROPERTIES, type ConsentCard } from "@oxvm/sdk/image-builder";
 import { describe, expect, it } from "vitest";
 import { consentText, printable, testText, type ConsentView } from "./wasm-text.js";
 import { decodeCliReport } from "./report.js";
@@ -89,7 +89,7 @@ describe("the consent card", () => {
   });
 
   it("says a GitHub owner is not trusted, but not for a directory the person named", () => {
-    expect(consentText(view())).toContain('Its source is not in "trusted" in oxidevm.modules.json.');
+    expect(consentText(view())).toContain('Its source is not in "trusted" in the project module declaration.');
     expect(consentText(view({ consent: { reasons: [] } }))).not.toContain('"trusted"');
     expect(consentText(view({ card: { source: "file:vendor/tool" } }))).not.toContain('"trusted"');
   });

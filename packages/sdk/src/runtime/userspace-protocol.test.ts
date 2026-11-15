@@ -35,6 +35,16 @@ describe("Userspace worker protocol", () => {
       expect(() => decodeUserspaceRequest({ ...request, version: 71 })).toThrow("protocol version mismatch");
     } finally { channel.port1.close(); channel.port2.close(); }
   });
+  it("carries the served operation set only beside a native execution port (ADR 0026, 2.8)", () => {
+    const channel = new MessageChannel();
+    try {
+      const request = { id: 1, version: PROTOCOL_VERSION, type: "initialize", wasmUrl: "/userspace.wasm", memoryMiB: 256, nativeExecutionPort: channel.port1, nativeOperationSet: 1 };
+      expect(decodeUserspaceRequest(request)).toEqual(request);
+      for (const nativeOperationSet of [-1, 0x1_0000, 0.5, "1"]) expect(() => decodeUserspaceRequest({ ...request, nativeOperationSet })).toThrow();
+      const portless = { id: 1, version: PROTOCOL_VERSION, type: "initialize", wasmUrl: "/userspace.wasm", memoryMiB: 256, nativeOperationSet: 1 };
+      expect(() => decodeUserspaceRequest(portless)).toThrow(/native execution port/u);
+    } finally { channel.port1.close(); channel.port2.close(); }
+  });
   it("rejects the pre-rebase experiment protocol before accepting requests", () => {
     expect(() => decodeUserspaceRequest({ id: 1, version: 70, type: "dispose" })).toThrow("protocol version mismatch");
   });

@@ -1,5 +1,5 @@
-import { createVM, VMError } from "@oxidevm/sdk";
-import type { ImageRef, UserspaceOptions, VM } from "@oxidevm/sdk";
+import { createVM, VMError } from "@oxvm/sdk";
+import type { ImageRef, UserspaceOptions, VM } from "@oxvm/sdk";
 import image from "./image.js";
 import productionImage from "./production-image.js";
 import runtime from "./runtime.js";

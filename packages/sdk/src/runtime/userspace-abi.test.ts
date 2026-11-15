@@ -71,7 +71,7 @@ describe("Userspace Wasm records", () => {
     }
   });
   it("uses the admitted registration API", () => {
-    expect(USERSPACE_API_VERSION).toBe(147);
+    expect(USERSPACE_API_VERSION).toBe(150);
   });
 
   it("distinguishes completed exits from fatal signals without inferring from shell codes", () => {
@@ -87,7 +87,7 @@ describe("Userspace Wasm records", () => {
   });
 
   it("uses the bounded workspace snapshot API", () => {
-    expect(USERSPACE_API_VERSION).toBe(147);
+    expect(USERSPACE_API_VERSION).toBe(150);
   });
 
   it("decodes the closed pending-work bitmask and rejects reserved bits", () => {
@@ -273,6 +273,16 @@ describe("Userspace Wasm records", () => {
     view.setUint8(24 + 122, 4); view.setBigUint64(24 + 128, 2n, true); view.setBigUint64(24 + 136, 9n, true);
     expect(decodeUserspaceSyscallTrace(trace)).toMatchObject({ version: 5, events: [{ wait: { kind: "durability", generation: 2n, id: 9n } }] });
     view.setUint16(4, 4, true);
+    expect(() => decodeUserspaceSyscallTrace(trace)).toThrow("malformed");
+  });
+
+  it("shows an exec parked on a trial load in v53 and rejects its tag in older traces", () => {
+    const trace = new Uint8Array(24 + 992), view = new DataView(trace.buffer);
+    trace.set(futexTraceV4(128, null, 0)); trace.fill(0, 24 + 192, 24 + 272);
+    view.setUint16(4, 53, true); view.setUint32(8, 992, true);
+    view.setUint8(24 + 122, 19); view.setBigUint64(24 + 128, 1n, true); view.setBigUint64(24 + 136, 3n, true);
+    expect(decodeUserspaceSyscallTrace(trace)).toMatchObject({ version: 53, events: [{ wait: { kind: "trial", generation: 1n, id: 3n } }] });
+    view.setUint16(4, 52, true);
     expect(() => decodeUserspaceSyscallTrace(trace)).toThrow("malformed");
   });
 
@@ -521,7 +531,7 @@ it("decodes accepted stdin prefixes and bounded Linux errors", () => {
 it("decodes versioned JS launches and refuses stale or malformed identity", () => {
   for (const store of [".bun", ".pnpm"]) {
     const entry = `/workspace/node_modules/${store}/typescript@6.0.2/node_modules/typescript/bin/tsc`;
-    const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(19).u64(2n).u64(5n).u32(7).u8(1).path("/workspace").u8(0).path(entry).path("/usr/local/bin/bun").strings(["--noEmit"]).strings(["TERM=dumb"]).finish();
+    const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(21).u64(2n).u64(5n).u32(7).u8(1).path("/workspace").u8(0).path(entry).path("/usr/local/bin/bun").strings(["--noEmit"]).strings(["TERM=dumb"]).finish();
     expect(decodeUserspaceHostRequest(bytes)).toEqual({ kind: "command", generation: 2n, id: 5n, pid: 7, tty: true, cwd: "/workspace", program: { kind: "typescript", entry, executable: "/usr/local/bin/bun" }, args: ["--noEmit"], environment: ["TERM=dumb"] });
     const view = new DataView(bytes.buffer); view.setBigUint64(16, 0n, true); expect(() => decodeUserspaceHostRequest(bytes)).toThrow();
     view.setBigUint64(16, 5n, true); view.setUint32(4, 1, true); expect(() => decodeUserspaceHostRequest(bytes)).toThrow();
@@ -532,7 +542,7 @@ it("decodes versioned JS launches and refuses stale or malformed identity", () =
 
 it("rejects JS compiler launches outside the two qualified placements", () => {
   for (const entry of ["/tmp/tsc", "/workspace/node_modules/.pnpm/typescript@6.0.3/node_modules/typescript/bin/tsc"]) {
-    const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(19).u64(2n).u64(5n).u32(7).u8(1).path("/workspace").u8(0).path(entry).path("/usr/bin/node").strings(["--noEmit"]).strings([]).finish();
+    const bytes = new Writer().raw(new TextEncoder().encode("OXCR")).u32(21).u64(2n).u64(5n).u32(7).u8(1).path("/workspace").u8(0).path(entry).path("/usr/bin/node").strings(["--noEmit"]).strings([]).finish();
     expect(() => decodeUserspaceHostRequest(bytes)).toThrow("Unqualified TypeScript process");
   }
 });

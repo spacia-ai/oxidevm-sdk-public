@@ -23,14 +23,14 @@ export async function mountRuntimeFrame(origin: string, signal?: AbortSignal): P
   iframe.src = runtimeFrameUrl(origin);
   // Delegate personal relay access, including Chromium's legacy combined permission.
   iframe.allow = "cross-origin-isolated; local-network-access; loopback-network";
-  iframe.title = "OxideVM runtime";
+  iframe.title = "OXVM runtime";
   iframe.setAttribute("aria-hidden", "true");
   iframe.tabIndex = -1;
   iframe.style.cssText = "position:fixed;width:0;height:0;border:0;opacity:0;pointer-events:none;";
   const remove = () => iframe.remove();
   const connected = Promise.withResolvers<{ readonly port: MessagePort; readonly engineReleaseId: string }>();
   const fail = (error: Error) => connected.reject(error);
-  const timeout = setTimeout(() => fail(new VMError("FEATURE_NOT_AVAILABLE", `the OxideVM runtime frame at ${origin} did not answer within ${String(FRAME_CONNECT_TIMEOUT_MS / 1000)} s; check that the page may frame it (Content-Security-Policy frame-src) and is cross-origin isolated`, { reason: "browser-unsupported" })), FRAME_CONNECT_TIMEOUT_MS);
+  const timeout = setTimeout(() => fail(new VMError("FEATURE_NOT_AVAILABLE", `the OXVM runtime frame at ${origin} did not answer within ${String(FRAME_CONNECT_TIMEOUT_MS / 1000)} s; check that the page may frame it (Content-Security-Policy frame-src) and is cross-origin isolated`, { reason: "browser-unsupported" })), FRAME_CONNECT_TIMEOUT_MS);
   const abort = () => fail(new VMError("ABORTED", "VM creation was aborted"));
   const onMessage = (event: MessageEvent) => {
     if (event.source !== iframe.contentWindow || event.origin !== origin) return;

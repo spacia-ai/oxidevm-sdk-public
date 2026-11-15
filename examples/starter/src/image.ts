@@ -1,2 +1,2 @@
-import { defineImage } from "@oxidevm/sdk";
-export default defineImage({"mode":"userspace","manifestUrl":"https://cdn.oxidevm.dev/images/oxidevm-starter-pandas/0.0.3/da71749f0624f5444be55994fb92256535004f7983c46b38a2891178bb31e657/manifest.json","manifestSHA256":"da71749f0624f5444be55994fb92256535004f7983c46b38a2891178bb31e657","trust":{"algorithm":"Ed25519","keyId":"ed25519-d753cdd5739b36c670441766e2c08ea8","publicKey":"MCowBQYDK2VwAyEAynhb7WG89CT3+mWXxbt8zgaDJJmArtm1F9KTf3bzKTU="}});
+import { defineImage } from "@oxvm/sdk";
+export default defineImage({"mode":"userspace","manifestUrl":"https://cdn.oxvm.dev/images/oxidevm-starter-pandas/0.0.3/da71749f0624f5444be55994fb92256535004f7983c46b38a2891178bb31e657/manifest.json","manifestSHA256":"da71749f0624f5444be55994fb92256535004f7983c46b38a2891178bb31e657","trust":{"algorithm":"Ed25519","keyId":"ed25519-d753cdd5739b36c670441766e2c08ea8","publicKey":"MCowBQYDK2VwAyEAynhb7WG89CT3+mWXxbt8zgaDJJmArtm1F9KTf3bzKTU="}});

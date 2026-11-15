@@ -92,7 +92,7 @@ export async function buildDistribution(recipe: ImageRecipe, options: BuildImage
       await writeFile(join(bundle, "manifest.json"), manifestBytes);
       await writeFile(join(bundle, "image.lock.json"), `${JSON.stringify({ ...lock, manifestUrl: image.manifestUrl, manifestSHA256: image.manifestSHA256, distribution }, null, 2)}\n`);
       const reference = `${recipe.id}.image.ts`;
-      await writeFile(join(bundle, reference), `import { defineImage } from "@oxidevm/sdk";\nexport default defineImage(${JSON.stringify({ mode: image.mode, manifestUrl: image.manifestUrl, manifestSHA256: image.manifestSHA256, trust: image.trust }, null, 2)});\n`);
+      await writeFile(join(bundle, reference), `import { defineImage } from "@oxvm/sdk";\nexport default defineImage(${JSON.stringify({ mode: image.mode, manifestUrl: image.manifestUrl, manifestSHA256: image.manifestSHA256, trust: image.trust }, null, 2)});\n`);
       await inspectImage(bundle, { trust: signing.trust, ...(options.signal === undefined ? {} : { signal: options.signal }) });
       options.onProgress?.({ phase: "done", manifestSHA256: image.manifestSHA256 });
       return { mode: recipe.mode, image, bundleDir: out, manifestPath: join(out, "manifest.json"), referencePath: join(out, reference), lockPath: join(out, "image.lock.json"), distribution };

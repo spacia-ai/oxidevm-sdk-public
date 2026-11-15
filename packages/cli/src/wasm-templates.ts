@@ -1,7 +1,7 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { VMError } from "@oxidevm/sdk";
-import { WasmBuildFailure, extractManifest, getSDKRelease, inspectWasm } from "@oxidevm/sdk/image-builder";
+import { VMError } from "@oxvm/sdk";
+import { WasmBuildFailure, extractManifest, getSDKRelease, inspectWasm } from "@oxvm/sdk/image-builder";
 import type { WasmInitResult } from "./contracts.js";
 import { file, newDirectory } from "./template-files.js";
 import { registryConfig } from "./templates.js";
@@ -62,7 +62,7 @@ function withReach(host: string, reach: TemplateReach): string {
 
 function commandSource(id: string, subject: Subject, command: string | undefined, reach: TemplateReach): string {
   if (subject.skeleton) {
-    return `import { defineModule } from "@oxidevm/sdk/wasm";
+    return `import { defineModule } from "@oxvm/sdk/wasm";
 
 export default defineModule({
   manifest: {
@@ -70,14 +70,14 @@ ${MANIFEST_HEAD(id, subject, "command", "", reach, command)}
   },
   adapter: async host => {
     // Compile the artifact once, at start. Instantiate it here with the imports its ABI needs;
-    // \`oxidevm wasm inspect upstream/${subject.artifact}\` lists them. Declare what the adapter uses in requires.host.
+    // \`oxvm wasm inspect upstream/${subject.artifact}\` lists them. Declare what the adapter uses in requires.host.
     await host.artifacts.compile(${JSON.stringify(subject.artifact)});
     return { main: () => host.fail(2, ${JSON.stringify(`${id} has no behavior yet: edit module.ts`)}) };
   },
 });
 `;
   }
-  return `import { defineModule } from "@oxidevm/sdk/wasm";
+  return `import { defineModule } from "@oxvm/sdk/wasm";
 import { addCommand } from "./src/command.ts";
 
 export default defineModule({
@@ -98,7 +98,7 @@ ${MANIFEST_HEAD(id, subject, "command", "\"files.sync\"", reach, command)}
 
 function serviceSource(id: string, subject: Subject, reach: TemplateReach): string {
   if (subject.skeleton) {
-    return `import { defineModule } from "@oxidevm/sdk/wasm";
+    return `import { defineModule } from "@oxvm/sdk/wasm";
 
 export default defineModule({
   manifest: {
@@ -116,7 +116,7 @@ ${MANIFEST_HEAD(id, subject, "service", "", reach)}
 });
 `;
   }
-  return `import { defineModule } from "@oxidevm/sdk/wasm";
+  return `import { defineModule } from "@oxvm/sdk/wasm";
 import { parseOperands } from "./src/operands.ts";
 
 // One request per line, "<a> <b>", answered with "<sum>" or "error". A line longer than this closes the connection.
@@ -158,11 +158,11 @@ ${MANIFEST_HEAD(id, subject, "service", "", reach).replace("expose: { main:", "e
 function packageJson(id: string, kind: "command" | "service"): string {
   const version = getSDKRelease().sdkVersion;
   // The command template adds two numbers; without them its main stops at the usage error before the interesting path.
-  const conformance = kind === "command" ? "oxidevm wasm build && oxidevm wasm test --arg 2 --arg 3" : "oxidevm wasm build && oxidevm wasm test";
+  const conformance = kind === "command" ? "oxvm wasm build && oxvm wasm test --arg 2 --arg 3" : "oxvm wasm build && oxvm wasm test";
   return `${JSON.stringify({
     name: id, private: true, license: "Apache-2.0", type: "module",
-    scripts: { build: "oxidevm wasm build", check: "tsc --noEmit && tsc --noEmit -p test && eslint . --max-warnings 0 && oxidevm wasm build --check", release: "oxidevm wasm release", test: "vitest run", "test:conformance": conformance },
-    devDependencies: { "@eslint/js": "10.0.1", "@oxidevm/cli": version, "@oxidevm/sdk": version, "@types/node": "24.13.3", eslint: "10.7.0", playwright: TEMPLATE_PLAYWRIGHT, typescript: "6.0.3", "typescript-eslint": "8.65.0", vitest: "5.1.0" },
+    scripts: { build: "oxvm wasm build", check: "tsc --noEmit && tsc --noEmit -p test && eslint . --max-warnings 0 && oxvm wasm build --check", release: "oxvm wasm release", test: "vitest run", "test:conformance": conformance },
+    devDependencies: { "@eslint/js": "10.0.1", "@oxvm/cli": version, "@oxvm/sdk": version, "@types/node": "24.13.3", eslint: "10.7.0", playwright: TEMPLATE_PLAYWRIGHT, typescript: "6.0.3", "typescript-eslint": "8.65.0", vitest: "5.1.0" },
   }, null, 2)}\n`;
 }
 

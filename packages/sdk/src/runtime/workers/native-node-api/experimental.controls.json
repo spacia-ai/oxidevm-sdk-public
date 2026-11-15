@@ -1,0 +1,322 @@
+{
+ "schemaVersion": 1,
+ "source": "engine guest/native-node-api/conformance/experimental.{c,cjs} (ADR 0026, 2.13), run in the native host test container under pinned Node",
+ "node": {
+  "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+  "version": "v24.18.1"
+ },
+ "fixtureSHA256": "5a04329206e9d2e7471e8d0e93eb673fac298cda2783b72b1fa5d03d3428a85d",
+ "driverSHA256": "b347420a4568dd234c5d1536ddcb7bbd62fcfa151ffdfe86f7c5260f72021f03",
+ "rows": [
+  [
+   "set-prototype/ordinary",
+   0,
+   "undefined",
+   true,
+   []
+  ],
+  [
+   "set-prototype/null",
+   0,
+   "undefined",
+   true,
+   []
+  ],
+  [
+   "set-prototype/non-extensible",
+   9,
+   "undefined",
+   true,
+   []
+  ],
+  [
+   "set-prototype/non-extensible-same",
+   0,
+   "undefined",
+   true,
+   []
+  ],
+  [
+   "set-prototype/cycle",
+   9,
+   "undefined",
+   true,
+   []
+  ],
+  [
+   "set-prototype/immutable",
+   9,
+   "undefined",
+   true,
+   []
+  ],
+  [
+   "set-prototype/number-value",
+   0,
+   "undefined",
+   true,
+   []
+  ],
+  [
+   "set-prototype/undefined-value",
+   0,
+   "undefined",
+   true,
+   []
+  ],
+  [
+   "set-prototype/primitive-object",
+   0,
+   "undefined",
+   "unchecked",
+   []
+  ],
+  [
+   "set-prototype/null-object",
+   2,
+   "error:TypeError",
+   "unchecked",
+   []
+  ],
+  [
+   "set-prototype/proxy-trap",
+   0,
+   "undefined",
+   true,
+   [
+    "setPrototypeOf"
+   ]
+  ],
+  [
+   "set-prototype/proxy-refuses",
+   9,
+   "undefined",
+   "unchecked",
+   [
+    "setPrototypeOf"
+   ]
+  ],
+  [
+   "set-prototype/proxy-throws",
+   9,
+   "undefined",
+   "unchecked",
+   [
+    "setPrototypeOf"
+   ]
+  ],
+  [
+   "create/null-prototype",
+   0,
+   {
+    "prototype": "null",
+    "keys": [
+     "a",
+     "b"
+    ],
+    "properties": [
+     [
+      1,
+      true,
+      true,
+      true
+     ],
+     [
+      2,
+      true,
+      true,
+      true
+     ]
+    ],
+    "extensible": true
+   }
+  ],
+  [
+   "create/prototype",
+   0,
+   {
+    "prototype": "marker",
+    "keys": [
+     "a"
+    ],
+    "properties": [
+     [
+      1,
+      true,
+      true,
+      true
+     ]
+    ],
+    "extensible": true
+   }
+  ],
+  [
+   "create/explicit-null",
+   0,
+   {
+    "prototype": "null",
+    "keys": [
+     "a"
+    ],
+    "properties": [
+     [
+      1,
+      true,
+      true,
+      true
+     ]
+    ],
+    "extensible": true
+   }
+  ],
+  [
+   "create/empty",
+   0,
+   {
+    "prototype": "marker",
+    "keys": [],
+    "properties": [],
+    "extensible": true
+   }
+  ],
+  [
+   "create/duplicate",
+   0,
+   {
+    "prototype": "null",
+    "keys": [
+     "a"
+    ],
+    "properties": [
+     [
+      2,
+      true,
+      true,
+      true
+     ]
+    ],
+    "extensible": true
+   }
+  ],
+  [
+   "create/indices",
+   0,
+   {
+    "prototype": "null",
+    "keys": [
+     "0",
+     "1",
+     "x"
+    ],
+    "properties": [
+     [
+      "zero",
+      true,
+      true,
+      true
+     ],
+     [
+      "one",
+      true,
+      true,
+      true
+     ],
+     [
+      "x",
+      true,
+      true,
+      true
+     ]
+    ],
+    "extensible": true
+   }
+  ],
+  [
+   "create/symbol",
+   0,
+   {
+    "prototype": "null",
+    "keys": [
+     "t",
+     "symbol:s"
+    ],
+    "properties": [
+     [
+      2,
+      true,
+      true,
+      true
+     ],
+     [
+      1,
+      true,
+      true,
+      true
+     ]
+    ],
+    "extensible": true
+   }
+  ],
+  [
+   "create/not-a-name",
+   4,
+   "undefined"
+  ],
+  [
+   "create/object-name",
+   4,
+   "undefined"
+  ],
+  [
+   "shared/shared",
+   0,
+   "boolean:true"
+  ],
+  [
+   "shared/array-buffer",
+   0,
+   "boolean:false"
+  ],
+  [
+   "shared/view",
+   0,
+   "boolean:false"
+  ],
+  [
+   "shared/object",
+   0,
+   "boolean:false"
+  ],
+  [
+   "shared/tagged",
+   0,
+   "boolean:false"
+  ],
+  [
+   "shared/null",
+   0,
+   "boolean:false"
+  ],
+  [
+   "shared/number",
+   0,
+   "boolean:false"
+  ],
+  [
+   "post/order",
+   0,
+   [
+    "sync",
+    "nextTick",
+    "microtask",
+    "finalizer",
+    "immediate",
+    "timeout"
+   ]
+  ],
+  [
+   "post/no-callback",
+   0
+  ]
+ ]
+}

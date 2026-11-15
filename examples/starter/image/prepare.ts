@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { imageSetting } from "./material-inputs.ts";
 
 async function prepareInputs(value: unknown, directory: string): Promise<void> {
 if (!Array.isArray(value) || value.length === 0 || value.length > 128) throw new Error("Invalid image input lock");
@@ -51,12 +52,12 @@ const pythonInputs = Array.from<unknown>(python.inputs).map(value => { if (typeo
 await prepareInputs(pythonInputs, join(import.meta.dirname, ".cache/python-inputs"));
 const base = python.base;
 if (typeof base !== "object" || base === null || !("sha256" in base) || !("filename" in base) || base.filename !== "docs-python-rootfs.tar.gz" || typeof base.sha256 !== "string") throw new Error("Invalid Python base identity");
-const supplied = process.env["OXIDEVM_PANDAS_BASE_ROOTFS"];
+const supplied = imageSetting(process.env, "PANDAS_BASE_ROOTFS");
 const destination = join(import.meta.dirname, ".cache/python-inputs/docs-python-rootfs.tar.gz");
 if (supplied !== undefined) {
   if (createHash("sha256").update(await readFile(supplied)).digest("hex") !== base.sha256) throw new Error("Python base archive differs from its qualified digest");
   await copyFile(supplied, destination);
 }
-if (createHash("sha256").update(await readFile(destination)).digest("hex") !== base.sha256) throw new Error("Supply the qualified base archive through OXIDEVM_PANDAS_BASE_ROOTFS");
+if (createHash("sha256").update(await readFile(destination)).digest("hex") !== base.sha256) throw new Error("Supply the qualified base archive through OXVM_PANDAS_BASE_ROOTFS");
 await writeFile(join(import.meta.dirname, ".cache/python-inputs/BASE.SHA256SUMS"), `${base.sha256}  ${base.filename}\n`);
 process.stdout.write("Verified all pinned utility, Python, NumPy and pandas inputs.\n");

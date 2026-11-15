@@ -34,6 +34,7 @@ it("uses compiler fallback after native syntax rejection and executes effects on
   const pinnedCompiler = compiler;
   const observedCompiler: AssistanceCompiler = {
     hasDynamicImport: value => pinnedCompiler.hasDynamicImport(value),
+    scriptBindings: value => pinnedCompiler.scriptBindings(value),
     transform(value, options) { transforms++; return pinnedCompiler.transform(value, options); },
   };
   const loader = namespace.createLocalModuleLoader(observedCompiler, systemSource,
@@ -63,6 +64,7 @@ it("propagates non-syntax parse failures without compiler fallback or effects", 
   const pinnedCompiler = compiler;
   const observedCompiler: AssistanceCompiler = {
     hasDynamicImport: value => pinnedCompiler.hasDynamicImport(value),
+    scriptBindings: value => pinnedCompiler.scriptBindings(value),
     transform(value, options) { transforms++; return pinnedCompiler.transform(value, options); },
   };
   const loader = namespace.createLocalModuleLoader(observedCompiler, systemSource,

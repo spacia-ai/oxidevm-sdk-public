@@ -44,3 +44,23 @@ it("uses controlled collection to release functions and ignores queued callbacks
   callbacks.cancel(4097n); collect?.(4097n); collect?.(4096n); collect?.(4096n);
   expect(retired).toEqual([4097n, 4096n]); expect(callbacks.live).toBe(0);
 });
+
+it("keeps a posted finalizer's slot claimed until its native immediate or teardown runs it once (ADR 0026, 2.13)", () => {
+  const events: unknown[][] = [], later: (() => void)[] = [];
+  const callbacks = new NativeCallbacks(0n, {
+    claim: (id, environment) => { events.push(["claim", id, environment]); },
+    retire: id => { events.push(["retire", id]); }, finalize: id => { events.push(["finalize", id]); },
+  });
+  callbacks.post(4096n, 1n, run => { later.push(run); });
+  callbacks.post(4097n, 1n, run => { later.push(run); });
+  expect(events).toEqual([["claim", 4096n, 1n], ["claim", 4097n, 1n]]);
+  expect([callbacks.live, callbacks.active(4096n)]).toEqual([2, true]);
+  later[0]?.(); later[0]?.();
+  expect(events.slice(2)).toEqual([["finalize", 4096n]]);
+  // A slot cannot be posted twice in one generation.
+  expect(() => { callbacks.post(4096n, 1n, () => undefined); }).toThrow("Stale native callback generation");
+  callbacks.dispose();
+  expect(events.slice(3)).toEqual([["finalize", 4097n]]);
+  later[1]?.();
+  expect(events).toHaveLength(4);
+});

@@ -11,8 +11,13 @@ import { NativeAsyncContexts } from "./async-contexts.js";
 import { decodeNativeString, encodeNativeString, readNativeUtf8 } from "./strings.js";
 import { nativeBigInt64, nativeBigIntFromWords, nativeBigIntWords, nativeDate, nativeDateTime, nativeDouble, nativeDoubleBits, nativeIsDate, nativeSignedInteger, nativeUnsignedInteger } from "./extended-values.js";
 import { nativeBoolean, nativeInstanceOf, nativeNumber, nativeObject, nativeSetProperty, nativeString, nativePrototypeOf, nativeHasOwn, nativeGetProperty, nativeHasProperty, nativeDeleteProperty, nativeDefineProperty, nativeFreeze, nativeSeal, nativeCreateObject, nativeApply, nativeConstruct } from "./properties.js";
-import { nativeIsArrayBuffer, nativeIsDataView, nativeIsDetachedArrayBuffer, nativeIsTypedArray, nativeIsPromise, nativeIsError } from "./value-brands.js";
+import { nativeIsArrayBuffer, nativeIsDataView, nativeIsDetachedArrayBuffer, nativeIsTypedArray, nativeIsPromise, nativeIsError, nativeIsSharedArrayBuffer } from "./value-brands.js";
 import { createNativeError, NativeErrorCodeFailure, NapiFailure, requiresClearException, thrownNativeError, type NativeStatus } from "./errors.js";
+import { allPropertyNames } from "./property-names.js";
+import { nativeObjectWithProperties, nativeSetPrototype } from "./experimental.js";
+import { nativeSetOneOperation } from "./versions.js";
+import { createNativeDataView, createNativeTypedArray, detachNativeArrayBuffer, nativeArrayBuffer, nativeDataView, nativeSetTwoOperation } from "./arraybuffers.js";
+import { nativeIsProxy } from "../../proxy-brand.js";
 
 const Number = globalThis.Number, BigInt = globalThis.BigInt, Uint8Array = globalThis.Uint8Array, DataView = globalThis.DataView;
 export interface NativeResult { readonly status: NativeStatus; readonly args: readonly bigint[]; readonly bytes: Uint8Array }
@@ -27,7 +32,7 @@ interface Wrapped { readonly pointer: bigint; readonly finalizer: bigint }
 const wrappedValues = new WeakMap<object, Wrapped>(), tags = new WeakMap<object, readonly [bigint, bigint]>();
 const wrappedGet = Reflect.get(wrappedValues, "get"), wrappedSet = Reflect.get(wrappedValues, "set"), wrappedHas = Reflect.get(wrappedValues, "has"), wrappedDelete = Reflect.get(wrappedValues, "delete");
 const tagGet = Reflect.get(tags, "get"), tagSet = Reflect.get(tags, "set");
-type NativeValueOptions = Pick<NativeCallbackEffects, "claim" | "retire"> & { readonly runtime?: "node" | "bun" };
+type NativeValueOptions = Pick<NativeCallbackEffects, "claim" | "retire"> & { readonly runtime?: "node" | "bun"; readonly operationSet?: number; readonly sharedBufferBudget?: number };
 type NativeClassSignature = { readonly kind: "constructor" | "method"; readonly receivers: WeakSet<object> };
 const NativeArray = Array, arrayFrom = Array.from;
 const empty = new Uint8Array();
@@ -55,6 +60,7 @@ export class NativeValues {
   readonly #typeTags = new WeakMap<object, readonly [bigint, bigint]>();
   readonly #external = new WeakMap<object, Wrapped>();
   readonly #buffers: NativeBuffers;
+  readonly #operationSet: number;
   readonly #callbacks: NativeCallbacks;
   readonly #runtime: "node" | "bun";
   #async: NativeAsyncContexts | undefined;
@@ -68,7 +74,8 @@ export class NativeValues {
     this.#prefix = BigInt(integer(environment, "native environment", 0, 0x7fff_ffff)) << 32n;
     this.#handles = new NativeHandles(this.#prefix);
     this.#references = new NativeReferences(this.#prefix);
-    this.#buffers = new NativeBuffers(releaseBuffer);
+    this.#operationSet = options.operationSet ?? 0;
+    this.#buffers = new NativeBuffers(releaseBuffer, this.#operationSet >= 2, options.sharedBufferBudget);
     this.#callbacks = new NativeCallbacks(this.#prefix, { claim: options.claim, retire: options.retire, finalize });
     this.#runtime = options.runtime ?? "node";
   }
@@ -102,6 +109,22 @@ export class NativeValues {
       return createNativeError("napi_create_type_error", undefined, "Chaining cycle detected for promise #<Promise>", "node");
     }
     return undefined;
+  }
+  #runScript: ((source: string) => unknown) | undefined;
+  /** The process worker binds napi_run_script to its compiler before any add-on loads. */
+  bindScriptRunner(run: (source: string) => unknown): void {
+    if (this.#runScript !== undefined) protocol("Native script runner is already bound");
+    this.#runScript = run;
+  }
+  #later: ((run: () => void) => void) | undefined;
+  /** The process worker binds node_api_post_finalizer to its scheduler's native immediates. */
+  bindNativeImmediate(schedule: (run: () => void) => void): void {
+    if (this.#later !== undefined) protocol("Native immediates are already bound");
+    this.#later = schedule;
+  }
+  #nativeImmediate(): (run: () => void) => void {
+    if (this.#later === undefined) protocol("Native immediates are not bound");
+    return this.#later;
   }
   #asyncContext(): NativeAsyncContexts {
     if (this.#async === undefined) protocol("Native async context is not bound");
@@ -140,12 +163,17 @@ export class NativeValues {
   #validateFinalizer(callback: bigint): void { if (callback !== 0n) this.#callbacks.validate(callback); }
   #finalize(value: object, callback: bigint): void { if (callback !== 0n) this.#callbacks.add(value, callback, "finalizer", this.#currentEnvironment); }
   #forgetFinalizer(callback: bigint): void { this.#callbacks.cancel(callback); }
+  /** Operation set 2: the buffers JavaScript changed since the last handover to native code. */
+  bufferChanges(push: (identity: number, bytes: Uint8Array) => void): void { this.#buffers.changes(push); }
   finalizeResources(): void { this.#callbacks.finalize(); this.#buffers.dispose(); }
   dispose(): void {
     this.finalizeResources(); this.#callbacks.dispose();
     this.#async?.dispose(); this.#references.dispose(); applyCollection(clearCollection, this.#deferred, []); this.#handles.dispose(); applyCollection(clearCollection, this.#environments, []); applyCollection(clearCollection, this.#escaped, []);
   }
   dispatch(operation: string, args: readonly bigint[], bytes: Uint8Array): NativeResult {
+    if (this.#runtime === "bun" && (nativeSetOneOperation(operation) || nativeSetTwoOperation(operation))) throw new VMError("FEATURE_NOT_AVAILABLE", `${operation} has no pinned Bun behavior`, { lateFailure: "unsupported-node-api", subject: operation });
+    // A host of an earlier set forwards these names only to have them refused (its unserved list).
+    if (this.#operationSet < 2 && nativeSetTwoOperation(operation)) throw new VMError("FEATURE_NOT_AVAILABLE", `Unsupported Node-API operation: ${operation}`, { lateFailure: "unsupported-node-api", subject: operation });
     const ok = (...values: bigint[]): NativeResult => ({ status: 0, args: values.length === 0 ? [0n] : values, bytes: empty });
     const result = (value: unknown): NativeResult => ok(this.add(value));
     const at = (index: number): unknown => { const handle = args[index]; if (handle === undefined) protocol("Missing Node-API argument"); return this.get(handle); };
@@ -196,8 +224,8 @@ export class NativeValues {
         case "napi_get_undefined": shape(0); return result(undefined);
         case "napi_get_null": shape(0); return result(null);
         case "napi_get_global": shape(0); return result(realmGlobal);
-        // shortcut: ordinary-object prototypes are qualified; qualify V8 proxy behavior before admitting proxy-aware addons.
-        case "napi_get_prototype": shape(1); return result(nativePrototypeOf(boxed(at(0))));
+        // V8 reads a Proxy's own map, whose prototype is null, and calls no trap (ADR 0026, 2.11).
+        case "napi_get_prototype": { shape(1); const value = boxed(at(0)); return result(nativeIsProxy(value) ? null : nativePrototypeOf(value)); }
         case "napi_has_own_property": shape(2); return ok(nativeHasOwn(boxed(at(0)), key(at(1))) ? 1n : 0n);
         case "napi_strict_equals": shape(2); return ok(at(0) === at(1) ? 1n : 0n);
         case "napi_create_object": shape(0); return result({});
@@ -273,6 +301,35 @@ export class NativeValues {
         case "napi_get_property_names": {
           shape(1); const names = []; for (const name in object(at(0))) names.push(name); return result(names);
         }
+        case "napi_run_script": {
+          // Node has no preamble here and reports any thrown error as napi_generic_failure.
+          shape(1); const source = at(0);
+          if (typeof source !== "string") throw new NapiFailure(3);
+          const run = this.#runScript;
+          if (run === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "napi_run_script has no script runner", { lateFailure: "unsupported-node-api", subject: "napi_run_script" });
+          let value: unknown;
+          try { value = run(source); }
+          catch (error) { if (isVMError(error)) throw error; this.#pending = { value: error }; throw new NapiFailure(9); }
+          return result(value);
+        }
+        case "napi_get_all_property_names": {
+          shape(4); const target = boxed(at(0)), mode = number(1), filter = number(2), conversion = number(3);
+          if (mode > 1 || conversion > 1) throw new NapiFailure(1);
+          return result(allPropertyNames(target, mode === 0, filter, conversion === 0));
+        }
+        // Operation set 1's experimental four (ADR 0026, 2.13); none has Node's preamble here.
+        case "node_api_set_prototype": shape(2); nativeSetPrototype(boxed(at(0)), at(1)); return ok();
+        case "node_api_create_object_with_properties": {
+          // A NULL prototype travels as 0, then the names, then the values.
+          if (args.length % 2 !== 1 || bytes.byteLength !== 0) protocol("Invalid native object property arguments");
+          const count = (args.length - 1) / 2, list = (start: number): unknown[] => {
+            const arrayLike = { __proto__: null, length: count };
+            return arrayFrom(arrayLike, (_value, index) => at(start + index));
+          };
+          return result(nativeObjectWithProperties(args[0] === 0n ? null : at(0), list(1), list(1 + count)));
+        }
+        case "node_api_is_sharedarraybuffer": shape(1); return ok(nativeIsSharedArrayBuffer(at(0)) ? 1n : 0n);
+        case "node_api_post_finalizer": shape(1); this.#callbacks.post(refId(0), this.#currentEnvironment, this.#nativeImmediate()); return ok();
         case "napi_new_instance": {
           if (args.length < 1 || args.length > 4096 || bytes.byteLength !== 0) protocol("Invalid native constructor arguments");
           pending();
@@ -392,7 +449,8 @@ export class NativeValues {
         }
         case "napi_get_value_external": { shape(1); const external = applyCollection(wrappedGet, this.#external, [object(at(0))]); if (external === undefined) throw new NapiFailure(1); return ok(external.pointer); }
         case "napi_is_error": shape(1); return ok(nativeIsError(at(0), this.#runtime) ? 1n : 0n);
-        case "napi_is_buffer": shape(1); return ok(at(0) instanceof Uint8Array ? 1n : 0n);
+        // Node's Buffer check is "any ArrayBuffer view" (node::Buffer::HasInstance); Bun's is a byte array.
+        case "napi_is_buffer": shape(1); return ok((this.#runtime === "node" ? ArrayBuffer.isView(at(0)) : at(0) instanceof Uint8Array) ? 1n : 0n);
         case "napi_is_arraybuffer": shape(1); return ok(nativeIsArrayBuffer(at(0)) ? 1n : 0n);
         case "napi_is_dataview": shape(1); return ok(nativeIsDataView(at(0)) ? 1n : 0n);
         case "napi_is_detached_arraybuffer": shape(1); return ok(nativeIsDetachedArrayBuffer(at(0)) ? 1n : 0n);
@@ -409,10 +467,26 @@ export class NativeValues {
         case "napi_get_typedarray_info":
         case "napi_get_buffer_info": {
           shape(1); const value = at(0);
-          if (!ArrayBuffer.isView(value) || value instanceof DataView || (operation === "napi_get_buffer_info" && !(value instanceof Uint8Array))) throw new NapiFailure(1);
+          if (!ArrayBuffer.isView(value)) throw new NapiFailure(1);
+          if (operation === "napi_get_buffer_info" && !(value instanceof Uint8Array)) {
+            // Node hands out any view's bytes as a buffer: the answer is a byte window over the view's backing store.
+            if (this.#runtime !== "node") throw new NapiFailure(1);
+            const backing = value.buffer; if (!(backing instanceof ArrayBuffer)) throw new VMError("FEATURE_NOT_AVAILABLE", "Concurrent shared native buffers are unsupported");
+            const window = this.#buffers.inspectBytes(backing, value.byteOffset, value.byteLength);
+            return { status: 0, args: [BigInt(window.identity), 1n, BigInt(window.length), BigInt(window.offset), this.add(window.buffer)], bytes: window.bytes };
+          }
+          if (value instanceof DataView) throw new NapiFailure(1);
           const buffer = this.#buffers.inspect(value);
           return { status: 0, args: [BigInt(buffer.identity), BigInt(buffer.type), BigInt(buffer.length), BigInt(buffer.offset), this.add(buffer.buffer)], bytes: buffer.bytes };
         }
+        case "napi_get_arraybuffer_info": case "napi_get_dataview_info": {
+          shape(1); const view = operation === "napi_get_dataview_info" ? nativeDataView(at(0)) : undefined;
+          const buffer = view === undefined ? this.#buffers.inspectBytes(nativeArrayBuffer(at(0))) : this.#buffers.inspectBytes(view.buffer, view.byteOffset, view.byteLength);
+          return { status: 0, args: [BigInt(buffer.identity), 1n, BigInt(buffer.length), BigInt(buffer.offset), this.add(buffer.buffer)], bytes: buffer.bytes };
+        }
+        case "napi_detach_arraybuffer": shape(1); detachNativeArrayBuffer(at(0)); return ok();
+        case "napi_create_typedarray": shape(4); return result(createNativeTypedArray(args[0], args[1], at(2), args[3], this.#runtime));
+        case "napi_create_dataview": shape(3); return result(createNativeDataView(args[0], at(1), args[2], this.#runtime));
         case "napi_get_value_bool": shape(1); if (typeof at(0) !== "boolean") throw new NapiFailure(7); return ok(at(0) === true ? 1n : 0n);
         case "napi_create_promise": {
           shape(0); if (nativeMapSize(this.#deferred) >= 128 || this.#nextDeferred === 0xffff_ffff) protocol("Native promise limit"); const id = this.#prefix | BigInt(++this.#nextDeferred);

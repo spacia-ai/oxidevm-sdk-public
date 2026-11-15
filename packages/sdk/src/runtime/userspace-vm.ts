@@ -114,6 +114,7 @@ export async function createUserspaceRuntimeVM(
         ...(jitTier === undefined ? {} : { jitTier }),
         ...(options.interceptors === undefined ? {} : { interceptors: options.interceptors }),
         ...(options.nativeExecutionPort === undefined ? {} : { nativeExecutionPort: options.nativeExecutionPort }),
+        ...(options.nativeOperationSet === undefined ? {} : { nativeOperationSet: options.nativeOperationSet }),
         ...(options.initialUser === undefined ? {} : { initialUser: options.initialUser }),
         ...(options.rootPersistence === undefined ? {} : { rootPersistence: options.rootPersistence }),
       }, snapshot.port2, initialized,

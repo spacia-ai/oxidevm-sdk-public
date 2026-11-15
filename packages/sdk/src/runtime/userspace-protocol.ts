@@ -192,7 +192,7 @@ export interface UserspaceOperations {
   readonly files: Operation<{ readonly request: Uint8Array; readonly mount?: FileMount }, Uint8Array>;
   readonly "file-changes": Operation<{ readonly cursor: bigint }, Uint8Array>;
   readonly initialize: Operation<
-    { readonly wasmUrl: string; readonly wasmModule?: WebAssembly.Module; readonly memoryMiB: number; readonly storagePort?: MessagePort; readonly networkPort?: MessagePort; readonly nativeExecutionPort?: MessagePort; readonly maxProcesses?: number; readonly syscallTraceCapacity?: number; readonly executionTiming?: ExecutionTimingMode; readonly jitInstall?: SystemJitInstallMode; readonly jitTier?: UserspaceJitTier } & Pick<Extract<RuntimeVMOptions, { mode: "userspace" }>, "initialUser" | "rootPersistence" | "interceptors">,
+    { readonly wasmUrl: string; readonly wasmModule?: WebAssembly.Module; readonly memoryMiB: number; readonly storagePort?: MessagePort; readonly networkPort?: MessagePort; readonly nativeExecutionPort?: MessagePort; readonly nativeOperationSet?: number; readonly maxProcesses?: number; readonly syscallTraceCapacity?: number; readonly executionTiming?: ExecutionTimingMode; readonly jitInstall?: SystemJitInstallMode; readonly jitTier?: UserspaceJitTier } & Pick<Extract<RuntimeVMOptions, { mode: "userspace" }>, "initialUser" | "rootPersistence" | "interceptors">,
     undefined
   >;
   readonly spawn: Operation<
@@ -392,7 +392,7 @@ export function decodeUserspaceRequest(value: unknown): UserspaceRequest | Users
       exactKeys(request, ["id", "version", "type", "cursor"]);
       return { ...base, type, cursor: decodeChangeCursor(request["cursor"]) };
     case "initialize": {
-      exactKeys(request, ["id", "version", "type", "wasmUrl", "memoryMiB"], ["wasmModule", "storagePort", "networkPort", "nativeExecutionPort", "maxProcesses", "syscallTraceCapacity", "executionTiming", "jitInstall", "jitTier", "initialUser", "rootPersistence", "interceptors"]);
+      exactKeys(request, ["id", "version", "type", "wasmUrl", "memoryMiB"], ["wasmModule", "storagePort", "networkPort", "nativeExecutionPort", "nativeOperationSet", "maxProcesses", "syscallTraceCapacity", "executionTiming", "jitInstall", "jitTier", "initialUser", "rootPersistence", "interceptors"]);
       const wasmModule = request["wasmModule"];
       if (wasmModule !== undefined && !(wasmModule instanceof WebAssembly.Module)) throw new VMError("PROTOCOL_ERROR", "Userspace engine module is invalid");
       const initialUser = request["initialUser"];
@@ -406,6 +406,7 @@ export function decodeUserspaceRequest(value: unknown): UserspaceRequest | Users
         throw new VMError("PROTOCOL_ERROR", "Userspace network port is invalid");
       }
       if (request["nativeExecutionPort"] !== undefined && !(request["nativeExecutionPort"] instanceof MessagePort)) throw new VMError("PROTOCOL_ERROR", "Invalid native execution port");
+      if (request["nativeOperationSet"] !== undefined && request["nativeExecutionPort"] === undefined) throw new VMError("PROTOCOL_ERROR", "A native operation set needs a native execution port");
       return {
         ...base,
         type,
@@ -418,6 +419,7 @@ export function decodeUserspaceRequest(value: unknown): UserspaceRequest | Users
         ...(request["storagePort"] === undefined ? {} : { storagePort: request["storagePort"] }),
         ...(request["networkPort"] === undefined ? {} : { networkPort: request["networkPort"] }),
         ...(request["nativeExecutionPort"] === undefined ? {} : { nativeExecutionPort: request["nativeExecutionPort"] }),
+        ...(request["nativeOperationSet"] === undefined ? {} : { nativeOperationSet: integer(request["nativeOperationSet"], "native operation set", 0, 0xffff) }),
         ...(request["maxProcesses"] === undefined
           ? {}
           : { maxProcesses: integer(request["maxProcesses"], "Userspace max processes", 1, 64) }),

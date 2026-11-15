@@ -1,11 +1,11 @@
-import { defineImage, VMError } from "@oxidevm/sdk";
-import { decodeEngineCompliancePin, decodeImageDigest, getSDKRelease } from "@oxidevm/sdk/image-builder";
+import { defineImage, VMError } from "@oxvm/sdk";
+import { decodeEngineCompliancePin, decodeImageDigest, getSDKRelease } from "@oxvm/sdk/image-builder";
 import { starterRelease } from "./starter.generated.js";
 import { fields, number, object, text } from "./validation.js";
 
 function publicURL(value: unknown): string {
   const url = new URL(text(value));
-  if (url.origin !== "https://cdn.oxidevm.dev" || url.username !== "" || url.password !== "" || !url.pathname.startsWith("/images/") || url.search !== "" || url.hash !== "") throw new VMError("PROTOCOL_ERROR", "starter assets must use their pinned public CDN location");
+  if ((url.origin !== "https://cdn.oxvm.dev" && url.origin !== "https://cdn.oxidevm.dev") || url.username !== "" || url.password !== "" || !url.pathname.startsWith("/images/") || url.search !== "" || url.hash !== "") throw new VMError("PROTOCOL_ERROR", "starter assets must use their pinned public CDN location");
   return url.href;
 }
 

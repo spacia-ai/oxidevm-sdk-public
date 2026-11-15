@@ -1,5 +1,5 @@
-import { serveProcess, type LinuxProcessContext, type FileDescriptor } from "@oxidevm/sdk/js-process";
-import type { UserspaceVM, SystemVM, ProcessHandle, TerminalHandle } from "@oxidevm/sdk";
+import { serveProcess, type LinuxProcessContext, type FileDescriptor } from "@oxvm/sdk/js-process";
+import type { UserspaceVM, SystemVM, ProcessHandle, TerminalHandle } from "@oxvm/sdk";
 
 serveProcess(() => {});
 serveProcess(async () => {});

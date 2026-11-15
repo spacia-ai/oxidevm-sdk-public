@@ -28,14 +28,14 @@ an opaque origin and no network of its own (engine ADR 0028; see
 [Where modules run](#where-modules-run)). Modules run in Chromium and Firefox;
 WebKit and Safari refuse them with a typed error. A running module uses one JS
 process, and at most 32 host commands run at once: JS processes, worker threads,
-esbuild runs and native commands share that lane. `oxidevm wasm doctor` lists
+esbuild runs and native commands share that lane. `oxvm wasm doctor` lists
 what each installed module needs from the browser and the image, which it cannot
 check itself.
 
 ## Use a module
 
 ```sh
-oxidevm wasm add github:owner/repo@v1.0.0
+oxvm wasm add github:owner/repo@v1.0.0
 ```
 
 The command resolves the release, shows what the module declares, and asks
@@ -54,14 +54,14 @@ signals replaces reading what the module declares.
 
 | Written | Commit it? | Purpose |
 | --- | --- | --- |
-| `oxidevm.modules.json` | yes | your intent: the modules you use and the owners you trust |
-| `oxidevm.modules.lock.json` | yes | the exact release of each module, with the sha256 of every file |
+| `oxvm.modules.json` | yes | your intent: the modules you use and the owners you trust |
+| `oxvm.modules.lock.json` | yes | the exact release of each module, with the sha256 of every file |
 | `modules/<id>/module.json` | yes | the manifest of the installed release, so a change shows up in review |
-| `.oxidevm/modules/<id>/<release>/` | no | staged files the page serves; each script, stylesheet or page (always the adapter) also has a `.bin` copy, which the handles use |
-| `src/oxidevm.modules.generated.ts` | no | typed handles; never edit it |
+| `.oxvm/modules/<id>/<release>/` | no | staged files the page serves; each script, stylesheet or page (always the adapter) also has a `.bin` copy, which the handles use |
+| `src/oxvm.modules.generated.ts` | no | typed handles; never edit it |
 
-After a fresh clone run `oxidevm wasm stage` to rebuild the last two from the
-lock, and `oxidevm wasm doctor` to check that declaration, lock, committed
+After a fresh clone run `oxvm wasm stage` to rebuild the last two from the
+lock, and `oxvm wasm doctor` to check that declaration, lock, committed
 manifests, staged files and handles agree.
 
 Sources are `github:owner/repo@tag` and `file:directory`. A `file:` directory
@@ -73,9 +73,9 @@ token goes only to `api.github.com`.
 
 ### Trust
 
-The first install asks. List an owner under `trusted` in `oxidevm.modules.json`
+The first install asks. List an owner under `trusted` in `oxvm.modules.json`
 to skip the question for their later first installs. The file is plain JSON that
-you may edit by hand in any layout (`oxidevm wasm add` rewrites it in a fixed one):
+you may edit by hand in any layout (`oxvm wasm add` rewrites it in a fixed one):
 
 ```json
 { "schemaVersion": 1, "trusted": ["acme"], "modules": [] }
@@ -134,9 +134,9 @@ endpoints, come from the module's own definition.
 
 <!-- typecheck: wasm/use.ts -->
 ```ts
-import type { UserspaceVM } from "@oxidevm/sdk";
-import { spawnModule, stopModule } from "@oxidevm/sdk/wasm";
-import { database, wordfreq } from "./oxidevm.modules.generated";
+import type { UserspaceVM } from "@oxvm/sdk";
+import { spawnModule, stopModule } from "@oxvm/sdk/wasm";
+import { database, wordfreq } from "./oxvm.modules.generated";
 
 export async function demo(vm: UserspaceVM): Promise<number> {
   // A service: it listens until it is stopped, and says where.
@@ -185,9 +185,9 @@ VM run it. Turn them on for one Userspace VM with `enableModuleCommands`:
 
 <!-- typecheck: wasm/commands.ts -->
 ```ts
-import type { UserspaceVM } from "@oxidevm/sdk";
-import { enableModuleCommands } from "@oxidevm/sdk/wasm";
-import { wordfreq } from "./oxidevm.modules.generated";
+import type { UserspaceVM } from "@oxvm/sdk";
+import { enableModuleCommands } from "@oxvm/sdk/wasm";
+import { wordfreq } from "./oxvm.modules.generated";
 
 export async function shell(vm: UserspaceVM): Promise<void> {
   // Checks the module's files the VM does not hold yet, then places /usr/local/bin/wordfreq in this VM.
@@ -269,7 +269,7 @@ that name again.
 commands, and every JS process of the VM counts toward its 32 host commands. A run
 beyond either limit does not wait: the stub runs as an ordinary program and exits
 with status 126, and the placement trace (`readJSProcessTrace` from
-`@oxidevm/sdk/diagnostics`) names the reason, `module-command-concurrency` or
+`@oxvm/sdk/diagnostics`) names the reason, `module-command-concurrency` or
 `command-capacity`.
 
 ### Where modules run
@@ -328,7 +328,7 @@ URLs; both forms work, and the sha256 check applies either way. Set
 `assetsInlineLimit: 0` if you want every file served as a file. Development servers rewrite files
 they serve as scripts, stylesheets or pages (Vite adds import analysis to a `.mjs`), which would
 change the bytes the lock pins, so the handles name the neutral `.bin` copies that staging keeps
-beside those files; `oxidevm wasm doctor` checks the copies too. Under a content
+beside those files; `oxvm wasm doctor` checks the copies too. Under a content
 security policy, your page needs `connect-src 'self'` to read the staged files
 (and `data:` when a bundler inlines them) and, self-hosted, the frame's
 `broker.js` and `runner.js`, and `frame-src` for the origin that serves the module
@@ -395,10 +395,10 @@ or runs the image's program with that name.
 ## Write a module
 
 ```sh
-oxidevm wasm init my-tool                  # a command module wrapping a tiny Wasm function
-oxidevm wasm init my-db --kind service     # a service listening on a Unix socket
-oxidevm wasm init wrapped --from lib.wasm  # start from your own WebAssembly file
-oxidevm wasm init fetcher --network internet  # declare a network reach: none (default), vm or internet
+oxvm wasm init my-tool                  # a command module wrapping a tiny Wasm function
+oxvm wasm init my-db --kind service     # a service listening on a Unix socket
+oxvm wasm init wrapped --from lib.wasm  # start from your own WebAssembly file
+oxvm wasm init fetcher --network internet  # declare a network reach: none (default), vm or internet
 ```
 
 The project has strict TypeScript and ESLint settings, unit tests on `testHost`, CI
@@ -409,7 +409,7 @@ and `src/`:
 
 <!-- typecheck: wasm/define.ts -->
 ```ts
-import { defineModule } from "@oxidevm/sdk/wasm";
+import { defineModule } from "@oxvm/sdk/wasm";
 
 export default defineModule({
   manifest: {
@@ -507,10 +507,15 @@ it.
 
 `host.kit.wasi` runs a compiled `wasm32-wasip1` program (Rust, C, Zig) as the
 module's own Linux process: WASI Preview1 over the process's real descriptors and
-the VM's live files, clocks and entropy, plus the `oxidevm_bridge_v1` imports for
-process identity, native children and VM sockets that the `oxidevm-bridge` Rust
-crate (`crates/oxidevm-bridge`) calls. Every call is synchronous for the program;
+the VM's live files, clocks and entropy, plus the `oxvm_bridge_v1` imports for
+process identity, native children and VM sockets that the `oxvm-bridge` Rust
+crate (`crates/oxvm-bridge`) calls. Every call is synchronous for the program;
 no JSPI or Asyncify is involved.
+
+Use `oxvm-bridge = "0.1.0"` to import `oxvm_bridge::` in Rust. The new crate
+imports `oxvm_bridge_v1` and needs the matching OXVM SDK. The SDK also serves
+the retained `oxidevm_bridge_v1` namespace with the same functions and run state.
+Existing binaries need no rebuild.
 
 ```ts
 adapter: async host => {
@@ -529,9 +534,9 @@ capability is absent returns `NOSYS`. `options.preopens` narrows the default gra
 optionally read-only. `readProgram(host, path)` reads a program file from the VM
 once (at most 32 MiB). The source is `packages/sdk/src/wasm/kit/wasi/`; the user
 guide is `apps/docs` "Run Rust programs" in the engine repository, and the
-interface reference is "oxidevm_bridge_v1".
+interface reference is "oxvm_bridge_v1".
 
-The Rust crate lives in `crates/oxidevm-bridge` here, so the interface and both
+The Rust crate lives in `crates/oxvm-bridge` here, so the interface and both
 of its sides change in one pull request: run `pnpm test:bridge` (rustfmt, tests,
 clippy on `wasm32-wasip1`, rustdoc) after changing either side.
 
@@ -639,7 +644,7 @@ programs that run it use its reach.
 | internet | `net.internet` (includes VM-only) | also reach public hosts on TCP 80 and 443 through the VM's relay connection, with DNS through the VM's resolver | the same |
 
 Naming both tokens is refused. `sockets.connect` (`host.sockets`, raw client
-sockets) needs a reach token: `oxidevm wasm build` refuses it alone. A
+sockets) needs a reach token: `oxvm wasm build` refuses it alone. A
 `module.json` built by an earlier CLI that names `sockets.connect` alone has
 VM-only reach; rebuild it with `net.internet` to reach the internet. The tokens
 need Userspace API 146.
@@ -647,7 +652,7 @@ need Userspace API 146.
 **N-2 Disclosure, never an allowlist.** A module with `net.internet` may add
 `network: { hosts?, purpose? }`: up to 32 DNS names it contacts by default (a
 leading `*.` is allowed) and one sentence of up to 200 characters. The install
-review and `oxidevm wasm doctor` show them; nothing enforces them, because an
+review and `oxvm wasm doctor` show them; nothing enforces them, because an
 interpreter reaches whatever host its program asks for. `network` without
 `net.internet` is invalid.
 
@@ -679,8 +684,8 @@ module process's own VM sockets:
 
 `XMLHttpRequest`, `EventSource`, `navigator.sendBeacon`, `RTCPeerConnection`,
 `WebTransport`, and `import()` or `importScripts` of anything but a blob do not
-work in a module worker. `oxidevm wasm build --check` warns about bundled uses of
-them (`adapter-network`), and `oxidevm wasm test` fails `network-direct` when a
+work in a module worker. `oxvm wasm build --check` warns about bundled uses of
+them (`adapter-network`), and `oxvm wasm test` fails `network-direct` when a
 module attempts one. A `data:` URL is not a network use: the frame's script
 policy refuses `importScripts("data:...")` too, but neither check reports it.
 
@@ -718,7 +723,7 @@ policy refuses `importScripts("data:...")` too, but neither check reports it.
 
 **N-5 Offline, revoked and refused.** Failures are typed. `fetch` rejects with
 `TypeError("fetch failed")` whose `cause` is a `NetError` (exported from
-`@oxidevm/sdk/wasm`), and `host.net` and sockets fail with the same codes:
+`@oxvm/sdk/wasm`), and `host.net` and sockets fail with the same codes:
 
 | Situation | `cause.code` | `cause.reason` |
 | --- | --- | --- |
@@ -747,14 +752,14 @@ Nothing on the internet connects in: services serve VM clients through `expose`.
 Module code gets no raw datagram sockets; the runner uses one internally for
 DNS.
 
-**N-9 Testing.** `testHost({ net })` from `@oxidevm/sdk/wasm/testing` gives
+**N-9 Testing.** `testHost({ net })` from `@oxvm/sdk/wasm/testing` gives
 unit tests the same reach checks and errors on an in-memory network (see
-[Build, test, release](#build-test-release)). `oxidevm wasm test` checks three
+[Build, test, release](#build-test-release)). `oxvm wasm test` checks three
 network properties: `network-direct`, `network-declared` and `network-offline`.
 
 **N-10 Documentation.** A module's README has a "Network" section: the reach,
 the disclosed hosts and purpose, and what happens offline.
-`oxidevm wasm init --network none|vm|internet` generates the declaration, that
+`oxvm wasm init --network none|vm|internet` generates the declaration, that
 section, `AGENTS.md` rules and tests; the default is `none`.
 
 A module with internet reach, as a command:
@@ -800,7 +805,7 @@ WebKit and Safari refuse modules.
 | Field | Meaning |
 | --- | --- |
 | `id`, `version` | lower-case id (up to 63 characters) and a semantic version |
-| `abi` | `wasi`, `component`, `emscripten`, `bindgen` or `raw`; `oxidevm wasm inspect file.wasm` reports what a binary appears to use |
+| `abi` | `wasi`, `component`, `emscripten`, `bindgen` or `raw`; `oxvm wasm inspect file.wasm` reports what a binary appears to use |
 | `artifacts` | `{ name, from }`: files of your repository the release carries |
 | `process` | `{ kind: "command" }` or `{ kind: "service", exclusive?: "workspace" }` |
 | `commands` | command modules only: 1 to 16 unique names, stored sorted, each matching `^[a-z0-9][a-z0-9_.+-]{0,63}$` and none starting with `oxidevm`; once an application turns them on for a VM, programs there run each as `/usr/local/bin/<name>`. `requires.guest.executables` cannot list the module's own commands |
@@ -819,12 +824,12 @@ WebKit and Safari refuse modules.
 ### Build, test, release
 
 ```sh
-pnpm run check    # tsc, eslint, and oxidevm wasm build --check
+pnpm run check    # tsc, eslint, and oxvm wasm build --check
 pnpm test         # your unit tests
-oxidevm wasm build
+oxvm wasm build
 ```
 
-`oxidevm wasm build` bundles the adapter into one self-contained `adapter.mjs`
+`oxvm wasm build` bundles the adapter into one self-contained `adapter.mjs`
 (imports of the SDK other than `defineModule` are refused, and third-party code
 you bundle is listed), pins every artifact, and writes `module.json`, `adapter.mjs`,
 the artifacts and `SHA256SUMS` to `dist/`. It exits `3` with located findings when
@@ -833,10 +838,10 @@ something is wrong, and writes nothing. Warnings (a dependency that mentions
 name) do not stop the build, but read them. `--check` verifies without writing.
 
 Unit tests run the module through the SDK's real runner, without a browser, with
-`testHost` from `@oxidevm/sdk/wasm/testing`:
+`testHost` from `@oxvm/sdk/wasm/testing`:
 
 ```ts
-import { testHost } from "@oxidevm/sdk/wasm/testing";
+import { testHost } from "@oxvm/sdk/wasm/testing";
 import definition from "../module.ts";
 
 const result = await testHost(definition, { args: ["2", "3"], artifacts: { "add.wasm": bytes } }).run();
@@ -870,12 +875,12 @@ const result = await testHost(definition, { net: { connected: true, tcp: {
 Then test the build in a real browser:
 
 ```sh
-oxidevm wasm test
-oxidevm wasm test --arg 2 --arg 3
-oxidevm wasm test --image image/dist --image-trust image/author.public.json
+oxvm wasm test
+oxvm wasm test --arg 2 --arg 3
+oxvm wasm test --image image/dist --image-trust image/author.public.json
 ```
 
-`oxidevm wasm test` starts the module in a Userspace VM with the pinned engine and
+`oxvm wasm test` starts the module in a Userspace VM with the pinned engine and
 checks the runner's contract, not the module's own behaviour (keep that in your
 tests). Every property is `passed`, `failed` or `not-applicable`, with a reason:
 
@@ -922,7 +927,7 @@ that passed or failed is unchanged (`schemaVersion` 1, no `refusal` field).
 Errors before the browser runs (an invalid `dist/`, no browser) still exit `1`
 or `2` with an error report.
 
-Release by tag. `oxidevm wasm release` builds and prints the steps; it runs none:
+Release by tag. `oxvm wasm release` builds and prints the steps; it runs none:
 
 1. tag the commit `v<version>` and push the tag;
 2. `gh release create` a **draft** with every file in `dist/`;
@@ -937,7 +942,7 @@ come from a private registry that GitHub's runners cannot reach generates both
 workflows to start on request only and says so at the top of each file; give them
 the push or tag trigger once the packages install from a registry the runner can
 reach, or follow the same four steps by hand. Consumers install
-with `oxidevm wasm add github:owner/repo@v<version>`.
+with `oxvm wasm add github:owner/repo@v<version>`.
 
 ### Licenses
 
@@ -951,14 +956,14 @@ they came from; do not edit them.
 
 | Command | Purpose |
 | --- | --- |
-| `oxidevm wasm add <source>` | resolve, review, install |
-| `oxidevm wasm stage` | rebuild staged files and handles from the lock |
-| `oxidevm wasm doctor` | check the project and the engine, list what each module needs from the browser and the image, and note the commands modules declare |
-| `oxidevm wasm inspect <file.wasm>` | imports, exports, memory and the ABI a binary appears to use |
-| `oxidevm wasm init <directory>` | create a module project; `--network none\|vm\|internet` declares its reach (default `none`) |
-| `oxidevm wasm build` | build `dist/` from `module.ts`; `--check` writes nothing |
-| `oxidevm wasm test` | run the runner-contract properties against `dist/` in a real browser |
-| `oxidevm wasm release` | build, then print the steps that publish it |
+| `oxvm wasm add <source>` | resolve, review, install |
+| `oxvm wasm stage` | rebuild staged files and handles from the lock |
+| `oxvm wasm doctor` | check the project and the engine, list what each module needs from the browser and the image, and note the commands modules declare |
+| `oxvm wasm inspect <file.wasm>` | imports, exports, memory and the ABI a binary appears to use |
+| `oxvm wasm init <directory>` | create a module project; `--network none\|vm\|internet` declares its reach (default `none`) |
+| `oxvm wasm build` | build `dist/` from `module.ts`; `--check` writes nothing |
+| `oxvm wasm test` | run the runner-contract properties against `dist/` in a real browser |
+| `oxvm wasm release` | build, then print the steps that publish it |
 
 Every command accepts `--json`. Exit status `0` is success, `2` an invalid
 argument or unavailable feature, `3` a failed report (doctor, build, release, test), `130`

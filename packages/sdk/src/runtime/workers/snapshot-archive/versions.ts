@@ -8,7 +8,7 @@ export const BACKUP_FORMAT_VERSION = 1;
 /**
  * Reads the fields every backup version keeps (`format`, `formatVersion` and the restore point's
  * `schema`) before any strict check, so a file that is not a backup, or one a newer or older
- * OxideVM wrote, is reported as that rather than as damaged.
+ * OXVM wrote, is reported as that rather than as damaged.
  */
 export function checkBackupVersion(value: unknown): Readonly<Record<string, unknown>> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw notBackup();
@@ -30,13 +30,13 @@ export function checkBackupVersion(value: unknown): Readonly<Record<string, unkn
 }
 
 function notBackup(): Error {
-  return backupError("wrong-file", "this file is not an OxideVM backup");
+  return backupError("wrong-file", "this file is not a OXVM backup");
 }
 
 function newer(): Error {
-  return backupError("newer", "this backup needs a newer OxideVM");
+  return backupError("newer", "this backup needs a newer OXVM");
 }
 
 function older(): Error {
-  return backupError("older", "this backup is from an older OxideVM");
+  return backupError("older", "this backup is from an older OXVM");
 }

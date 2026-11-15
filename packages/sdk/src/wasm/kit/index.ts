@@ -53,7 +53,7 @@ export interface Kit {
   };
   /**
    * wasm32-wasip1 programs (a Rust `cargo build --target wasm32-wasip1`, C, Zig) as this module's Linux process: WASI
-   * Preview1 over the VM's live files, clocks and entropy, plus the `oxidevm_bridge_v1` imports for process identity,
+   * Preview1 over the VM's live files, clocks and entropy, plus the `oxvm_bridge_v1` imports for process identity,
    * native children and VM sockets (the `oxidevm-bridge` Rust crate).
    */
   readonly wasi: {

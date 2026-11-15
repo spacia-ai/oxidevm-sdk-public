@@ -8,6 +8,7 @@ import { VMError } from "../../errors.js";
 import { NativeValues } from "./values.js";
 import { decodeNativeMetadata, encodeNativeString } from "./strings.js";
 import { nativeMapSize, nativeSetSize } from "./collection-size.js";
+import { nativeOperationRunsNoJavaScript } from "./handover.js";
 
 const min = Math.min;
 const arrayFrom = Array.from;
@@ -63,10 +64,20 @@ export class NativeBridge {
   #offset = 0;
   #failure: Error | undefined;
   #deliveringException: { readonly value: unknown } | undefined;
+  /** Whether the shared buffers were compared since application JavaScript last ran outside a native request. */
+  #compared = false;
+  /** Bridge 17: the turn the helper asked for while a synchronous call was under way; it is granted once JavaScript is idle. */
+  #turnRequested: NativeFrame | undefined;
+  /** Whether the helper is running a completion in a turn JavaScript granted. */
+  #turn = false;
   constructor(readonly client: NativeClient, readonly files: Pick<LinuxSyncFiles, "read" | "writeAll">, input: number, output: number, readonly events: {
     changed(): void; failed(error: unknown): void; uncaught(error: unknown, deliver: (handler: () => void) => void): void; signal?(signal: number): void; trace?(frame: NativeFrame): void; transport?(event: NativeTransportEvent): void; readonly environment?: number; readonly runtime?: "node" | "bun";
     /** The host helper's bridge version from the image's acceleration profile (OXCR 19); the newest when absent. */
     readonly bridgeVersion?: NativeBridgeVersion;
+    /** The host helper's operation set; from set 2 on, buffers sync in both directions at every handover. */
+    readonly operationSet?: number;
+    /** The bytes this launch may share with native code at once (OXCR 21); the bridge's own limit when absent. */
+    readonly sharedBufferBudget?: number;
   }) {
     this.#input = descriptor(input); this.#output = descriptor(output); this.#version = events.bridgeVersion ?? NATIVE_FRAME_VERSION;
     this.values = new NativeValues((callback, receiver, target, args) => this.#call("call", () => {
@@ -76,6 +87,8 @@ export class NativeBridge {
       runtime: events.runtime ?? "node",
       claim: (identity, environment) => { this.#call("claim-callback", () => [identity, environment]); },
       retire: identity => { this.#call("retire-callback", () => [identity]); },
+      operationSet: events.operationSet ?? 0,
+      ...(events.sharedBufferBudget === undefined ? {} : { sharedBufferBudget: events.sharedBufferBudget }),
     });
   }
   get pending(): number {
@@ -144,6 +157,14 @@ export class NativeBridge {
     return decodeNativeFrame(this.#readAll(integer(length, "native frame length", 48, NATIVE_MAX_FRAME)), this.#version);
   }
   #write(frame: NativeFrame): void {
+    // An invocation or a Node-API reply hands control to native code, which must first see JavaScript's buffer changes.
+    // A reply to a request that ran no application JavaScript, with none run since the last comparison, has none to show.
+    if (frame.kind === 1 || frame.kind === 10 || (frame.kind === 4 && !(this.#compared && nativeOperationRunsNoJavaScript(frame.operation)))) {
+      this.values.bufferChanges((identity, bytes) => {
+        this.#write({ kind: 9, sequence: identity, scope: 0x1_0000_0000n + BigInt(identity), environment: 0n, operation: "buffer-push", status: 0, args: [BigInt(identity)], bytes });
+      });
+      this.#compared = true;
+    }
     const bytes = encodeNativeFrame(frame, this.#version), started = this.events.transport === undefined ? 0 : performance.now();
     this.files.writeAll(this.#output, bytes);
     this.events.transport?.({ sequence: frame.sequence, operation: "write", bytes: bytes.byteLength, milliseconds: performance.now() - started });
@@ -185,7 +206,34 @@ export class NativeBridge {
       const number = signal === undefined || signal > 64n ? 0 : Number(signal);
       if (frame.operation !== "signal" || frame.sequence <= this.#signalSequence || frame.args.length !== 1 || frame.status !== 0 || frame.bytes.byteLength !== 0 || !deliverable(this.#version, number) || this.events.signal === undefined) protocol("Invalid or stale native process signal");
       this.#signalSequence = frame.sequence; this.events.signal(number);
+    } else if (frame.kind === 10) {
+      if (frame.operation !== "turn" || frame.args.length !== 1 || frame.args[0] !== 1n || frame.status !== 0 || frame.bytes.byteLength !== 0 || this.#turn || this.#turnRequested !== undefined) protocol("Invalid native turn request");
+      // Inside a synchronous call JavaScript is not idle: Node would finish the call before its event loop runs a completion.
+      if (nativeMapSize(this.#invocations) !== 0) this.#turnRequested = frame; else this.#grant(frame);
     } else protocol("Unexpected native frame outside invocation");
+  }
+  /** Lets the helper run the completion it asked about and serves it until the helper ends the turn. */
+  #grant(request: NativeFrame): void {
+    this.#turnRequested = undefined; this.#turn = true; this.#revision++;
+    try {
+      this.#write({ ...request, args: [1n] });
+      for (;;) {
+        const frame = this.#read();
+        if (frame.kind === 10) {
+          this.events.trace?.(frame);
+          if (frame.operation !== "turn" || frame.sequence !== request.sequence || frame.args.length !== 1 || frame.args[0] !== 0n || frame.status !== 0 || frame.bytes.byteLength !== 0) protocol("Invalid native turn end");
+          break;
+        }
+        if (frame.kind === 2) protocol("Native invocation completion outside its invocation");
+        this.#service(frame);
+      }
+    } catch (error) {
+      this.#failure = error instanceof Error ? error : new Error("Native turn failed", { cause: error });
+      this.events.failed(this.#failure); throw this.#failure;
+    } finally {
+      // Control returns to JavaScript, which may change any buffer before native code runs again.
+      this.#turn = false; this.#compared = false;
+    }
   }
   #call(name: NativeInvocation, argumentsForScope: () => readonly bigint[], bytes = new Uint8Array()): unknown {
     if (this.#closed) protocol("Native process is retired");
@@ -225,7 +273,11 @@ export class NativeBridge {
       // Ownership acknowledgements do not enter JavaScript or consume its pending exception.
       if (name !== "claim-callback" && name !== "retire-callback") this.values.throwPending(scope);
       return result;
-    } finally { apply(invocationDelete, this.#invocations, [sequence]); apply(loadingDelete, this.#loading, [scope]); this.values.retireScope(scope); }
+    } finally {
+      apply(invocationDelete, this.#invocations, [sequence]); apply(loadingDelete, this.#loading, [scope]); this.values.retireScope(scope);
+      // Control returns to JavaScript, which may change any buffer before native code runs again.
+      this.#compared = false;
+    }
   }
   watch(): void {
     if (this.#closed || this.#watching !== undefined || this.#failure !== undefined) return;
@@ -234,7 +286,10 @@ export class NativeBridge {
     const poll = files.poll([{ fd: this.#input, events: 1 }]);
     let waiting = true;
     const buffered = this.#bufferedFrame(), started = this.events.transport === undefined ? 0 : performance.now(), sequence = this.#sequence;
-    const ready = buffered ? Promise.resolve() : this.client.call(poll, watcher.signal).finally(() => {
+    // A turn asked for during a synchronous call waits for a task of its own: the control channel can take the grant at
+    // once, but the answer comes back from another thread, after the JavaScript that made the call has finished.
+    const ready = this.#turnRequested !== undefined ? this.client.call(files.poll([{ fd: this.#output, events: 4 }]), watcher.signal).then(() => undefined)
+      : buffered ? Promise.resolve() : this.client.call(poll, watcher.signal).finally(() => {
       this.events.transport?.({ sequence, operation: "readiness", bytes: 0, milliseconds: performance.now() - started });
     });
     void ready.then(() => {
@@ -242,7 +297,8 @@ export class NativeBridge {
       if (this.#watching !== watcher) return;
       if (this.#closed) { this.#watching = undefined; return; }
       if (this.#revision === revision) {
-        for (;;) { const frame = this.#read(); this.#service(frame); if (frame.kind === 5 || frame.kind === 7 || frame.kind === 8) break; }
+        if (this.#turnRequested !== undefined) this.#grant(this.#turnRequested);
+        else for (;;) { const frame = this.#read(); this.#service(frame); if (frame.kind === 5 || frame.kind === 7 || frame.kind === 8 || frame.kind === 10) break; }
       }
       this.#watching = undefined;
       this.watch();
@@ -250,6 +306,8 @@ export class NativeBridge {
       if (this.#watching !== watcher) return;
       this.#watching = undefined; if (this.#closed) return;
       if (waiting && watcher.signal.aborted) { this.watch(); return; }
+      // A turn that failed has already reported its failure.
+      if (error === this.#failure) return;
       this.#failure = error instanceof Error ? error : new Error("Native readiness failed", { cause: error }); this.events.failed(this.#failure);
     });
   }

@@ -1,4 +1,4 @@
-# OxideVM SDK and CLI: usage guide
+# OXVM SDK and CLI: usage guide
 
 Start with the [starter application](../examples/starter/README.md), then use this guide to add files, processes, terminals and previews to your application.
 
@@ -10,7 +10,7 @@ The CLI creates your local web application. Linux programs execute inside the br
 | I want to… | Start here |
 | --- | --- |
 | Try the starter and run a Linux command | [Hello in the browser](#1-hello-in-the-browser) |
-| Add OxideVM to my existing frontend | [Existing applications](#2-add-oxidevm-to-an-existing-application) |
+| Add OXVM to my existing frontend | [Existing applications](#2-add-oxidevm-to-an-existing-application) |
 | Keep files after reopening the page | [Persistent workspaces](#3-keep-files-between-visits) |
 | Run a web application inside the VM | [A guest web app](#4-run-a-web-app-inside-the-browser) |
 | Install/build an existing project | [Guest project commands](#5-run-your-projects-commands) |
@@ -32,7 +32,7 @@ The creator selects Userspace mode and the prebuilt Python + pandas image for th
 ### Create the application
 
 ```sh
-npx --no-install oxidevm init hello-oxidevm --start
+npx --no-install oxvm init hello-oxidevm --start
 ```
 
 Open the application URL printed by the development server. The template uses the hosted runtime frame in development and production.
@@ -53,7 +53,7 @@ The starter already runs Python and pandas. To replace it with a small command d
 <!-- typecheck: usage/main.ts -->
 ```ts
 import image from "./image.js";
-import { createVM, VMError } from "@oxidevm/sdk";
+import { createVM, VMError } from "@oxvm/sdk";
 
 const button = document.createElement("button");
 button.textContent = "Run Linux command";
@@ -102,7 +102,7 @@ This writes `/workspace/hello.txt`, runs the image's real Linux `cat`, reads its
 
 For System, supply a signed System image with `--mode system`, pass its image reference in the factory, and change the progress label to “Starting System…”. The file and command APIs are the same.
 
-## 2. Add OxideVM to an existing application
+## 2. Add OXVM to an existing application
 
 Install the browser library and development CLI:
 
@@ -115,16 +115,16 @@ Replace `<version>` with the version of the packages you received; it is part of
 
 Use the pnpm override in [development](development.md) so the CLI resolves the supplied SDK archive.
 
-Create `oxidevm.config.ts` in your project root:
+Create `oxvm.config.ts` in your project root:
 
-<!-- typecheck: usage/oxidevm.config.ts -->
+<!-- typecheck: usage/oxvm.config.ts -->
 ```ts
-import type { ProjectConfig } from "@oxidevm/sdk/image-builder";
+import type { ProjectConfig } from "@oxvm/sdk/image-builder";
 
 export default {
   mode: "userspace",
   publicDir: "public",
-  assetBaseUrl: "/oxidevm/",
+  assetBaseUrl: "/oxvm/",
 } satisfies ProjectConfig;
 ```
 
@@ -136,14 +136,14 @@ The following asset installation is for explicit licensed self-hosting. It
 stages the pinned runtime and your explicit image assets:
 
 ```sh
-pnpm exec oxidevm assets install --image /absolute/path/starter --trust /absolute/path/starter.public.json --reference src/generated/minimal.image.ts
+pnpm exec oxvm assets install --image /absolute/path/starter --trust /absolute/path/starter.public.json --reference src/generated/minimal.image.ts
 ```
 
-The first run writes `oxidevm.lock.json`, which binds the exact SDK, CLI, engine and image; commit it. Later runs validate it. After an SDK upgrade, `--update-lock` stages the new release's assets and only then rewrites the lock; see [Upgrade the SDK](migration.md#upgrade-the-sdk).
+The first run writes `oxvm.lock.json`, which binds the exact SDK, CLI, engine and image; commit it. Later runs validate it. After an SDK upgrade, `--update-lock` stages the new release's assets and only then rewrites the lock; see [Upgrade the SDK](migration.md#upgrade-the-sdk).
 
 The SDK package contains no engine. The command stages the engine release the SDK
 pins from the CDN and verifies it first. You can also supply a verified local
-release through `--engine-dir <release>`, `OXIDEVM_ENGINE_DIR`, or the engine cache.
+release through `--engine-dir <release>`, `OXVM_ENGINE_DIR`, or the engine cache.
 An authenticated release channel remains available for custom distributions.
 
 Configure your development server/static host with:
@@ -158,7 +158,7 @@ Serve `.wasm` assets as `application/wasm`. If your app has a restrictive CSP, a
 Start your normal development server and check its actual URL:
 
 ```sh
-pnpm exec oxidevm doctor http://localhost:5173/
+pnpm exec oxvm doctor http://localhost:5173/
 ```
 
 Use your own port if it differs. The Run-button example above also works in an existing plain TypeScript frontend. In React, Vue, Svelte, or Next.js, call `createVM` from client code and release the VM when the owning view closes. Avoid creating a VM during server rendering.
@@ -174,7 +174,7 @@ Give the VM a stable `workspaceId`. Here is a complete save → close → reopen
 <!-- typecheck: usage/persistence.ts -->
 ```ts
 import image from "./image.js";
-import { createVM } from "@oxidevm/sdk";
+import { createVM } from "@oxvm/sdk";
 
 export async function saveAndReopen(): Promise<string> {
   const first = await createVM({ mode: "userspace", image, workspaceId: "my-notes" });
@@ -213,7 +213,7 @@ Put this in `src/streams.ts`. It turns process bytes into streamed UTF-8 text an
 
 <!-- typecheck: usage/streams.ts -->
 ```ts
-import type { ProcessExit, VM } from "@oxidevm/sdk";
+import type { ProcessExit, VM } from "@oxvm/sdk";
 
 export function textSink(render: (text: string) => void): WritableStream<Uint8Array> {
   const decoder = new TextDecoder();
@@ -259,7 +259,7 @@ Put this in `src/web-app.ts`:
 <!-- typecheck: usage/web-app.ts -->
 ```ts
 import image from "./image.js";
-import { createVM } from "@oxidevm/sdk";
+import { createVM } from "@oxvm/sdk";
 import { textSink, type ProcessCompletion } from "./streams.js";
 
 export interface RunningWebApp {
@@ -337,7 +337,7 @@ A preview page reaches only its own origin until your application allows another
 
 <!-- typecheck: usage/preview-sites.ts -->
 ```ts
-import { previewSite, type PreviewHandle, type VM } from "@oxidevm/sdk";
+import { previewSite, type PreviewHandle, type VM } from "@oxvm/sdk";
 
 /** Exposes the app's port with the one API its pages call already allowed. */
 export function exposeWeatherApp(vm: VM): Promise<PreviewHandle> {
@@ -379,7 +379,7 @@ For a short command, `exec` captures its output. Arguments are separate strings:
 
 <!-- typecheck: usage/short-command.ts -->
 ```ts
-import type { VM } from "@oxidevm/sdk";
+import type { VM } from "@oxvm/sdk";
 
 export async function nodeVersion(vm: VM): Promise<string> {
   const result = await vm.exec({ command: "node", args: ["--version"] });
@@ -396,7 +396,7 @@ For an existing project whose files are already in `/workspace`, reuse `runStrea
 
 <!-- typecheck: usage/project-commands.ts -->
 ```ts
-import type { ProcessExit, VM } from "@oxidevm/sdk";
+import type { ProcessExit, VM } from "@oxvm/sdk";
 import { runStreaming } from "./streams.js";
 
 function requireSuccess(exit: ProcessExit): void {
@@ -421,7 +421,7 @@ Guest internet access is disabled by default. If an install needs uncached downl
 <!-- typecheck: usage/network.ts -->
 ```ts
 import image from "./image.js";
-import { createVM, type UserspaceVM, type RelayConnectionOptions } from "@oxidevm/sdk";
+import { createVM, type UserspaceVM, type RelayConnectionOptions } from "@oxvm/sdk";
 
 export async function openNetworkedProject(connection: RelayConnectionOptions): Promise<UserspaceVM> {
   return createVM({
@@ -446,7 +446,7 @@ Put this adapter in `src/terminal.ts`. `render` is your terminal renderer's byte
 
 <!-- typecheck: usage/terminal.ts -->
 ```ts
-import type { VM } from "@oxidevm/sdk";
+import type { VM } from "@oxvm/sdk";
 import type { ProcessCompletion } from "./streams.js";
 
 export async function openTerminal(vm: VM, render: (bytes: Uint8Array) => void) {
@@ -503,7 +503,7 @@ This example captures a file, changes it, and restores the earlier state:
 
 <!-- typecheck: usage/system.ts -->
 ```ts
-import { createVM, type ImageRef } from "@oxidevm/sdk";
+import { createVM, type ImageRef } from "@oxvm/sdk";
 
 export async function restoreEarlierState(image: ImageRef<"system">): Promise<string> {
   const vm = await createVM({ mode: "system", image, workspaceId: "restore-demo" });
@@ -531,7 +531,7 @@ To explicitly reopen the latest compatible captured session:
 
 <!-- typecheck: usage/resume.ts -->
 ```ts
-import { createVM, type ImageRef, type VM } from "@oxidevm/sdk";
+import { createVM, type ImageRef, type VM } from "@oxvm/sdk";
 
 export async function reopenLinux(image: ImageRef<"system">): Promise<VM> {
   const vm = await createVM({
@@ -570,10 +570,10 @@ The official image is useful for a first experiment. To add your own Linux softw
 From your browser application's root:
 
 ```sh
-pnpm exec oxidevm image init images/python --mode userspace
+pnpm exec oxvm image init images/python --mode userspace
 ```
 
-The command creates an editable Dockerfile and `images/python/oxidevm.image.ts`. Keep the generated pinned base-image inputs. For this Python example, the Dockerfile's relevant instructions are:
+The command creates an editable Dockerfile and `images/python/oxvm.image.ts`. Keep the generated pinned base-image inputs. For this Python example, the Dockerfile's relevant instructions are:
 
 ```dockerfile
 ARG BASE_IMAGE
@@ -585,7 +585,7 @@ Set the recipe to:
 
 <!-- typecheck: usage/python-recipe.ts -->
 ```ts
-import type { UserspaceImageRecipe } from "@oxidevm/sdk/image-builder";
+import type { UserspaceImageRecipe } from "@oxvm/sdk/image-builder";
 
 export default {
   id: "my-python",
@@ -609,7 +609,7 @@ Docker/BuildKit builds the image on your development machine or CI. A deployed u
 Generate a signing key once, outside the project:
 
 ```sh
-pnpm exec oxidevm image keygen --out "$HOME/.config/oxidevm/image-signing.pem"
+pnpm exec oxvm image keygen --out "$HOME/.config/oxvm/image-signing.pem"
 ```
 
 It also creates `image-signing.public.json`. Reuse this key for subsequent builds; do not commit its private PEM or send it to the browser.
@@ -617,8 +617,8 @@ It also creates `image-signing.public.json`. Reuse this key for subsequent build
 Build and test the image in an actual browser:
 
 ```sh
-pnpm exec oxidevm image build images/python/oxidevm.image.ts --signing-key "$HOME/.config/oxidevm/image-signing.pem"
-pnpm exec oxidevm image test images/python/dist --trust "$HOME/.config/oxidevm/image-signing.public.json" --browser chromium
+pnpm exec oxvm image build images/python/oxvm.image.ts --signing-key "$HOME/.config/oxvm/image-signing.pem"
+pnpm exec oxvm image test images/python/dist --trust "$HOME/.config/oxvm/image-signing.public.json" --browser chromium
 ```
 
 The browser smoke test must pass and print `Python image ready`. A successful Docker build alone does not prove the Linux binary runs under the browser engine.
@@ -626,7 +626,7 @@ The browser smoke test must pass and print `Python image ready`. A successful Do
 ### Stage the image in your application
 
 ```sh
-pnpm exec oxidevm assets install --image images/python/dist --reference src/generated/python.image.ts
+pnpm exec oxvm assets install --image images/python/dist --reference src/generated/python.image.ts
 ```
 
 This stages the bundle under your application's public assets and creates `src/generated/python.image.ts`. The generated reference pins the manifest digest and your public signing key. You do not write or paste its signature/digest by hand.
@@ -637,7 +637,7 @@ Put this in `src/python.ts`:
 
 <!-- typecheck: usage/python.ts -->
 ```ts
-import { createVM } from "@oxidevm/sdk";
+import { createVM } from "@oxvm/sdk";
 import pythonImage from "./generated/python.image.js";
 
 export async function calculateInPython(): Promise<string> {
@@ -664,7 +664,7 @@ Use `image init images/my-linux --mode system`. Supply your own kernel and compl
 
 <!-- typecheck: usage/system-recipe.ts -->
 ```ts
-import type { SystemImageRecipe } from "@oxidevm/sdk/image-builder";
+import type { SystemImageRecipe } from "@oxvm/sdk/image-builder";
 
 export default {
   id: "my-linux",
@@ -693,7 +693,7 @@ Use the same keygen/build/test/stage workflow with that recipe and bundle direct
 Build your frontend using its normal build command and deploy the complete static output, including the staged `oxidevm` assets. Use HTTPS and the configured browser headers, then check the deployed URL:
 
 ```sh
-pnpm exec oxidevm doctor https://your-app.example.com/
+pnpm exec oxvm doctor https://your-app.example.com/
 ```
 
 If you distribute a custom image, first supply its actual SBOM, notices, corresponding-source/license evidence, and reproducible inputs. Run both `image build --distribution` and `image test --distribution` with the same recipe, key, trust, and browser options. These checks are required before distribution; signing a development image alone does not satisfy them. Retain exact image artifacts needed by persistent workspaces and restore points.
@@ -728,13 +728,13 @@ Use snapshot init, build, pack, test and inspect to prepare real Linux process s
 
 <!-- typecheck: usage/snapshot-recipe.ts -->
 ```ts
-import type { SnapshotRecipe } from "@oxidevm/sdk/image-builder";
+import type { SnapshotRecipe } from "@oxvm/sdk/image-builder";
 export default {name:"ready",mode:"userspace",image:"/absolute/path/starter-bundle",imageTrust:"/absolute/path/starter.public.json",workload:{module:"./prepare.ts"},verify:{module:"./verify.ts"}} satisfies SnapshotRecipe;
 ```
 
 <!-- typecheck: usage/snapshot-prepare.ts -->
 ```ts
-import type { PrepareSnapshot, SnapshotProcess } from "@oxidevm/sdk";
+import type { PrepareSnapshot, SnapshotProcess } from "@oxvm/sdk";
 async function send(process: SnapshotProcess, input: string): Promise<void> {
   const writer = process.stdin.getWriter();
   try { await writer.write(new TextEncoder().encode(input)); }
@@ -755,7 +755,7 @@ export default prepare;
 
 <!-- typecheck: usage/snapshot-verify.ts -->
 ```ts
-import type { VerifySnapshot, SnapshotProcess } from "@oxidevm/sdk";
+import type { VerifySnapshot, SnapshotProcess } from "@oxvm/sdk";
 async function send(process: SnapshotProcess, input: string): Promise<void> {
   const writer = process.stdin.getWriter();
   try { await writer.write(new TextEncoder().encode(input)); }
@@ -784,8 +784,8 @@ The following checked embedding function accepts the generated default options m
 
 <!-- typecheck: usage/snapshot-use.ts -->
 ```ts
-import { createVM } from "@oxidevm/sdk";
-import type { UserspaceOptions } from "@oxidevm/sdk";
+import { createVM } from "@oxvm/sdk";
+import type { UserspaceOptions } from "@oxvm/sdk";
 export async function openPrepared(prepared: UserspaceOptions, workspaceId: string, previewOrigin: string) {
   const vm = await createVM({...prepared,workspaceId,restorePoint:"latest",preview:{origin:previewOrigin,isolation:"per-session"}});
   await vm.snapshots.autoSave.configure({enabled:true});

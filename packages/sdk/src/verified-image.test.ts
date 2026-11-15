@@ -47,7 +47,7 @@ it("rejects a legacy Userspace image at first open instead of after it has been 
   // Schema 4 signs a canonical form without the manifest URL; retained starts refuse it as a public identity.
   const legacy = verifyImage(await signed(4), "https://app.example/");
   await expect(legacy).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
-  await expect(legacy).rejects.toThrow(/whole manifest.*oxidevm image build/u);
+  await expect(legacy).rejects.toThrow(/whole manifest.*oxvm image build/u);
 });
 
 it("admits a whole-manifest signed Userspace image", async () => {

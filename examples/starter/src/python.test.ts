@@ -7,7 +7,7 @@ it("requires an actual little-endian Linux x86-64 ELF", () => {
 });
 
 import { PythonSession } from "./python.js";
-import type { PipeSpawnSpec, ProcessExit, Workspace } from "@oxidevm/sdk";
+import type { PipeSpawnSpec, ProcessExit, Workspace } from "@oxvm/sdk";
 
 function fixture() {
   const frame = { schemaVersion: 1, columns: [{ name: "value", dtype: "int64" }], rows: [[7]], index: ["0"], rowCount: 1, csvAvailable: true, versions: { python: "3.12.15", pandas: "2.3.3", numpy: "2.2.6" } };

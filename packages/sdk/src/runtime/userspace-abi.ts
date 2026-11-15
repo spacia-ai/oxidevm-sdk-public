@@ -16,9 +16,9 @@ export { decodeIoUringCallSource, type IoUringCallSource } from "./userspace-io-
 
 export { decodeUserspaceSpawnResult, type UserspaceSpawnResult } from "./userspace-spawn.ts";
 
-export const USERSPACE_API_VERSION = 147;
+export const USERSPACE_API_VERSION = 150;
 /** Current encoder version; historical trace versions remain readable below. */
-export const USERSPACE_SYSCALL_TRACE_VERSION = 52;
+export const USERSPACE_SYSCALL_TRACE_VERSION = 53;
 
 /** A newer work model must be understood before its CPU metrics can be interpreted. */
 export function decodeUserspaceKernelAccountingModel(value: unknown): 1 {
@@ -69,7 +69,7 @@ export function decodeUserspaceWaitStatus(value: unknown): ProcessTermination | 
 }
 
 export interface UserspacePendingWork {
-  /** Includes file waits whose readiness changed before a service reply exists. */
+  /** Includes changed file waits and queued admission trials that have no PID yet. */
   readonly hostRequest: boolean;
   readonly output: boolean;
   readonly processExit: boolean;
@@ -123,7 +123,8 @@ export type UserspaceSyscallTraceWait =
   | { readonly kind: "kernel-cpu"; readonly remainingTicks: 1 | 2; readonly model: 1 }
   | { readonly kind: "rseq-slice"; readonly deadlineTicks: bigint; readonly reason: "syscall" | "expiry" }
   | {
-    readonly kind: "storage" | "network" | "durability";
+    /** `trial`: an exec parked on a trial load of an add-on (ADR 0026, version 53). */
+    readonly kind: "storage" | "network" | "durability" | "trial";
     readonly generation: bigint;
     readonly id: bigint;
   }
@@ -168,7 +169,7 @@ export type UserspaceSyscallTraceEvent = UserspaceSyscallTraceFields & Userspace
 const SUPPORTED_SYSCALL_TRACE_VERSIONS = [
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
   19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
-  46, 47, 48, 49, 50, 51, USERSPACE_SYSCALL_TRACE_VERSION,
+  46, 47, 48, 49, 50, 51, 52, USERSPACE_SYSCALL_TRACE_VERSION,
 ] as const;
 
 export interface UserspaceSyscallTraceSnapshot {
@@ -277,7 +278,7 @@ export function decodeUserspaceSyscallTrace(
                   : version === 15 ? USERSPACE_SYSCALL_TRACE_V15_RECORD_LENGTH
                     : version === 16 ? USERSPACE_SYSCALL_TRACE_V16_RECORD_LENGTH
                       : version === 17 ? USERSPACE_SYSCALL_TRACE_V17_RECORD_LENGTH
-                        : version >= 18 && version <= 25 ? USERSPACE_SYSCALL_TRACE_V18_RECORD_LENGTH : version === 26 ? USERSPACE_SYSCALL_TRACE_V26_RECORD_LENGTH : version >= 27 && version <= 34 ? USERSPACE_SYSCALL_TRACE_V27_RECORD_LENGTH : version >= 35 && version <= 37 ? USERSPACE_SYSCALL_TRACE_V35_RECORD_LENGTH : version >= 38 && version <= 42 ? USERSPACE_SYSCALL_TRACE_V38_RECORD_LENGTH : version >= 43 && version <= 52 ? USERSPACE_SYSCALL_TRACE_V43_RECORD_LENGTH : 0;
+                        : version >= 18 && version <= 25 ? USERSPACE_SYSCALL_TRACE_V18_RECORD_LENGTH : version === 26 ? USERSPACE_SYSCALL_TRACE_V26_RECORD_LENGTH : version >= 27 && version <= 34 ? USERSPACE_SYSCALL_TRACE_V27_RECORD_LENGTH : version >= 35 && version <= 37 ? USERSPACE_SYSCALL_TRACE_V35_RECORD_LENGTH : version >= 38 && version <= 42 ? USERSPACE_SYSCALL_TRACE_V38_RECORD_LENGTH : version >= 43 && version <= 53 ? USERSPACE_SYSCALL_TRACE_V43_RECORD_LENGTH : 0;
   const count = view.getUint32(12, true);
   const expectedLength = 24 + count * recordLength;
   if (
@@ -404,11 +405,11 @@ function decodeSyscallTraceWait(
     }
     return undefined;
   }
-  if (tag === 1 || tag === 2 || (tag === 4 && version >= 5)) {
+  if (tag === 1 || tag === 2 || (tag === 4 && version >= 5) || (tag === 19 && version >= 53)) {
     if (generation === 0n || id === 0n || futexAreaUsed) {
       throw malformedSyscallTrace();
     }
-    return { kind: tag === 1 ? "storage" : tag === 2 ? "network" : "durability", generation, id };
+    return { kind: tag === 1 ? "storage" : tag === 2 ? "network" : tag === 4 ? "durability" : "trial", generation, id };
   }
   if (tag === 5 && version >= 7) {
     if ((generation !== 1n && generation !== 2n) || id !== 1n || futexAreaUsed) throw malformedSyscallTrace();

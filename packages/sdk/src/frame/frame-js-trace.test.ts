@@ -11,7 +11,7 @@ afterEach(closeChannels);
 it("uses public trace exports across a hosted frame and retires access on disposal", async () => {
   const { vm } = fakeVM();
   const linux: UserspaceVM = { ...vm, mode: "userspace", image: { ...vm.image, mode: "userspace" }, spawnJS: vi.fn(() => Promise.reject(new Error("unused"))) };
-  const bytes = new Writer().raw(new TextEncoder().encode("OXJT")).u32(15).u64(7n).u32(0).u32(0).u32(0).finish();
+  const bytes = new Writer().raw(new TextEncoder().encode("OXJT")).u32(17).u64(7n).u32(0).u32(0).u32(0).finish();
   const read = vi.fn((capacity?: number) => { expect(capacity === undefined || capacity === 32).toBe(true); return Promise.resolve(bytes); });
   bindFrameOwner(linux, { diagnostics: { readJSProcessTrace: read, watchAccelerationNotices: () => Promise.reject(new Error("unused")) } });
   const { client } = await connect(linux);

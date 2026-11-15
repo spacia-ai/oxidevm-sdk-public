@@ -11,6 +11,16 @@ it("keeps image preparation on-demand by default and accepts complete installati
 });
 import { VMError } from "./runtime/errors.js";
 
+it("uses canonical self-hosted staging and retains explicit legacy runtime paths", () => {
+  for (const mode of ["system", "userspace"] as const) {
+    expect(decodePublicVMOptions({ mode }).runtime).toMatchObject({ baseUrl: "/oxvm/runtime/" });
+    expect(decodePublicVMOptions({ mode, runtime: { hosting: "self-hosted", baseUrl: "/oxidevm/runtime/" } }).runtime).toMatchObject({ baseUrl: "/oxidevm/runtime/" });
+    for (const origin of ["https://run.oxvm.dev", "https://run.oxidevm.dev"]) {
+      expect(decodePublicVMOptions({ mode, runtime: { hosting: "frame", origin } }).preview).toMatchObject({ origin: "https://tabvm.dev" });
+    }
+  }
+});
+
 describe("public VM options", () => {
   it("maps commandInterceptors onto automatic acceleration and custom interceptors", () => {
     expect(decodePublicVMOptions({ mode: "userspace" })).toHaveProperty("acceleration", "auto");
@@ -78,10 +88,10 @@ describe("public VM options", () => {
     catch (error) { expect(error).toBeInstanceOf(VMError); if (!(error instanceof VMError)) throw error; expect(error.code).toBe("INVALID_ARGUMENT"); }
   });
   it("selects the runtime: self-hosted by default and for the older { baseUrl } shape, the hosted frame on request", () => {
-    expect(decodePublicVMOptions({ mode: "userspace" }).runtime).toEqual({ hosting: "self-hosted", baseUrl: "/oxidevm/runtime/" });
+    expect(decodePublicVMOptions({ mode: "userspace" }).runtime).toEqual({ hosting: "self-hosted", baseUrl: "/oxvm/runtime/" });
     expect(decodePublicVMOptions({ mode: "userspace", runtime: { baseUrl: "/engine" } }).runtime).toEqual({ hosting: "self-hosted", baseUrl: "/engine/" });
     expect(decodePublicVMOptions({ mode: "userspace", runtime: { hosting: "self-hosted", baseUrl: "https://cdn.example.test/engine/" } }).runtime).toEqual({ hosting: "self-hosted", baseUrl: "https://cdn.example.test/engine/" });
-    expect(decodePublicVMOptions({ mode: "userspace", runtime: { hosting: "frame" } })).toMatchObject({ runtime: { hosting: "frame", origin: "https://run.oxidevm.dev" }, preview: { origin: "https://oxvm.dev", isolation: "per-session" } });
+    expect(decodePublicVMOptions({ mode: "userspace", runtime: { hosting: "frame" } })).toMatchObject({ runtime: { hosting: "frame", origin: "https://run.oxvm.dev" }, preview: { origin: "https://tabvm.dev", isolation: "per-session" } });
     expect(decodePublicVMOptions({ mode: "userspace", runtime: { hosting: "frame", origin: "https://run.example.test" } }).preview).toBeUndefined();
     expect(decodePublicVMOptions({ mode: "userspace", runtime: { hosting: "frame" }, preview: { origin: "https://previews.example.test", isolation: "per-session" } }).preview).toEqual({ origin: "https://previews.example.test", isolation: "per-session" });
     expect(decodePublicVMOptions({ mode: "system", runtime: { hosting: "frame", origin: new URL("https://run.example.test") } }).runtime).toEqual({ hosting: "frame", origin: "https://run.example.test" });

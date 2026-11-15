@@ -1,4 +1,4 @@
-import { VMError } from "@oxidevm/sdk";
+import { VMError } from "@oxvm/sdk";
 
 const GENERIC = "operation failed; check the selected files and installed tools";
 

@@ -2,10 +2,10 @@ import { VMError } from "./errors.js";
 
 /** The words a page shows for each backup refusal, by its stable reason (ADR 0014 R10). */
 const BACKUP_REASONS: Readonly<Record<string, string>> = {
-  "backup-wrong-file": "This file isn't an OxideVM backup.",
+  "backup-wrong-file": "This file isn't a OXVM backup.",
   "backup-damaged": "This backup is damaged or incomplete.",
-  "backup-newer": "This backup needs a newer version of OxideVM.",
-  "backup-older": "This backup is from an older version of OxideVM and can't be opened.",
+  "backup-newer": "This backup needs a newer version of OXVM.",
+  "backup-older": "This backup is from an older version of OXVM and can't be opened.",
   "backup-other-environment": "This backup belongs to another environment.",
   "backup-no-space": "There isn't enough space in this browser.",
 };

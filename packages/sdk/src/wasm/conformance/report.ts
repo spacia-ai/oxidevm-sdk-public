@@ -1,7 +1,7 @@
 import { exactKeys, integer, protocolError, record, string } from "../../runtime/decode.js";
 import { MODULE_ISOLATION_CAPABILITIES, MODULE_ISOLATION_REASON, type ModuleIsolationCapability } from "../../runtime/protocol/module-isolation.js";
 
-/** The runner-contract properties `oxidevm wasm test` checks, in the order it checks them. */
+/** The runner-contract properties `oxvm wasm test` checks, in the order it checks them. */
 export const WASM_TEST_PROPERTIES = [
   "integrity", "exit-range", "ready", "endpoints", "duplicate-start", "snapshot-refused", "eof-stop", "restart", "kill-recover", "declared-host",
   "network-direct", "network-declared", "network-offline",

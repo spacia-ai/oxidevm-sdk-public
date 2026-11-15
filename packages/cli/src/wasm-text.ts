@@ -1,4 +1,4 @@
-import type { AddPreview, ConsentCard, WasmAddResult, WasmBuildFinding, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult, WasmTestReport } from "@oxidevm/sdk/image-builder";
+import type { AddPreview, ConsentCard, WasmAddResult, WasmBuildFinding, WasmBuildResult, WasmDoctorReport, WasmInspectResult, WasmStageResult, WasmTestReport } from "@oxvm/sdk/image-builder";
 import type { WasmInitResult, WasmReleaseResult } from "./contracts.js";
 import { RESERVED_COMMAND_PREFIX, handleName } from "./wasm-template-files.js";
 
@@ -81,7 +81,7 @@ export function consentText(preview: ConsentView): string {
   if (preview.status === "updated" && (preview.added.length > 0 || preview.removed.length > 0)) lines.push("", "Compared with the installed release:", ...preview.added.map(item => `  + ${field(item)}`), ...preview.removed.map(item => `  - ${field(item)}`));
   lines.push("", "This is what the module declares. Its code runs with that authority in the VM's module frame, an opaque origin apart from your page; it is not a sandbox for the programs that run it.");
   // A directory in the project was chosen by the person running the command; "trusted" lists GitHub owners.
-  if (preview.consent.reasons.includes("untrusted-source") && card.source.startsWith("github:")) lines.push(`Its source is not in "trusted" in oxidevm.modules.json.`);
+  if (preview.consent.reasons.includes("untrusted-source") && card.source.startsWith("github:")) lines.push(`Its source is not in "trusted" in the project module declaration.`);
   return `${lines.join("\n")}\n`;
 }
 

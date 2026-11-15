@@ -4,7 +4,16 @@ import { preserveEmptyAsyncGenerators } from "./async-intrinsics.js";
 export interface AssistanceCompiler {
   transform(source: string, options: Readonly<Record<string, unknown>>): TransformedSource;
   hasDynamicImport(source: string): boolean;
+  /** Whether a script creates global bindings when it runs as a Script (ADR 0026, 2.12): any
+   * top-level declaration, and `var` or a function declaration outside function and class
+   * bodies. `unparsed` when the compiler cannot parse it. */
+  scriptBindings(source: string): ScriptBindings;
 }
+
+export type ScriptBindings = "none" | "global" | "unparsed";
+
+/** Syntax nodes whose bodies are their own variable scope. */
+const OWN_SCOPES: ReadonlySet<unknown> = new Set(["FunctionExpression", "ArrowFunctionExpression", "ClassExpression", "ClassDeclaration", "MethodProperty", "GetterProperty", "SetterProperty"]);
 
 export interface TransformedSource {
   readonly code: string;
@@ -30,15 +39,39 @@ export function decodeCompiler(value: unknown): AssistanceCompiler {
   if (typeof transform !== "function") {
     throw new TypeError("assistance compiler transformSync must be callable");
   }
+  const parseScript = (source: string): object => {
+    if (!("parseSync" in value) || typeof value.parseSync !== "function") {
+      throw new TypeError("assistance compiler is missing parseSync");
+    }
+    const tree: unknown = Reflect.apply(value.parseSync, value, [source, { syntax: "ecmascript", isModule: false }]);
+    if (typeof tree !== "object" || tree === null || !("type" in tree) || tree.type !== "Script") {
+      throw new TypeError("assistance compiler returned an invalid script tree");
+    }
+    return tree;
+  };
   return {
+    scriptBindings(source) {
+      let tree: object;
+      try { tree = parseScript(source); } catch { return "unparsed"; }
+      const body: unknown = Reflect.get(tree, "body");
+      if (!Array.isArray(body)) return "unparsed";
+      const top: readonly unknown[] = body;
+      const pending: { readonly node: unknown; readonly top: boolean }[] = top.map(node => ({ node, top: true }));
+      for (let visited = 0; pending.length !== 0;) {
+        if (++visited > 1_000_000) return "unparsed";
+        const item = pending.pop();
+        if (item === undefined || typeof item.node !== "object" || item.node === null) continue;
+        const node = item.node, type: unknown = Reflect.get(node, "type");
+        if (type === "VariableDeclaration" && (item.top || Reflect.get(node, "kind") === "var")) return "global";
+        if (type === "FunctionDeclaration" || item.top && type === "ClassDeclaration") return "global";
+        if (OWN_SCOPES.has(type)) continue;
+        const children: readonly unknown[] = Array.isArray(node) ? node : Object.values(node);
+        for (const child of children) pending.push({ node: child, top: false });
+      }
+      return "none";
+    },
     hasDynamicImport(source) {
-      if (!("parseSync" in value) || typeof value.parseSync !== "function") {
-        throw new TypeError("assistance compiler is missing parseSync");
-      }
-      const tree: unknown = Reflect.apply(value.parseSync, value, [source, { syntax: "ecmascript", isModule: false }]);
-      if (typeof tree !== "object" || tree === null || !("type" in tree) || tree.type !== "Script") {
-        throw new TypeError("assistance compiler returned an invalid script tree");
-      }
+      const tree = parseScript(source);
       const pending: unknown[] = [tree];
       let visited = 0;
       while (pending.length !== 0) {

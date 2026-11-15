@@ -86,3 +86,29 @@ it("names an unavailable Node built-in so a late failure can be remembered", asy
     expect(failure).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", detail: { lateFailure: "unavailable-builtin", subject: specifier.startsWith("node:") ? specifier : `node:${specifier}` } });
   }
 });
+
+it("fails an ESM import of a real built-in export the fast path lacks before any module runs, by its exact name", async () => {
+  const require = createRequire(import.meta.url), root = dirname(require.resolve("@swc/wasm-web"));
+  const compiler = initializeCompiler(compilerNamespace, await WebAssembly.compile(await readFile(join(root, "wasm_bg.wasm"))));
+  const system = await readFile(require.resolve("systemjs/dist/s.js"), "utf8");
+  const ran: string[] = [];
+  const sources = new Map([
+    ["/workspace/named.js", "import { hit } from 'node:trace'; import { parseEnv } from 'node:util'; hit('named'); export const value = parseEnv;"],
+    ["/workspace/forward.js", "import { hit } from 'node:trace'; hit('forward'); export { parseEnv } from 'node:util';"],
+    ["/workspace/star.js", "export * from 'node:util';"],
+    ["/workspace/through-star.js", "import { hit } from 'node:trace'; import { parseEnv } from './star.js'; hit('star'); export const value = parseEnv;"],
+    ["/workspace/unknown.js", "import { notAnExport } from 'node:util'; export const value = notAnExport;"],
+    ["/workspace/present.js", "import { format } from 'node:util'; export const value = typeof format;"],
+  ]);
+  const loader = createLocalModuleLoader(compiler, system, {
+    resolve: (request, parent) => request.startsWith("./") ? posix.resolve(posix.dirname(parent), request) : request,
+    read: path => { const source = sources.get(path); if (source === undefined) throw new Error(`Missing module ${path}`); return { source, format: "module" }; },
+  }, { util: { format: () => "" }, trace: { hit: (name: string) => { ran.push(name); } } }, "/workspace", { realExports: { util: ["format", "parseEnv"] } });
+  for (const path of ["/workspace/named.js", "/workspace/forward.js", "/workspace/through-star.js"]) {
+    await expect(loader.import(path)).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE", detail: { lateFailure: "unavailable-builtin", subject: "node:util.parseEnv", importer: path } });
+  }
+  expect(ran).toEqual([]);
+  // Not an export of the pinned runtime either: the program's own error, as Node reports it.
+  await expect(loader.import("/workspace/unknown.js")).rejects.toBeInstanceOf(SyntaxError);
+  expect((await loader.import("/workspace/present.js"))["value"]).toBe("function");
+});

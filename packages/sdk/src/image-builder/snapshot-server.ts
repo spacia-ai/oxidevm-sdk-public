@@ -81,7 +81,7 @@ export async function startSnapshotServer(options:SnapshotServerOptions):Promise
     }
     if(primary&&url.pathname==="/"){
       response.setHeader("Content-Type","text/html");
-      response.end('<!doctype html><html><head><meta charset="UTF-8"><title>OxideVM snapshot authoring</title><script type="importmap">{"imports":{"@oxidevm/sdk":"/snapshot/sdk.js"}}</script></head><body><script type="module" src="/snapshot/client.js"></script></body></html>');return;
+      response.end('<!doctype html><html><head><meta charset="UTF-8"><title>OXVM snapshot authoring</title><script type="importmap">{"imports":{"@oxvm/sdk":"/snapshot/sdk.js"}}</script></head><body><script type="module" src="/snapshot/client.js"></script></body></html>');return;
     }
     if(preview){
       if(url.pathname==="/__oxidevm/keeper.html"&&url.searchParams.get("parentOrigin")===origin&&url.searchParams.get("session")===url.hostname.split(".")[0]&&[...url.searchParams.keys()].length===2) {

@@ -6,10 +6,10 @@ import { JS_MAILBOX_BYTES, JS_MAX_OPERATION, JS_PROCESS_PROTOCOL_VERSION, jsMail
 import { createAttentionCounter, type AttentionCounter, type AttentionWatch } from "../../host-attention.js";
 import { AttentionNotices, browserAttentionNoticesWorker, type AttentionNoticesWorker } from "../attention-notices.js";
 import { callUserspaceU32 as call } from "../userspace-exports.js";
-import { readFileRecord } from "../userspace-files.js";
+import { callUserspaceRecord } from "../userspace-record.js";
 import { localWorkerProcess, isolatedWorkerProcess, type WorkerProcess } from "./worker-process.js";
 import { writeWorkerMailbox } from "../../js-process/worker-mailbox.js";
-import { decodeLateFailure, decodeLateFailureNotice, encodeLateFailureReport, lateFailureOf, lateFailureSentence, type LateFailure, type LateFailureNotice } from "../../js-process/late-failure.js";
+import { decodeLateFailure, decodeLateFailureNotice, decodeTrialFailure, encodeLateFailureReport, encodeTrialDeadline, encodeTrialReport, encodeTrialSuspend, lateFailureOf, lateFailureSentence, type LateFailure, type LateFailureNotice, type TrialFailure } from "../../js-process/late-failure.js";
 import type { RunnerCommandLaunch, RunnerHostLaunch, RunnerLaunch, RunnerVerifiedFile } from "../../js-process/launch.js";
 import { MODULE_BROKER_VERSION } from "../../protocol/module-frame.js";
 import { isolationUnavailable } from "../../protocol/module-isolation.js";
@@ -20,6 +20,10 @@ import { tlsPin } from "../../../wasm/net/tls-file.js";
 import { isTrappableSignal } from "../../js-process/signals.js";
 import { TaskSignals } from "./task-signals.js";
 import type { ModuleLease } from "./module-leases.js";
+
+/** Host time a launch waits for a trial load before it runs in Linux, and the trial's own limit
+ * (ADR 0026). The trial continues past the first, so its verdict serves the next launch. */
+export const TRIAL_DEADLINES = { first: 20_000, hard: 300_000 } as const;
 
 interface Runtime { readonly instance: WebAssembly.Instance; readonly memory: WebAssembly.Memory }
 interface Ports {
@@ -67,6 +71,10 @@ function crossing(launch: RunnerLaunch): { readonly launch: RunnerLaunch; readon
   return { launch: { ...launch, artifacts, tls: launch.tls === null ? null : { blob: launch.tls.blob, module: null } }, keys, tls: launch.tls === null ? null : copyKey(tlsPin()), reach: moduleReachCode(reach) };
 }
 
+function probe(request: UserspaceCommandHostRequest): boolean {
+  return request.program.kind === "native-node" && request.program.source.kind === "probe";
+}
+
 function esbuildWorker(): string {
   const url = new URL("../../../../assets/compilers/esbuild.worker.js", import.meta.url);
   url.searchParams.set("module", new URL("../../../../assets/compilers/esbuild.wasm", import.meta.url).href);
@@ -96,18 +104,20 @@ export class JsProcessWorkers {
     } catch (error) { lease?.release(); throw error; }
   }
   retireLaunch(token: number): void { this.#launches.get(token)?.lease?.release(); this.#launches.delete(token); }
-  #native(name: string, bytes?: Uint8Array): Uint8Array<ArrayBuffer> {
-    const { runtime } = this.ports;
-    if (bytes !== undefined) {
-      if (call(runtime.instance, "oxidevm_userspace_staging_resize", bytes.byteLength) !== 0) protocol("JS staging allocation failed");
-      new Uint8Array(runtime.memory.buffer, call(runtime.instance, "oxidevm_userspace_staging_ptr"), bytes.byteLength).set(bytes);
+  #native(name: string, bytes?: Uint8Array): Uint8Array<ArrayBuffer> { return callUserspaceRecord(this.ports.runtime, name, bytes); }
+  #active(request: UserspaceCommandHostRequest): boolean { return this.ports.active() && callUserspaceRecord(this.ports.runtime, "oxidevm_userspace_command", encodeCommandIo(request, 0))[0] === 1; }
+  /** A save or suspend begins: Rust cancels trial loads and answers whether any still runs. The
+   * runtime runs until their processes have exited, so the checkpoint holds none. */
+  async suspendTrials(signal?: AbortSignal): Promise<void> {
+    for (let turn = 0; callUserspaceRecord(this.ports.runtime, "oxidevm_userspace_command", encodeTrialSuspend(true))[0] !== 0; turn++) {
+      if (turn === 200 || signal?.aborted === true) throw new VMError("FEATURE_NOT_AVAILABLE", "A trial load did not stop for the save", { reason: "trial-active" });
+      this.ports.wake(); await new Promise(resolve => setTimeout(resolve, 10));
     }
-    if (call(runtime.instance, name, ...(bytes === undefined ? [] : [bytes.byteLength])) !== 0) protocol(`Native JS operation ${name} failed`);
-    return readFileRecord(runtime);
   }
-  #active(request: UserspaceCommandHostRequest): boolean { return this.ports.active() && this.#native("oxidevm_userspace_command", encodeCommandIo(request, 0))[0] === 1; }
+  /** The save or suspend ended; trial loads may start again. */
+  resumeTrials(): void { callUserspaceRecord(this.ports.runtime, "oxidevm_userspace_command", encodeTrialSuspend(false)); }
   assertIdle(): void {
-    if (this.#native("oxidevm_userspace_command", encodeCommandIo({ generation: 0n, id: 0n }, 4))[0] !== 0) throw new VMError("FEATURE_NOT_AVAILABLE", "Snapshots and suspend cannot capture a live JS process", { reason: "js-process-active" });
+    if (callUserspaceRecord(this.ports.runtime, "oxidevm_userspace_command", encodeCommandIo({ generation: 0n, id: 0n }, 4))[0] !== 0) throw new VMError("FEATURE_NOT_AVAILABLE", "Snapshots and suspend cannot capture a live JS process", { reason: "js-process-active" });
   }
   retireInactive(): void {
     for (const task of this.#running.values()) if (!this.#active(task.request)) task.stop();
@@ -117,7 +127,7 @@ export class JsProcessWorkers {
     // Notices before completions: a request a caught signal interrupted reaches a worker whose signal buffer says why.
     this.#signalNotices();
     for (let count = 0; count < 40 && this.ports.active(); count++) {
-      const bytes = this.#native("oxidevm_userspace_js_next"); if (bytes.byteLength === 0) break;
+      const bytes = callUserspaceRecord(this.ports.runtime, "oxidevm_userspace_js_next"); if (bytes.byteLength === 0) break;
       const reply = decodeJSCompletion(bytes), task = this.#running.get(reply.id);
       if (task === undefined || task.request.generation !== reply.generation) continue;
       if (task.request.pid !== reply.pid) protocol("JS completion process mismatch");
@@ -180,14 +190,26 @@ export class JsProcessWorkers {
     if (call(runtime.instance, "oxidevm_userspace_host_complete", bytes.byteLength) !== 0) protocol("JS exit completion failed");
     this.ports.wake();
   }
-  /** Rust records a late failure of a live launch; the next run of the program uses Linux. */
+  /** Rust records a late failure of a live launch; the next run of the program uses Linux. A
+   * trial load's failure becomes its add-on's verdict instead, with no notice. */
   #remember(request: UserspaceCommandHostRequest, failure: LateFailure): boolean {
     if (!this.#active(request)) return false;
+    if (probe(request)) { this.#reportTrial(request, failure); return true; }
     let notice: LateFailureNotice;
-    try { notice = decodeLateFailureNotice(this.#native("oxidevm_userspace_command", encodeLateFailureReport(request, failure))); }
+    try { notice = decodeLateFailureNotice(callUserspaceRecord(this.ports.runtime, "oxidevm_userspace_command", encodeLateFailureReport(request, failure))); }
     catch { return false; }
     this.ports.knowledge?.remember(notice, failure);
     return true;
+  }
+  #reportTrial(request: UserspaceCommandHostRequest, failure: TrialFailure): void {
+    if (!this.#active(request)) return;
+    try { callUserspaceRecord(this.ports.runtime, "oxidevm_userspace_command", encodeTrialReport(request, failure)); } catch { /* The exit status still fails the trial. */ }
+  }
+  /** Rust measures no host time; the SDK tells it when a trial's deadlines pass. */
+  #deadline(request: UserspaceCommandHostRequest, expired: boolean): void {
+    if (!this.#active(request)) return;
+    try { callUserspaceRecord(this.ports.runtime, "oxidevm_userspace_command", encodeTrialDeadline(request, expired)); } catch { return; }
+    this.ports.wake();
   }
   #diagnostic(request: UserspaceCommandHostRequest, sequence: number, error: unknown): void {
     if (!this.#active(request)) return;
@@ -197,7 +219,7 @@ export class JsProcessWorkers {
     const payload = new Writer().u64(2).blob(new TextEncoder().encode(`${line}\n`)).finish();
     // This independent write uses the same Rust service. Its result is retired with the exit.
     // Never retry a failed or ambiguous application operation.
-    try { this.#native("oxidevm_userspace_js_submit", encodeJSRequest(request, sequence, 1, payload)); } catch { /* Failure reporting cannot prevent retirement. */ }
+    try { callUserspaceRecord(this.ports.runtime, "oxidevm_userspace_js_submit", encodeJSRequest(request, sequence, 1, payload)); } catch { /* Failure reporting cannot prevent retirement. */ }
   }
   #reply(task: Running, reply: JSCompletion): void {
     const sync = task.pending.get(reply.sequence); if (sync === undefined) protocol("Unexpected JS completion sequence"); task.pending.delete(reply.sequence);
@@ -216,7 +238,7 @@ export class JsProcessWorkers {
     const sequence = integer(value["sequence"], "JS request sequence", 1, 0x7fff_ffff), operation = integer(value["operation"], "JS operation", 0, JS_MAX_OPERATION);
     if (sequence !== task.sequence + 1 || task.closing || task.pending.size >= 38) protocol("Invalid JS operation sequence or lifecycle");
     task.sequence = sequence; task.pending.set(sequence, value["sync"]);
-    const response = this.#native("oxidevm_userspace_js_submit", encodeJSRequest(task.request, sequence, operation, value["payload"]));
+    const response = callUserspaceRecord(this.ports.runtime, "oxidevm_userspace_js_submit", encodeJSRequest(task.request, sequence, operation, value["payload"]));
     if (response.byteLength !== 4) protocol("Invalid JS admission result");
     const errno = new DataView(response.buffer).getUint32(0, true);
     if (errno !== 0) this.#reply(task, { ...task.request, sequence, errno, value: 0n, payload: new Uint8Array() });
@@ -259,8 +281,9 @@ export class JsProcessWorkers {
     } catch (error) { lease?.release(); attention.close(); this.#diagnostic(request, 1, error); this.#exit(request, 125); return Promise.resolve(); }
     return new Promise<void>((resolve, reject) => {
       const channel = new MessageChannel(); let finished = false;
+      const deadlines = probe(request) ? [setTimeout(() => { this.#deadline(request, false); }, TRIAL_DEADLINES.first), setTimeout(() => { this.#deadline(request, true); }, TRIAL_DEADLINES.hard)] : [];
       const stop = () => {
-        if (finished) return; finished = true; lease?.release(); attention.close(); worker.stop();
+        if (finished) return; finished = true; lease?.release(); for (const timer of deadlines) clearTimeout(timer); attention.close(); worker.stop();
         // Wake a synchronous mailbox wait after requesting worker termination.
         Atomics.notify(task.header, 0);
         channel.port1.close(); signal.removeEventListener("abort", stop); this.#running.delete(request.id); resolve();
@@ -286,6 +309,7 @@ export class JsProcessWorkers {
           if (value["type"] === "failure") { exactKeys(value, ["version", "type", "error"]); throw deserializeError(decodeSerializedError(value["error"])); }
           // The process printed its own explanation and exits; Rust remembers the program.
           if (value["type"] === "late-failure") { exactKeys(value, ["version", "type", "failure"]); this.#remember(request, decodeLateFailure(value["failure"])); return; }
+          if (value["type"] === "trial-failure" && probe(request)) { exactKeys(value, ["version", "type", "failure"]); this.#reportTrial(request, decodeTrialFailure(value["failure"])); return; }
           exactKeys(value, ["version", "type", "code"]); if (value["type"] !== "exit") protocol("Unknown JS process result");
           const code = integer(value["code"], "JS exit status", 0, 255);
           task.closing = true; this.#exit(request, code); this.reconcile();

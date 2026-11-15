@@ -7,7 +7,7 @@ import { afterEach } from "vitest";
 export function moduleSource(options: { readonly manifest?: string; readonly adapter?: string; readonly imports?: string } = {}): string {
   const manifest = options.manifest ?? `{ id: "demo", version: "1.0.0", abi: "raw", artifacts: [], process: { kind: "command" }, requires: { host: ["files.sync"] }, license: { spdx: "MIT" } }`;
   const adapter = options.adapter ?? `host => ({ main(io) { host.fs.writeFile("/workspace/out.txt", new TextEncoder().encode(io.args.join(","))); return 0; } })`;
-  return `import { defineModule } from "@oxidevm/sdk/wasm";\n${options.imports ?? ""}export default defineModule({\n  manifest: ${manifest},\n  adapter: ${adapter},\n});\n`;
+  return `import { defineModule } from "@oxvm/sdk/wasm";\n${options.imports ?? ""}export default defineModule({\n  manifest: ${manifest},\n  adapter: ${adapter},\n});\n`;
 }
 
 /**

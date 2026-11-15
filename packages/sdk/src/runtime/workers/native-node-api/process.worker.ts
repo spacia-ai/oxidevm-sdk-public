@@ -12,6 +12,8 @@ import { initializeCompiler } from "../assistance/compiler.js";
 import { restrictProcessControls } from "../assistance/process-controls.js";
 import { runLocalProcess } from "../assistance/process-runtime.js";
 import { NativeBridge, type NativeTransportEvent } from "./bridge.js";
+import { servedOperationSet } from "./codec.js";
+import { nativeScriptRunner } from "./scripts.js";
 import { createNativeTty } from "./tty.js";
 import { NativeProcessIO } from "./process-io.js";
 import { decodeThreadMetadata, NATIVE_PROCESS_BOOTSTRAP_VERSION } from "./thread-metadata.js";
@@ -62,6 +64,7 @@ async function run(input: unknown): Promise<void> {
   const start = record(input, "native process bootstrap"); exactKeys(start, ["version", "type", "port", "mailbox", "generation", "id", "program", "compilerModule", "httpParserModule", "threadControl", "threadData"]);
   if (start["version"] !== NATIVE_PROCESS_BOOTSTRAP_VERSION || start["type"] !== "start" || !(start["port"] instanceof MessagePort) || !(start["mailbox"] instanceof SharedArrayBuffer) || !(start["compilerModule"] instanceof WebAssembly.Module) || !(start["httpParserModule"] instanceof WebAssembly.Module) || !(start["threadControl"] instanceof MessagePort)) protocol("Invalid native process bootstrap");
   const identity = decodeJSIdentity(start["generation"], start["id"]), program = decodeNativeProcessProgram(start["program"]);
+  servedOperationSet(program.profile.operationSet);
   if ((program.profile.requiredCapabilities & 1) !== 0 && nativePromiseCapability !== 1) protocol("Admitted native Promise capability is unavailable in this worker");
   if ((program.profile.requiredCapabilities & 2) !== 0 && nativeErrorCapability !== 2) protocol("Admitted native Error capability is unavailable in this worker");
   restrictProcessControls(self);
@@ -90,29 +93,37 @@ async function run(input: unknown): Promise<void> {
     environment: thread?.tid ?? info.pid,
     runtime: program.profile.runtime,
     bridgeVersion: program.profile.bridgeVersion,
+    operationSet: program.profile.operationSet,
+    sharedBufferBudget: program.profile.sharedBufferBudget,
     signal: signal => io.receiveSignal(signal), changed: () => io.changed(), failed: error => io.fail(error), uncaught: (error, deliver) => io.applicationException(error, "uncaughtException", undefined, deliver),
     trace: frame => { if (traceEnabled) diagnosticConsole.info(JSON.stringify({ type: "native-node-api", generation: `${identity.generation}`, process: `${identity.id}`, pid: info.pid, sequence: frame.sequence, scope: `${frame.scope}`, environment: `${frame.environment}`, kind: frame.kind, operation: frame.operation })); },
     ...(traceEnabled ? { transport: (event: NativeTransportEvent) => {
       diagnosticConsole.info(JSON.stringify({ type: "native-node-api-transport", ...diagnosticIdentity, ...event }));
     } } : {}),
   });
-  const allowed = new Set(program.profile.artifacts.filter(artifact => artifact.kind === "node-api").map(artifact => artifact.path)), launch = nativeArguments(info.args);
+  const allowed = new Set(program.profile.artifacts.filter(artifact => artifact.kind === "node-api").map(artifact => artifact.path)), launch = nativeArguments(info.args, program.profile.runtime);
   const compiler = initializeCompiler(compilerNamespace, start["compilerModule"]);
+  bridge.values.bindScriptRunner(nativeScriptRunner(compiler));
   const versions = nativeProcessVersions(program.profile), nodeVersion = versions.node;
   let workers: NativeWorkers | undefined;
   try {
     if (traceEnabled) diagnosticConsole.info(JSON.stringify({ type: "native-node-api-js", generation: `${identity.generation}`, process: `${identity.id}`, pid: info.pid, entry: program.entry, profile: program.profile.identity, dependencies: `${program.profile.dependencyGeneration}`, runtime: program.profile.runtime, runtimeSHA256: program.profile.runtimeSHA256 }));
     bridge.watch();
     post({ version: 1, type: "thread-online" });
-    await runLocalProcess({ entry: program.source.kind === "eval" ? program.source : { kind: "file", path: program.entry }, cwd: info.cwd, args: launch.args, ...(thread === null && program.source.kind === "file" ? { argvEntry: createNodePath(() => info.cwd).resolve(launch.entry) } : {}), execArgv: threadData?.execArgv ?? launch.execArgv, env: environment, ...(program.context.kind === "fork" && threadData !== null ? { ipc: threadData.port } : {}), dependencies: { generation: program.profile.dependencyGeneration, profile: program.profile.identity, roots: program.profile.roots, runtime: program.profile.runtime, moduleSearchPaths: program.profile.moduleSearchPaths } }, io, {
+    // A trial load opens its one add-on and exits; no application code runs (ADR 0026).
+    await runLocalProcess({ entry: program.source.kind === "eval" ? program.source : { kind: program.source.kind === "probe" ? "probe" : "file", path: program.entry }, cwd: info.cwd, args: launch.args, ...(thread === null && program.source.kind === "file" ? { argvEntry: createNodePath(() => info.cwd).resolve(launch.entry) } : {}), execArgv: threadData?.execArgv ?? launch.execArgv, env: environment, ...(program.context.kind === "fork" && threadData !== null ? { ipc: threadData.port } : {}), dependencies: { generation: program.profile.dependencyGeneration, profile: program.profile.identity, roots: program.profile.roots, runtime: program.profile.runtime, moduleSearchPaths: program.profile.moduleSearchPaths } }, io, {
       socketRuntime: { runtime: program.profile.runtime, ...(autoSelectFamily === undefined ? {} : { autoSelectFamily: new Int32Array(autoSelectFamily) }) },
       contextScripts: "data", tty: createNativeTty(client),
       exactPromiseQueries: (program.profile.requiredCapabilities & 1) !== 0,
       umask: createProcessUmask(mask => client.sync(umaskOperation(mask)), program.profile.runtime, thread === null),
       modulePathInfo: path => nativeModulePathInfo(client, path),
-      workerThreads: (context, scheduler, process) => { bridge.values.bindAsyncContext(context); return workers = new NativeWorkers({ client, bridge, identity, control: threadControl, thread, metadata: thread === null ? null : threadData, ...(autoSelectFamily === undefined ? {} : { autoSelectFamily }) }, context, scheduler, process); },
+      workerThreads: (context, scheduler, process) => {
+        bridge.values.bindAsyncContext(context); bridge.values.bindNativeImmediate(run => { scheduler.nativeImmediate(run); });
+        return workers = new NativeWorkers({ client, bridge, identity, control: threadControl, thread, metadata: thread === null ? null : threadData, ...(autoSelectFamily === undefined ? {} : { autoSelectFamily }) }, context, scheduler, process);
+      },
       compiler, systemSource: ASSISTANCE_SYSTEM_SOURCE, httpParser: start["httpParserModule"],
       metadata: { nodeVersion, execPath: program.profile.executable, argv0: program.profile.runtime === "bun" ? "node" : info.args[0] ?? program.profile.executable, versions, processBuild, isMainThread: thread === null },
+      trialFailure: failure => { post({ version: JS_PROCESS_PROTOCOL_VERSION, type: "trial-failure", failure }); },
       ...(thread === null ? { lateFailure: failure => { post({ version: JS_PROCESS_PROTOCOL_VERSION, type: "late-failure", failure }); } } : { unhandledException: (error: unknown) => { if (workers === undefined) protocol("Native worker runtime is absent"); post({ version: 1, type: "thread-exception", error: workers.serializeException(error) }); } }),
       loadNative: path => {
         if (!allowed.has(path)) throw new VMError("PROTOCOL_ERROR", `Unqualified native addon: ${path}`, { lateFailure: "unqualified-addon", subject: path.slice(path.lastIndexOf("/") + 1) });

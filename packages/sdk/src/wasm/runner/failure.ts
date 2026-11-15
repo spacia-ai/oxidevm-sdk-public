@@ -19,7 +19,7 @@ export class ModuleFailure extends VMError {
 
 /**
  * What the runner reports for a failure. An application start writes it as a JSON record on standard error, which
- * `spawnModule` and `oxidevm wasm test` read; `reason` names a stable `detail.reason` the status alone does not.
+ * `spawnModule` and `oxvm wasm test` read; `reason` names a stable `detail.reason` the status alone does not.
  */
 export type RunnerReport =
   | { readonly kind: ModuleExitReason; readonly message: string; readonly items?: readonly string[]; readonly reason?: string }

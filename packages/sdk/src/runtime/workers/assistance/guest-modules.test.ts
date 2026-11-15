@@ -152,3 +152,14 @@ it("does not treat project cache directories as installed package roots", () => 
   const modules = createGuestModules(files, { generation: 11n, profile: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/app/node_modules" }], runtime: "node", moduleSearchPaths: [] });
   expect(() => modules.resolve(".cache", "/workspace/app/main.cjs", "require")).toThrow(/package root/u);
 });
+
+it("resolves package exports with the user conditions of --conditions beside Node's own (ADR 0026, 1.11)", () => {
+  const { files, sources } = fixture();
+  sources.set("/workspace/node_modules/cond/package.json", JSON.stringify({ exports: { ".": { development: "./dev.js", worker: { import: "./worker.mjs" }, require: "./required.js", default: "./index.js" } } }));
+  for (const name of ["dev.js", "worker.mjs", "required.js", "index.js"]) sources.set(`/workspace/node_modules/cond/${name}`, "");
+  const dependencies = { generation: 11n, profile: "node24-bun1-v1", roots: [{ kind: "dependencies", path: "/workspace/node_modules" }], runtime: "node", moduleSearchPaths: [] } as const;
+  const resolved = (conditions: readonly string[], kind: "require" | "import") => createGuestModules(files, dependencies, undefined, undefined, conditions).resolve("cond", "/workspace/main.cjs", kind);
+  expect([resolved([], "require"), resolved([], "import")]).toEqual(["/workspace/node_modules/cond/required.js", "/workspace/node_modules/cond/index.js"]);
+  expect([resolved(["development"], "require"), resolved(["worker"], "import"), resolved(["worker"], "require")])
+    .toEqual(["/workspace/node_modules/cond/dev.js", "/workspace/node_modules/cond/worker.mjs", "/workspace/node_modules/cond/required.js"]);
+});
