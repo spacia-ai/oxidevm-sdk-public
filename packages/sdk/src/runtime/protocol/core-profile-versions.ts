@@ -4,7 +4,7 @@ import type { CoreRuntimeProfile, SystemTraceSnapshot } from "./system.js";
 const RECORD_TRACE_VERSIONS = [
   [11, 23], [12, 24], [13, 25], [14, 26], [15, 28], [16, 29],
   [17, 30], [18, 31], [19, 32], [20, 33], [21, 37], [22, 40],
-  [23, 41], [24, 43], [25, 44], [26, 45], [27, 48], [28, 49], [29, 50], [30, 52], [31, 53],
+  [23, 41], [24, 43], [25, 44], [26, 45], [27, 48], [28, 49], [29, 50], [30, 52], [31, 53], [32, 55], [33, 56],
 ] as const satisfies readonly (readonly [CoreRuntimeProfile["recordVersion"], SystemTraceSnapshot["schemaVersion"]])[];
 
 export function coreRecordVersionForTrace(schemaVersion: number): CoreRuntimeProfile["recordVersion"] {

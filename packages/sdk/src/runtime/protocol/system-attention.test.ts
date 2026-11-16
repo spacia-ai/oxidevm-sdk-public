@@ -4,7 +4,7 @@ import { decodeSystemHostAttentionProfile, emptySystemHostAttentionProfile, SYST
 import { SYSTEM_TRACE_SCHEMA_VERSION } from "./system-trace-schema.js";
 
 it("records schema 54 host attention by reason", () => {
-  expect(SYSTEM_TRACE_SCHEMA_VERSION).toBe(54);
+  expect(SYSTEM_TRACE_SCHEMA_VERSION).toBe(56);
   expect(Object.keys(emptySystemHostAttentionProfile().yields)).toEqual([...SYSTEM_ATTENTION_REASONS]);
   const profile = { yields: { control: 3, assistance: 1, "agent-response": 2 }, deferrals: 9 };
   expect(decodeSystemHostAttentionProfile(structuredClone(profile))).toEqual(profile);

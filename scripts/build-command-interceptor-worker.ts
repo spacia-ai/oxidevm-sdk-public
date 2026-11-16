@@ -11,7 +11,7 @@ import { minifyJavaScript } from "./production-javascript.ts";
 const packaged = process.argv.includes("--package");
 const packageRoot = resolve(import.meta.dirname, "..");
 const compilerRoot = dirname(createRequire(import.meta.url).resolve("typescript-interceptor/package.json"));
-const source = packaged ? resolve(compilerRoot, "lib/_tsc.js") : resolve(process.argv[2] ?? `../oxidevm/.cache/guest/userspace-shell/output/blobs/${TYPESCRIPT.files.compiler.sha256}`);
+const source = packaged ? resolve(compilerRoot, "lib/_tsc.js") : resolve(process.argv[2] ?? `.engine/.cache/guest/userspace-shell/output/blobs/${TYPESCRIPT.files.compiler.sha256}`);
 const target = packaged ? resolve(packageRoot, "packages/sdk/assets/interceptors/tsc.worker.js") : resolve(process.argv[3] ?? ".cache/command-interceptors/tsc.worker.js");
 const cli = await readFile(source, "utf8");
 const licenseHash = TYPESCRIPT.licenseSHA256;

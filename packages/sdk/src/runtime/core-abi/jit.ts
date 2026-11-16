@@ -1,6 +1,6 @@
 import { BinaryCursor, RECORD_HEADER_LENGTH, expectMagic, fault } from "./cursor.ts";
 
-export const JIT_API_VERSION = 93;
+export const JIT_API_VERSION = 94;
 export const JIT_ACTION_RECORD_VERSION = 6;
 export const JIT_ACTION_PAYLOAD_LENGTH = 36;
 export const JIT_OWNER_ACTION_RECORD_VERSION = 7;

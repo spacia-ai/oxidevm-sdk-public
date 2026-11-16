@@ -721,7 +721,7 @@ describe("translation coherence profile", () => {
     1n, 1n, 9n,
   ];
 
-  function coherenceRecord(version: 22 | 23 | 24 | 25 | 26 | 29 | 30, values: readonly bigint[]): Uint8Array {
+  function coherenceRecord(version: 22 | 23 | 24 | 25 | 26 | 29 | 30 | 31 | 32 | 33, values: readonly bigint[]): Uint8Array {
     const old = profileRecord(20);
     old.fill(0, HEADER_LENGTH + CORE_PAYLOAD_LENGTH_V19, HEADER_LENGTH + CORE_PAYLOAD_LENGTH_V20);
     const offset = HEADER_LENGTH + CORE_PAYLOAD_LENGTH_V20;
@@ -946,6 +946,45 @@ describe("translation coherence profile", () => {
       .toMatchObject({ jitDirectPageFlushesOwnerCheckpoint: 0n });
     expect(() => decodeCoreRuntimeProfile(coherenceRecord(30, [...COHERENCE, 0n, 0n, 0n, 0n, ...DEFERRAL, 1n])))
       .toThrow("translation coherence counters do not reconcile");
+  });
+
+  it("decodes the syscall path counters record 32 appends and preserves record 31", () => {
+    const base = [...COHERENCE, 0n, 0n, 0n, 0n, ...DEFERRAL, 0n, ...Array<bigint>(28).fill(0n)];
+    const paths = [5n, 3n, 1n, 0n, 1n, 4n, 7n, 2n, 6n, ...Array<bigint>(12).fill(0n), 9n];
+    expect(decodeCoreRuntimeProfile(coherenceRecord(32, [...base, ...paths]))).toMatchObject({
+      recordVersion: 32,
+      jitInBlockSyscalls: 5n,
+      jitInBlockSyscallContinues: 3n,
+      jitInBlockSyscallStopOwnerBoundary: 1n,
+      jitInBlockSyscallStopTranslationSettled: 0n,
+      jitInBlockSyscallStopDispatchNotReady: 1n,
+      jitDirectSyscallSteps: 4n,
+      plainSyscallsQuiet: 7n,
+      plainSyscallsCompleted: 2n,
+      plainSyscallDeclinedNotInTable: 6n,
+      plainSyscallDeclinedFrozen: 9n,
+      jitDeferrals: 5n,
+    });
+    expect(decodeCoreRuntimeProfile(coherenceRecord(31, base)))
+      .toMatchObject({ recordVersion: 31, jitInBlockSyscalls: 0n, plainSyscallsQuiet: 0n });
+    const unreconciled = [...paths];
+    unreconciled[0] = 6n;
+    expect(() => decodeCoreRuntimeProfile(coherenceRecord(32, [...base, ...unreconciled]))).toThrow("reconcile");
+    expect(() => decodeCoreRuntimeProfile(coherenceRecord(32, base))).toThrow();
+  });
+
+  it("decodes the file size limit count record 33 appends and reads record 32 without it", () => {
+    const base = [...COHERENCE, 0n, 0n, 0n, 0n, ...DEFERRAL, 0n, ...Array<bigint>(28).fill(0n)];
+    const paths = [5n, 3n, 1n, 0n, 1n, 4n, 7n, 2n, 6n, ...Array<bigint>(12).fill(0n), 9n];
+    expect(decodeCoreRuntimeProfile(coherenceRecord(33, [...base, ...paths, 11n]))).toMatchObject({
+      recordVersion: 33,
+      plainSyscallDeclinedFrozen: 9n,
+      plainSyscallDeclinedFileSizeLimit: 11n,
+    });
+    expect(decodeCoreRuntimeProfile(coherenceRecord(32, [...base, ...paths])))
+      .toMatchObject({ recordVersion: 32, plainSyscallDeclinedFrozen: 9n, plainSyscallDeclinedFileSizeLimit: 0n });
+    expect(() => decodeCoreRuntimeProfile(coherenceRecord(33, [...base, ...paths]))).toThrow();
+    expect(() => decodeCoreRuntimeProfile(coherenceRecord(32, [...base, ...paths, 11n]))).toThrow();
   });
 
   it("rejects deferral counters that do not reconcile with their settles", () => {
