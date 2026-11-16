@@ -19,7 +19,7 @@ separate from the Node-only `@oxvm/sdk/image-builder` export.
 
 Read the [quickstart](https://oxvm.dev/docs/start/quickstart/),
 [documentation](https://oxvm.dev/docs/), and
-[migration guide](https://github.com/spacia-ai/oxidevm-sdk-public/blob/main/docs/migration.md).
+[migration guide](https://github.com/spacia-ai/oxvm-sdk-public/blob/main/docs/migration.md).
 
 The SDK uses Apache-2.0. The engine and guest programs have separate licenses.
 Keep the packaged notices and source references with redistributed code.

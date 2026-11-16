@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "repository": "https://github.com/spacia-ai/oxidevm-skills",
-  "revision": "50c9078f3eea440973e264f6790a25adf225f352",
+  "repository": "https://github.com/spacia-ai/oxvm-skills",
+  "revision": "23dd7b3aa7df3ff0919ff97ee11f5b7d4906b91b",
   "skillsVersion": "0.0.27",
   "files": [
     {

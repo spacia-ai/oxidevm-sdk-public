@@ -1,7 +1,7 @@
 // Generated from immutable, independently authenticated release inputs.
 export const starterRelease: unknown = {
   "schemaVersion": 2,
-  "sdkVersion": "0.0.27",
+  "sdkVersion": "0.0.28",
   "engineRelease": "3ac1f1185bca6837d187e96aad810bcc9555401fb4eec76aceacd2956cee563d",
   "engineCompliance": {
     "url": "https://cdn.oxvm.dev/engine/3ac1f1185bca6837d187e96aad810bcc9555401fb4eec76aceacd2956cee563d/compliance/b52713e53ff19a364d459cdf987f587b233e94e2fc2dfe4d27b6242359ce6db6/compliance.json",
@@ -24,5 +24,5 @@ export const starterRelease: unknown = {
     "sha256": "ad060aaa834912f8d004905db2cf8b65b60e531fcc3cbb729294c579f57a9267"
   },
   "materialsSHA256": "90fa99dc8b0bfac3528d69dbfd313835b8059380cb4a7e4788695f3eddf13c86",
-  "materialsUrl": "https://github.com/spacia-ai/oxidevm-sdk-public/releases/download/image-oxidevm-starter-pandas-v0.0.3/OPEN-SOURCE-NOTICE.md"
+  "materialsUrl": "https://github.com/spacia-ai/oxvm-sdk-public/releases/download/image-oxidevm-starter-pandas-v0.0.3/OPEN-SOURCE-NOTICE.md"
 };

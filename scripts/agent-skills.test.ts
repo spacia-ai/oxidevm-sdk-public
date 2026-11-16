@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { stageAgentSkills } from "./agent-skills.ts";
+import { decodeSkillsPin, stageAgentSkills } from "./agent-skills.ts";
 
 void test("a pinned skill snapshot stages both clients offline and binds the actual SDK version", async () => {
   const root = await mkdtemp(join(tmpdir(), "oxidevm-agent-skills-"));
@@ -13,7 +13,7 @@ void test("a pinned skill snapshot stages both clients offline and binds the act
     await mkdir(join(directory, ".agents/skills/oxidevm-sdk"), { recursive: true });
     const path = "oxidevm-sdk/SKILL.md", sha256 = createHash("sha256").update(content).digest("hex");
     await writeFile(join(directory, ".agents/skills", path), content);
-    const pin = { schemaVersion: 1, repository: "https://github.com/spacia-ai/oxidevm-skills", revision: "a".repeat(40), skillsVersion: "0.0.4", files: [{ path, sha256 }] };
+    const pin = { schemaVersion: 1, repository: "https://github.com/spacia-ai/oxvm-skills", revision: "a".repeat(40), skillsVersion: "0.0.4", files: [{ path, sha256 }] };
     const save = async (value: unknown) => writeFile(join(directory, "agent-skills.lock.json"), JSON.stringify(value));
     await save(pin);
     const files = await stageAgentSkills(root, "0.0.4");
@@ -33,4 +33,12 @@ void test("a pinned skill snapshot stages both clients offline and binds the act
     await assert.rejects(stageAgentSkills(root, "0.0.4"), /regular/u);
     assert((await readFile(join(directory, "agent-skills.lock.json"), "utf8")).includes(pin.revision));
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+void test("only the exact published 0.0.27 skills pin retains its former source identity", () => {
+  const pin = { schemaVersion: 1, repository: "https://github.com/spacia-ai/oxidevm-skills", revision: "50c9078f3eea440973e264f6790a25adf225f352", skillsVersion: "0.0.27", files: [{ path: "oxvm-sdk/SKILL.md", sha256: "a".repeat(64) }] };
+  assert.equal(decodeSkillsPin(pin).repository, pin.repository);
+  assert.throws(() => decodeSkillsPin({ ...pin, revision: "a".repeat(40) }), /source identity/u);
+  assert.throws(() => decodeSkillsPin({ ...pin, skillsVersion: "0.0.28" }), /source identity/u);
+  assert.equal(decodeSkillsPin({ ...pin, repository: "https://github.com/spacia-ai/oxvm-skills", revision: "a".repeat(40), skillsVersion: "0.0.28" }).repository, "https://github.com/spacia-ai/oxvm-skills");
 });

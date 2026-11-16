@@ -95,7 +95,7 @@ await test("a Git export validates the reviewed starter alias and rejects retarg
 
 await test("public workflows cannot reach private infrastructure or persistent runners", () => {
   const policy = { schemaVersion: 2 as const, files: [], trees: [], assets: {} };
-  for (const text of ["runs-on: self-hosted", "token: PUBLICATION_SOURCE_TOKEN", "CLOUDFLARE_ACCOUNT_ID: value", "repository: spacia-ai/oxidevm-sdk\n"]) {
+  for (const text of ["runs-on: self-hosted", "token: PUBLICATION_SOURCE_TOKEN", "CLOUDFLARE_ACCOUNT_ID: value", "repository: spacia-ai/oxvm-sdk\n"]) {
     assert.match(repositoryFileContentError(policy, ".github/workflows/publish.yml", new TextEncoder().encode(text)) ?? "", /publication workflows/u);
   }
   assert.match(repositoryFileContentError(policy, ".github/workflows/publish.yml", new TextEncoder().encode("runs-on: ubuntu-24.04\n")) ?? "", /publication workflows/u);

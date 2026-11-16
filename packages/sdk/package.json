@@ -1,6 +1,6 @@
 {
   "name": "@oxvm/sdk",
-  "version": "0.0.27",
+  "version": "0.0.28",
   "type": "module",
   "license": "Apache-2.0",
   "exports": {
@@ -100,7 +100,7 @@
   ],
   "homepage": "https://oxvm.dev/docs/",
   "bugs": {
-    "url": "https://github.com/spacia-ai/oxidevm-sdk-public/issues"
+    "url": "https://github.com/spacia-ai/oxvm-sdk-public/issues"
   },
   "private": false,
   "publishConfig": {
@@ -109,7 +109,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/spacia-ai/oxidevm-sdk-public.git",
+    "url": "https://github.com/spacia-ai/oxvm-sdk-public.git",
     "directory": "packages/sdk"
   }
 }

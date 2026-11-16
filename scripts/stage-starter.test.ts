@@ -17,7 +17,7 @@ void test("generated starter documentation uses its own release and only existin
       await stageStarter(root);
       const value: unknown = JSON.parse(await readFile(join(root, "packages/cli/dist/starter.json"), "utf8"));
       const files = record(value, "starter files"), readme = string(files["README.md"], "starter README");
-      const release = "https://github.com/spacia-ai/oxidevm-sdk-public";
+      const release = "https://github.com/spacia-ai/oxvm-sdk-public";
       assert(readme.includes(`${release}/tree/v${version}/examples/starter/image`));
       assert(readme.includes(`${release}/blob/v${version}/docs/images.md`));
       assert(!readme.includes("/blob/main/") && !readme.includes("/tree/main/"));

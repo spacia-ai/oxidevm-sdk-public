@@ -4,6 +4,8 @@ import { runtimeAssets } from "./dev/runtime-assets.ts";
 
 export default defineConfig({
   plugins: [previewHost(), runtimeAssets()],
+  assetsInclude: [/\/\.oxvm\/modules\//u],
+  build: { assetsInlineLimit: file => file.includes("/.oxvm/modules/") ? false : undefined },
   server: { host: "127.0.0.1", headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" } },
   preview: { headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" } },
   worker: { format: "es" },
