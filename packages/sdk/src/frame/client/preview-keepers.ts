@@ -37,7 +37,7 @@ export function pageKeepers(preview: PreviewOptions | undefined, report: (keeper
           frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
           frame.setAttribute("aria-hidden", "true");
           frame.style.display = "none";
-          frame.title = "OXVM preview session keeper";
+          frame.title = "OxVM preview session keeper";
           frame.src = command.url;
           keepers.set(command.keeper, { frame, origin: new URL(command.url).origin });
           document.body.append(frame);

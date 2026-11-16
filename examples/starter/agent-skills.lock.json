@@ -1,40 +1,40 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/spacia-ai/oxvm-skills",
-  "revision": "23dd7b3aa7df3ff0919ff97ee11f5b7d4906b91b",
+  "revision": "72337168edcac0ed98561bbc353ecbe05aeef749",
   "skillsVersion": "0.0.27",
   "files": [
     {
       "path": "oxvm-debugging/SKILL.md",
-      "sha256": "7c3f660af895ac946081c920b8115e617a436952eba55550bfe5d85cb43d1cbf"
+      "sha256": "47de486522a8e451c72de2dadb1c9fe25963a9f224d6e2eba367d82aa07eb03f"
     },
     {
       "path": "oxvm-debugging/agents/openai.yaml",
-      "sha256": "ec750392a5b5fd08d71da90f11e00531a03e093bf4308ce64aa74cbe677bfec8"
+      "sha256": "362da2d2168d03e4e96b90b8cb6a190f3848285a75e5319732ea21225b960cc8"
     },
     {
       "path": "oxvm-module-author/SKILL.md",
-      "sha256": "376e94ceb81bf071ddd5e00052f4eddc1f4dc262cb820c1941f43fcf5daf6a19"
+      "sha256": "0fa285a5a3a05dbd6fd067a190f6aea093838ed000aa917767592af385cb8726"
     },
     {
       "path": "oxvm-module-author/agents/openai.yaml",
-      "sha256": "e06571ad50f6d8a560e067312ef3509d0dd5c74c7a8977bae274076a4a7b1221"
+      "sha256": "139df2ee5bbeabdd9c99095845cd3d8057d821a8a1ad86d301252fcf8b811be9"
     },
     {
       "path": "oxvm-sdk/SKILL.md",
-      "sha256": "2f07061b0b2bf8f3ac3128fcfe789f4c831202a3b0058386827043dac866595a"
+      "sha256": "c5e8eb6455423006a2aaced8fb65e4c5741350f4aac6413090c2152332eccee1"
     },
     {
       "path": "oxvm-sdk/agents/openai.yaml",
-      "sha256": "7efffd8e16addecafb05c3df1844cfb8ea33ef63d33290fdaad607bc6f199aec"
+      "sha256": "768d6a6cd85efbc0bb9d25a8be3829410392ccfcb004dda89e725c02ac93391e"
     },
     {
       "path": "oxvm-starter/SKILL.md",
-      "sha256": "a961278b26794710fd57dd42f4ac03cfd48e1c94a11b56a8f091dcb10c673f71"
+      "sha256": "2790110f9208098c6e315b57710c3f32f548656560b7bfcde56dcc388a99bd99"
     },
     {
       "path": "oxvm-starter/agents/openai.yaml",
-      "sha256": "6990d0822d93fe437543a9ede178f4484bd51d2b321e784d6e0e21812a9ff727"
+      "sha256": "178773949adba97ff3bd6ff2da253fd51637166e2f7e8690b1e0894c04a99dfe"
     }
   ]
 }

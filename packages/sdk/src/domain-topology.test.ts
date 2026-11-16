@@ -3,7 +3,7 @@ import { DEFAULT_FRAME_ORIGIN } from "./frame/location.js";
 import { decodePublicVMOptions, DEFAULT_FRAME_PREVIEW_ORIGIN } from "./vm-options.js";
 import { VMError } from "./runtime/errors.js";
 
-describe("OXVM trusted and preview domain separation", () => {
+describe("OxVM trusted and preview domain separation", () => {
   it("uses the trusted runtime and the separate preview domain", () => {
     expect(DEFAULT_FRAME_ORIGIN).toBe("https://run.oxvm.dev");
     expect(DEFAULT_FRAME_PREVIEW_ORIGIN).toBe("https://tabvm.dev");

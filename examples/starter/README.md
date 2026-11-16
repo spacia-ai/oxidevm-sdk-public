@@ -2,12 +2,12 @@
 
 Edit Python on the left and inspect its pandas DataFrame on the right.
 This Vite and TypeScript application runs the actual Linux x86-64 Python,
-NumPy and pandas binaries through OXVM Userspace. It does not boot a kernel.
+NumPy and pandas binaries through OxVM Userspace. It does not boot a kernel.
 Python executes in the browser's hosted runtime iframe. There is no data-processing backend.
 
 ## Build with Codex or Claude
 
-OXVM project skills are included. Open this folder in Codex or Claude Code
+OxVM project skills are included. Open this folder in Codex or Claude Code
 and try:
 
 > Add a revenue chart from the DataFrame result. Keep Python running in Linux.

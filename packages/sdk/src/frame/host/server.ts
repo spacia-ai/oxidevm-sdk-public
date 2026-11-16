@@ -25,7 +25,7 @@ export interface FrameServerOptions {
    * keepers open in the page through `previewKeeperHost`.
    */
   create(options: unknown, signal: AbortSignal, onProgress: (progress: BootProgress) => void, previewKeeperHost: PreviewKeeperHost): Promise<VM>;
-  /** Erases this origin's OXVM storage, as `eraseLocalData` does for a self-hosted page. */
+  /** Erases this origin's OxVM storage, as `eraseLocalData` does for a self-hosted page. */
   eraseLocalData(signal: AbortSignal): Promise<void>;
   /** Runs after the VM is disposed (by the page, or because the VM suspended). */
   onDisposed?(): void;

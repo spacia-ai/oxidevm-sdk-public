@@ -177,7 +177,7 @@ The source-built executables also contain GCC 15.2.0-r5 runtime objects
 recipes and complete license texts. They are not the build-only GCC compiler.
 The exception is recorded explicitly. Human review must confirm its conditions.
 
-The image configures OXVM virtual DNS at `192.0.2.1`. Verify DNS and HTTPS through the enabled browser network path. Keep this configuration when selecting or rebuilding the runtime closure.
+The image configures OxVM virtual DNS at `192.0.2.1`. Verify DNS and HTTPS through the enabled browser network path. Keep this configuration when selecting or rebuilding the runtime closure.
 
 ## Hashing and scripting builds
 

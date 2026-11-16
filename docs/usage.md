@@ -1,4 +1,4 @@
-# OXVM SDK and CLI: usage guide
+# OxVM SDK and CLI: usage guide
 
 Start with the [starter application](../examples/starter/README.md), then use this guide to add files, processes, terminals and previews to your application.
 
@@ -10,7 +10,7 @@ The CLI creates your local web application. Linux programs execute inside the br
 | I want to… | Start here |
 | --- | --- |
 | Try the starter and run a Linux command | [Hello in the browser](#1-hello-in-the-browser) |
-| Add OXVM to my existing frontend | [Existing applications](#2-add-oxidevm-to-an-existing-application) |
+| Add OxVM to my existing frontend | [Existing applications](#2-add-oxvm-to-an-existing-application) |
 | Keep files after reopening the page | [Persistent workspaces](#3-keep-files-between-visits) |
 | Run a web application inside the VM | [A guest web app](#4-run-a-web-app-inside-the-browser) |
 | Install/build an existing project | [Guest project commands](#5-run-your-projects-commands) |
@@ -102,7 +102,7 @@ This writes `/workspace/hello.txt`, runs the image's real Linux `cat`, reads its
 
 For System, supply a signed System image with `--mode system`, pass its image reference in the factory, and change the progress label to “Starting System…”. The file and command APIs are the same.
 
-## 2. Add OXVM to an existing application
+## 2. Add OxVM to an existing application
 
 Install the browser library and development CLI:
 

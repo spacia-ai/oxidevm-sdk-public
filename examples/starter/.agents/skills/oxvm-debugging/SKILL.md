@@ -1,6 +1,6 @@
 ---
 name: oxvm-debugging
-description: Diagnose an OXVM application's startup, hosted runtime iframe, guest process, upload, storage, network or preview failures using the public SDK and browser evidence.
+description: Diagnose an OxVM application's startup, hosted runtime iframe, guest process, upload, storage, network or preview failures using the public SDK and browser evidence.
 license: Apache-2.0
 ---
 
@@ -8,7 +8,7 @@ Use the package names installed in the project. New projects use `@oxvm/sdk`
 and `@oxvm/cli`. Keep `@oxidevm/sdk`, `@oxidevm/cli`, the `oxidevm` command,
 and legacy project files until the user explicitly requests migration.
 
-# Diagnose an OXVM application
+# Diagnose an OxVM application
 
 Start with the exact action, error code and installed SDK version. Read the existing integration before changing it. Distinguish host JavaScript errors, runtime-frame startup errors, guest process exits and Python errors; they have different owners.
 
@@ -31,4 +31,4 @@ For an image failure, retain the exact manifest reference, digest and independen
 
 Use diagnostics exposed by the installed public SDK only when needed. Redact credentials and unrelated guest data. Changes to SDK internals or the proprietary engine require their owning repository and permission; this skill supplies consumer integration guidance.
 
-Make the smallest fix at the owning boundary. Recheck the original action and one relevant failure case. State what passed and what remains unverified. See [OXVM guides](https://oxvm.dev/docs/) for supported configuration.
+Make the smallest fix at the owning boundary. Recheck the original action and one relevant failure case. State what passed and what remains unverified. See [OxVM guides](https://oxvm.dev/docs/) for supported configuration.

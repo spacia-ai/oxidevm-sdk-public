@@ -26,7 +26,7 @@ export interface NativeExecutionAbsent {
 export type NativeExecutionResult = NativeExecutionOpen | NativeExecutionAbsent;
 
 /** Shown once per VM whose `commandInterceptors: "auto"` opened without native execution. */
-export const NATIVE_EXECUTION_ABSENT_WARNING = "OXVM: native JavaScript acceleration is off because this runtime publishes no native-node-api.json (reason: descriptor-absent). Commands run in Linux, and TypeScript command interception stays as configured. To turn command acceleration and interception off on purpose, pass commandInterceptors: \"off\". To enable native acceleration, deploy a separate execution origin and publish its native-node-api.json beside this runtime.";
+export const NATIVE_EXECUTION_ABSENT_WARNING = "OxVM: native JavaScript acceleration is off because this runtime publishes no native-node-api.json (reason: descriptor-absent). Commands run in Linux, and TypeScript command interception stays as configured. To turn command acceleration and interception off on purpose, pass commandInterceptors: \"off\". To enable native acceleration, deploy a separate execution origin and publish its native-node-api.json beside this runtime.";
 
 /** What the VM asked for: System mode has no command acceleration, and `"off"` opts out. */
 export type CommandAccelerationRequest = "not-applicable" | "off" | "auto";

@@ -1,6 +1,6 @@
 # Build with Codex or Claude
 
-The generated starter includes OXVM project skills for Codex and Claude Code.
+The generated starter includes OxVM project skills for Codex and Claude Code.
 Open its folder in your code app. No plugin installation is required.
 
 Try this prompt:
@@ -47,7 +47,7 @@ On older versions, use these commands inside Claude Code:
 ```
 
 Third-party marketplace auto-updates are off by default. In `/plugin`, open
-**Marketplaces**, select **OXVM**, then enable auto-update. Follow the
+**Marketplaces**, select **OxVM**, then enable auto-update. Follow the
 client's reload message or start a new session. For a manual update:
 
 ```sh

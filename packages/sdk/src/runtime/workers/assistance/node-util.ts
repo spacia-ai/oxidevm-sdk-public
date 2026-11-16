@@ -1,6 +1,6 @@
 /*!
  * Portions adapted from Node.js v24.18.1 lib/util.js, lib/internal/util.js
- * and lib/internal/process/warning.js; modified for OXVM's process owner.
+ * and lib/internal/process/warning.js; modified for OxVM's process owner.
  * Copyright Node.js contributors. All rights reserved.
  * Copyright Joyent, Inc. and other Node contributors. All rights reserved.
  *

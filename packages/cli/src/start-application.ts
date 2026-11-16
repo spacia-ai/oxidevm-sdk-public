@@ -24,6 +24,6 @@ export async function startApplication(directory: string, manager: "npm" | "bun"
   }
   io.stdout(`Installing starter dependencies with ${manager}…\n`);
   await run(manager === "npm" ? ["install", "--ignore-scripts", "--no-audit", "--no-fund"] : ["install", "--ignore-scripts"]);
-  io.stdout("Starting your local OXVM demo…\n");
+  io.stdout("Starting your local OxVM demo…\n");
   await run(["run", "dev", "--", "--host", "127.0.0.1"]);
 }

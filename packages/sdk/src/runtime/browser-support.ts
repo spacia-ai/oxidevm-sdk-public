@@ -1,7 +1,7 @@
 import { VMError } from "./errors.js";
 
 /**
- * What OXVM needs from the browser beyond what every supported engine has, each probed
+ * What OxVM needs from the browser beyond what every supported engine has, each probed
  * directly (never by user agent). Emitted JIT modules chain blocks with Wasm tail calls and the
  * cores use Wasm SIMD; the SDK uses `Promise.withResolvers`.
  */
@@ -73,7 +73,7 @@ export function assertBrowserSupport(probe?: BrowserFeatureProbe): void {
   if (support.supported) return;
   throw new VMError(
     "CORE_LOAD_FAILED",
-    `this browser lacks features OXVM requires: ${support.missing.join(", ")}`,
+    `this browser lacks features OxVM requires: ${support.missing.join(", ")}`,
     { reason: "browser-unsupported", missing: support.missing },
   );
 }

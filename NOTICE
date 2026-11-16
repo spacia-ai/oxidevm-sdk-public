@@ -1,8 +1,8 @@
-OXVM SDK
+OxVM SDK
 Copyright 2026 Spacia B.V.
 
 This product includes software developed by Spacia B.V.
-The OXVM engine WebAssembly modules are not part of this product; they are
+The OxVM engine WebAssembly modules are not part of this product; they are
 distributed separately under their own license.
 
 The @oxvm/sdk compiler assets include esbuild 0.25.12 (MIT) and the Go

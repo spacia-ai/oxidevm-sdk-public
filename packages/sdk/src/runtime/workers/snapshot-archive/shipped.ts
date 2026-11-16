@@ -109,7 +109,7 @@ export async function verifyShippedManifest(bytes: Uint8Array, expected: Shipped
     }
   } catch (error) {
     if (error instanceof VMError && error.detail?.["reason"] === "snapshot-older-format") {
-      throw shippedError("older", "the shipped restore point is from an older OXVM");
+      throw shippedError("older", "the shipped restore point is from an older OxVM");
     }
     throw shippedError("damaged", "the shipped restore point's description is invalid");
   }
@@ -171,10 +171,10 @@ function readVersioned(bytes: Uint8Array): Readonly<Record<string, unknown>> {
   const snapshot = manifest["snapshot"];
   const schema: unknown = typeof snapshot === "object" && snapshot !== null && "schema" in snapshot ? snapshot.schema : undefined;
   if (version > SHIPPED_TRANSPORT_FORMAT_VERSION || (typeof schema === "number" && schema > USERSPACE_SNAPSHOT_SCHEMA)) {
-    throw shippedError("newer", "the shipped restore point needs a newer OXVM");
+    throw shippedError("newer", "the shipped restore point needs a newer OxVM");
   }
   if (version < SHIPPED_FORMAT_VERSION || (typeof schema === "number" && schema < SNAPSHOT_SCHEMA)) {
-    throw shippedError("older", "the shipped restore point is from an older OXVM");
+    throw shippedError("older", "the shipped restore point is from an older OxVM");
   }
   return manifest;
 }

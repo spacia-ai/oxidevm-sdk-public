@@ -88,7 +88,7 @@ export async function importBackup(store: SnapshotStore, file: Blob, run: Archiv
   let transaction: SnapshotImport | undefined;
   try {
     const first = await entries.next();
-    if (first.done === true || first.value.kind !== "manifest") throw backupError("wrong-file", "this file is not a OXVM backup");
+    if (first.done === true || first.value.kind !== "manifest") throw backupError("wrong-file", "this file is not an OxVM backup");
     const { snapshot } = first.value.manifest;
     throwIfCancelled(run.signal);
     const compatible = await run.enqueue(() => store.compatibility(snapshot));
@@ -120,7 +120,7 @@ export async function inspectBackup(store: SnapshotStore, file: Blob, nowUnixMs:
   const entries = readBackup(source, { nowUnixMs });
   try {
     const first = await entries.next();
-    if (first.done === true || first.value.kind !== "manifest") throw backupError("wrong-file", "this file is not a OXVM backup");
+    if (first.done === true || first.value.kind !== "manifest") throw backupError("wrong-file", "this file is not an OxVM backup");
     const snapshot = first.value.manifest.snapshot;
     if(snapshot.schema===USERSPACE_SNAPSHOT_SCHEMA){
       let checked=false;

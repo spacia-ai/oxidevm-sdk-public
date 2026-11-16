@@ -106,7 +106,7 @@ import { ownedRuntime } from "./vm-adapter.js";
 /** Reads the diagnostics of a VM created by this SDK. */
 export function getDiagnostics(vm: VM): RuntimeVMDiagnostics { return ownedRuntime(vm).diagnostics; }
 
-/** Erases the runtime origin's OXVM data: this page's, or the runtime frame's in frame mode. */
+/** Erases the runtime origin's OxVM data: this page's, or the runtime frame's in frame mode. */
 export { eraseLocalData } from "./local-data.js";
 /** The one engine release this SDK pins: its ID is the SHA-256 of its exact release.json bytes. */
 export { engineRelease, engineReleaseId } from "./engine.generated.js";

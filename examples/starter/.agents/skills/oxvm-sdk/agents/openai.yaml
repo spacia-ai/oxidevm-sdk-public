@@ -1,4 +1,4 @@
 interface:
-  display_name: "OXVM SDK"
+  display_name: "OxVM SDK"
   short_description: "Build browser apps that run real Linux programs"
-  default_prompt: "Use $oxvm-sdk to integrate OXVM into this application."
+  default_prompt: "Use $oxvm-sdk to integrate OxVM into this application."

@@ -513,7 +513,7 @@ crate (`crates/oxvm-bridge`) calls. Every call is synchronous for the program;
 no JSPI or Asyncify is involved.
 
 Use `oxvm-bridge = "0.1.0"` to import `oxvm_bridge::` in Rust. The new crate
-imports `oxvm_bridge_v1` and needs the matching OXVM SDK. The SDK also serves
+imports `oxvm_bridge_v1` and needs the matching OxVM SDK. The SDK also serves
 the retained `oxidevm_bridge_v1` namespace with the same functions and run state.
 Existing binaries need no rebuild.
 

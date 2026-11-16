@@ -42,7 +42,7 @@ import { frameWorkspace } from "./workspace.js";
 export async function createFrameVM(options: ValidatedVMOptions, runtime: Extract<RuntimeSelection, { readonly hosting: "frame" }>): Promise<VM> {
   abortIfRequested(options.signal);
   if (!globalThis.crossOriginIsolated) {
-    throw new VMError("FEATURE_NOT_AVAILABLE", "the OXVM runtime frame needs a cross-origin isolated page: serve it with Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp (or credentialless)", { reason: "browser-unsupported", requirement: "cross-origin-isolation" });
+    throw new VMError("FEATURE_NOT_AVAILABLE", "the OxVM runtime frame needs a cross-origin isolated page: serve it with Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp (or credentialless)", { reason: "browser-unsupported", requirement: "cross-origin-isolation" });
   }
   const frame = await mountRuntimeFrame(runtime.origin, options.signal);
   try {

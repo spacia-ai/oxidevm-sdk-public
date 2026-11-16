@@ -1,6 +1,6 @@
-# OXVM CLI
+# OxVM CLI
 
-Create and verify OXVM browser applications, images, snapshots, and WebAssembly modules.
+Create and verify OxVM browser applications, images, snapshots, and WebAssembly modules.
 Use Node.js 24 or newer.
 
 ```sh

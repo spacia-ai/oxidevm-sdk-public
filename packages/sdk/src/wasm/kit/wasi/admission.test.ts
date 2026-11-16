@@ -6,7 +6,7 @@ import { wasm, type ModuleSpec } from "./wasm-builder.test-support.js";
 const admit = (spec: ModuleSpec, bridge: readonly string[] = []) => { admitProgram(new WebAssembly.Module(wasm(spec)), new Set(bridge)); };
 
 describe("program admission (OBL-VERSION)", () => {
-  it("uses the OXVM namespace for new programs", () => {
+  it("uses the OxVM namespace for new programs", () => {
     expect(BRIDGE_NAMESPACE).toBe("oxvm_bridge_v1");
   });
 

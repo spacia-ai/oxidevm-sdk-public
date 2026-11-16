@@ -1,4 +1,4 @@
 interface:
-  display_name: "OXVM debugging"
+  display_name: "OxVM debugging"
   short_description: "Diagnose browser VM and guest integration errors"
   default_prompt: "Use $oxvm-debugging to investigate this application error."

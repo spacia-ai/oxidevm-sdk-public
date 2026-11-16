@@ -1,4 +1,4 @@
-# OXVM SDK contributor instructions
+# OxVM SDK contributor instructions
 
 This repository contains the Apache-2.0 SDK, CLI, and Python + pandas starter.
 The engine has separate license terms. Guest programs retain their own licenses.

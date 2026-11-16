@@ -403,7 +403,7 @@ transport. It takes the same `network` option: a relay connects after the machin
 configured and before execution starts, and disposal revokes it; a failed connection
 disposes the machine and rejects with the relay's error.
 
-`eraseLocalData({ runtime?, signal? })` (diagnostics entry) erases every OXVM
+`eraseLocalData({ runtime?, signal? })` (diagnostics entry) erases every OxVM
 workspace, restore point, image and IndexedDB store of the origin that runs the
 runtime. Without `runtime`, or with a self-hosted one, that is this page's origin.
 With `runtime: { hosting: "frame", origin? }` it is the runtime frame's origin, whose

@@ -1,6 +1,6 @@
 ---
 name: oxvm-sdk
-description: Build or change browser applications that use the OXVM TypeScript SDK to run Linux programs, manage VM files and processes, or embed terminals and previews.
+description: Build or change browser applications that use the OxVM TypeScript SDK to run Linux programs, manage VM files and processes, or embed terminals and previews.
 license: Apache-2.0
 ---
 
@@ -8,9 +8,9 @@ Use the package names installed in the project. New projects use `@oxvm/sdk`
 and `@oxvm/cli`. Keep `@oxidevm/sdk`, `@oxidevm/cli`, the `oxidevm` command,
 and legacy project files until the user explicitly requests migration.
 
-# Build with the OXVM SDK
+# Build with the OxVM SDK
 
-Read the application's `package.json`, lockfile, existing OXVM configuration and installed `@oxvm/sdk` declarations first. Use the installed version's public exports. A newer plugin does not upgrade the application's SDK or make newer APIs available.
+Read the application's `package.json`, lockfile, existing OxVM configuration and installed `@oxvm/sdk` declarations first. Use the installed version's public exports. A newer plugin does not upgrade the application's SDK or make newer APIs available.
 
 ## Choose the application boundary
 
@@ -50,4 +50,4 @@ Render guest output as text. Keep previews in the SDK's isolated preview frame. 
 
 Run the application's type check, production build and the affected browser interaction. Preserve its package manager and unrelated files. Report unavailable capabilities through their typed SDK errors.
 
-For API details, use the installed declarations and [OXVM documentation](https://oxvm.dev/docs/). Match documentation to the installed SDK before adopting a new API. Engine and guest licenses remain separate from the Apache-2.0 SDK and skills.
+For API details, use the installed declarations and [OxVM documentation](https://oxvm.dev/docs/). Match documentation to the installed SDK before adopting a new API. Engine and guest licenses remain separate from the Apache-2.0 SDK and skills.

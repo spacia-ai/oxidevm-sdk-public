@@ -1,7 +1,7 @@
 # Development and archive installation
 
 Use Node.js 24 or newer, pnpm 11.17.0, Go 1.26.8 and OpenSSL. Go builds the
-qualified browser compiler asset. It does not build the OXVM engine.
+qualified browser compiler asset. It does not build the OxVM engine.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -21,7 +21,7 @@ declarations, package exports, exact versions, CLI image initialization and
 the starter build, fonts, and canonical CLI template.
 
 The SDK contains a required esbuild compiler Wasm asset. It contains no
-OXVM engine or guest binaries. The pinned engine is a separate artifact.
+OxVM engine or guest binaries. The pinned engine is a separate artifact.
 For applicable worker/engine compatibility tests:
 
 ```sh

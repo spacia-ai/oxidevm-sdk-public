@@ -1,6 +1,6 @@
 {
   "name": "@oxvm/cli",
-  "version": "0.0.29",
+  "version": "0.0.30",
   "type": "module",
   "license": "Apache-2.0",
   "bin": {
@@ -35,7 +35,7 @@
     "typescript": "6.0.3",
     "vitest": "5.1.0"
   },
-  "description": "Create and verify OXVM browser applications, images, snapshots, and WebAssembly modules.",
+  "description": "Create and verify OxVM browser applications, images, snapshots, and WebAssembly modules.",
   "keywords": [
     "oxvm",
     "linux",

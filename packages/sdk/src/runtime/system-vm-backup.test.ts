@@ -159,10 +159,10 @@ describe("system VM backups", () => {
     }
 
     expect(plain).toEqual({
-      "backup-wrong-file": "This file isn't a OXVM backup.",
+      "backup-wrong-file": "This file isn't an OxVM backup.",
       "backup-damaged": "This backup is damaged or incomplete.",
-      "backup-newer": "This backup needs a newer version of OXVM.",
-      "backup-older": "This backup is from an older version of OXVM and can't be opened.",
+      "backup-newer": "This backup needs a newer version of OxVM.",
+      "backup-older": "This backup is from an older version of OxVM and can't be opened.",
       "backup-other-environment": "This backup belongs to another environment.",
       "backup-no-space": "There isn't enough space in this browser.",
     });

@@ -16,7 +16,7 @@ export type Preview1Name = (typeof PREVIEW1_IMPORTS)[number];
 const KNOWN: ReadonlySet<string> = new Set(PREVIEW1_IMPORTS);
 export function isPreview1Name(name: string): name is Preview1Name { return KNOWN.has(name); }
 
-/** The OXVM bridge namespace of this release; a different major is refused before the program starts. */
+/** The OxVM bridge namespace of this release; a different major is refused before the program starts. */
 export const BRIDGE_NAMESPACE = "oxvm_bridge_v1";
 /** Published programs retain this namespace; both names use the same v1 functions and run state. */
 export const LEGACY_BRIDGE_NAMESPACE = "oxidevm_bridge_v1";

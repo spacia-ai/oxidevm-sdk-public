@@ -198,7 +198,7 @@ function documentHost(): PreviewKeeperHost {
       frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
       frame.setAttribute("aria-hidden", "true");
       frame.style.display = "none";
-      frame.title = "OXVM preview session keeper";
+      frame.title = "OxVM preview session keeper";
       frame.src = url.href;
       document.body.append(frame);
       return {

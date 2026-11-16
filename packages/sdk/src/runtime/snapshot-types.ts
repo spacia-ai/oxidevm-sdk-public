@@ -62,7 +62,7 @@ export type ShippedSkipReason =
   /** No trusted key was given, or the manifest is signed by another key. */
   | "untrusted"
   | "signature-invalid"
-  /** The shipped restore point needs a newer OXVM, or is from an older one. */
+  /** The shipped restore point needs a newer OxVM, or is from an older one. */
   | "newer"
   | "older"
   /** It belongs to another image or does not fit this VM. */
