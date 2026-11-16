@@ -78,7 +78,7 @@ export type FrameOperation =
   | { readonly type: "snapshots.inspect" | "snapshots.import"; readonly file: Blob }
   | { readonly type: "suspend"; readonly label: string }
   | { readonly type: "dispose" }
-  /** Protocol 3: dispose the frame's VM, then erase the runtime origin's OXVM data. */
+  /** Protocol 3: dispose the frame's VM, then erase the runtime origin's OxVM data. */
   | { readonly type: "erase-local-data" };
 
 export type FrameOperationType = FrameOperation["type"];

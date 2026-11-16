@@ -3,7 +3,7 @@
 | Component | Terms |
 | --- | --- |
 | SDK, CLI, and starter application code | Apache-2.0 |
-| OXVM engine | Proprietary. Free non-commercial use and local development. Paid commercial production use. |
+| OxVM engine | Proprietary. Free non-commercial use and local development. Paid commercial production use. |
 | Guest programs and libraries | Each program's original license |
 | WebAssembly modules you install | Each module's own license, declared in its manifest |
 | Fonts and other assets | Their original licenses and notices |
@@ -41,7 +41,7 @@ Python, NumPy, pandas, Toybox, dash, mksh, musl, OpenSSL and their required libr
 NumPy and pandas compile from their pinned sources. NumPy uses its internal
 BLAS/LAPACK fallback. The default image excludes libquadmath, libgfortran and
 OpenBLAS. GCC runtime libraries retain their explicit Runtime Library Exception.
-It contains no OXVM engine or Linux kernel. Engine restrictions do not
+It contains no OxVM engine or Linux kernel. Engine restrictions do not
 restrict rights granted by guest or dependency licenses.
 
 Image materials include `OPEN-SOURCE-NOTICE.md`, SPDX and CycloneDX inventories,

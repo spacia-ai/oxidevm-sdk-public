@@ -69,7 +69,7 @@ export function decodeBackupManifest(bytes: Uint8Array, nowUnixMs: number): Back
   try {
     value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
-    throw backupError("wrong-file", "this file is not a OXVM backup");
+    throw backupError("wrong-file", "this file is not an OxVM backup");
   }
   const manifest = checkBackupVersion(value);
   try {
@@ -80,8 +80,8 @@ export function decodeBackupManifest(bytes: Uint8Array, nowUnixMs: number): Back
   } catch (error) {
     if (isBackupError(error)) throw error;
     if (error instanceof VMError && error.code === "SNAPSHOT_VERSION") {
-      if (error.detail?.["reason"] === "snapshot-newer-format") throw backupError("newer", "this backup needs a newer OXVM");
-      if (error.detail?.["reason"] === "snapshot-older-format") throw backupError("older", "this backup is from an older OXVM");
+      if (error.detail?.["reason"] === "snapshot-newer-format") throw backupError("newer", "this backup needs a newer OxVM");
+      if (error.detail?.["reason"] === "snapshot-older-format") throw backupError("older", "this backup is from an older OxVM");
     }
     throw backupError("damaged", "the backup's description is invalid");
   }

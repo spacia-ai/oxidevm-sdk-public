@@ -61,7 +61,7 @@ export function frameChecks(observed: FrameObservation): Check[] {
   return [
     page.secureContext ? passed("secure-context") : failed("secure-context", "the application page is not a secure context; serve it over HTTPS or from localhost"),
     page.crossOriginIsolated ? passed("cross-origin-isolation") : failed("cross-origin-isolation", "the application page is not cross-origin isolated; serve it with Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp or credentialless"),
-    page.missingFeatures.length === 0 ? passed("wasm-features") : failed("wasm-features", `this browser lacks features OXVM requires: ${page.missingFeatures.join(", ")}`),
+    page.missingFeatures.length === 0 ? passed("wasm-features") : failed("wasm-features", `this browser lacks features OxVM requires: ${page.missingFeatures.join(", ")}`),
     { check: "worker-load", status: "not-applicable" },
     integrity(observed, frame, engine),
     mime(observed, engine),

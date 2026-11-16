@@ -26,7 +26,7 @@ sys.readDirectory = (path, extensions, excludes, includes, depth) => matchFiles(
 patchWriteFileEnsuringDirectory(sys);
 ` + cli.slice(end + 5);
 await mkdir(dirname(target), { recursive: true });
-const worker = `/*! Modified for OXVM: replace the pinned TypeScript System initializer with the Linux filesystem bridge. See the accompanying provenance JSON. */\nimport { serveTypeScript } from '/bundle/tsc-adapter.js';\nserveTypeScript(system => {\n${adapted}\n});\n`;
+const worker = `/*! Modified for OxVM: replace the pinned TypeScript System initializer with the Linux filesystem bridge. See the accompanying provenance JSON. */\nimport { serveTypeScript } from '/bundle/tsc-adapter.js';\nserveTypeScript(system => {\n${adapted}\n});\n`;
 if (packaged) {
   await build({ stdin: { contents: worker.replace("/bundle/tsc-adapter.js", resolve(packageRoot, "packages/sdk/src/runtime/workers/command-interceptors/worker-system.ts")), resolveDir: packageRoot, sourcefile: "typescript-worker.js" }, outfile: target, bundle: true, minify: true, sourcemap: false, platform: "browser", format: "esm", target: "esnext", legalComments: "inline" });
   await writeFile(target, await minifyJavaScript(await readFile(target, "utf8"), false));

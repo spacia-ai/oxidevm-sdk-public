@@ -1,4 +1,4 @@
-# OXVM SDK
+# OxVM SDK
 
 Run Linux programs in your browser. Use the TypeScript SDK to work with files,
 start processes, connect terminals, and preview HTTP servers.

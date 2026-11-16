@@ -28,7 +28,7 @@ export interface DispatchContext {
 type VMRequest = Exclude<FrameRequest, { readonly type: "create" | "dispose" | "erase-local-data" | "workspace-handoff" }>;
 
 /**
- * Erases the runtime origin's OXVM storage for the page: the VM this frame created (if any) is
+ * Erases the runtime origin's OxVM storage for the page: the VM this frame created (if any) is
  * disposed first, because erasure needs every workspace on this origin released, then `erase`
  * (the origin's one erasure owner) runs in a fresh storage worker.
  */

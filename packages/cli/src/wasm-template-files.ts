@@ -354,7 +354,7 @@ export function noticeFile(id: string): string {
   return `${id}
 Copyright (c) <year> <copyright holder>
 
-A OXVM WebAssembly module. Replace this file with the copyright and attribution notices of this module and of every program
+An OxVM WebAssembly module. Replace this file with the copyright and attribution notices of this module and of every program
 or library whose code or binaries it ships; the Apache License asks a redistributor to keep the NOTICE files of the works it
 redistributes. Keep the license texts of shipped binaries in this repository too, and name the files in license.notices.
 `;
@@ -380,7 +380,7 @@ Each name in \`commands\` becomes a program: once an application turns it on for
 export function agentsFile(id: string, shape: TemplateShape): string {
   return `# ${id}: instructions for coding agents
 
-This repository is a OXVM WebAssembly module. \`module.ts\` holds the whole definition: a literal \`manifest\` and the \`adapter\` that runs the WebAssembly inside a Userspace JS process.
+This repository is an OxVM WebAssembly module. \`module.ts\` holds the whole definition: a literal \`manifest\` and the \`adapter\` that runs the WebAssembly inside a Userspace JS process.
 
 - Edit \`module.ts\`, \`src/\` and \`test/\`. Never edit \`dist/\`; \`pnpm run build\` writes it.
 - Keep the manifest a literal. The build reads it without running code, so it cannot call functions or use variables.
@@ -439,11 +439,11 @@ export function readmeFile(id: string, shape: TemplateShape, reach: TemplateReac
     : "A service module listens on the sockets its manifest declares and serves clients until it is stopped.";
   return `# ${id}
 
-A [OXVM](https://oxvm.dev) WebAssembly module (${shape.kind}). ${run}
+A [OxVM](https://oxvm.dev) WebAssembly module (${shape.kind}). ${run}
 
 ## Use it
 
-In a OXVM application:
+In an OxVM application:
 
 \`\`\`sh
 oxvm wasm add github:OWNER/REPO@v0.1.0

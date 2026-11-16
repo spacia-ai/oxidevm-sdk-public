@@ -10,7 +10,7 @@ export async function acquireLocalDataLock(mode: LockMode, scope: StorageScope):
   const acquired = Promise.withResolvers<undefined>();
   const completed = navigator.locks.request(storageName(scope, "local-data"), { mode, ifAvailable: true }, async lock => {
     if (lock === null) {
-      acquired.reject(new VMError("STORAGE_ERROR", "Close other OXVM tabs, then retry cleanup", { reason: "local-data-in-use" }));
+      acquired.reject(new VMError("STORAGE_ERROR", "Close other OxVM tabs, then retry cleanup", { reason: "local-data-in-use" }));
       return;
     }
     acquired.resolve(undefined);

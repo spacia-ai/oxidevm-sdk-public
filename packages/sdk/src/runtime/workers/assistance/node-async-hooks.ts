@@ -1,6 +1,6 @@
 /*!
  * Portions adapted from Node.js v24.18.1 lib/async_hooks.js and
- * lib/internal/errors.js; modified for OXVM's existing resource owners.
+ * lib/internal/errors.js; modified for OxVM's existing resource owners.
  * Copyright Node.js contributors. All rights reserved.
  * Copyright Joyent, Inc. and other Node contributors. All rights reserved.
  *

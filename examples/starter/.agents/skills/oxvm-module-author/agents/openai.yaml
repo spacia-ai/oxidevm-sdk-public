@@ -1,4 +1,4 @@
 interface:
-  display_name: "OXVM Modules"
-  short_description: "Package a WebAssembly program as an OXVM module"
-  default_prompt: "Use $oxvm-module-author to create or install an OXVM WebAssembly module."
+  display_name: "OxVM Modules"
+  short_description: "Package a WebAssembly program as an OxVM module"
+  default_prompt: "Use $oxvm-module-author to create or install an OxVM WebAssembly module."

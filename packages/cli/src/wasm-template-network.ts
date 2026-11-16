@@ -135,7 +135,7 @@ ${body}
 export const NETWORK_RULES = `
 ## Networking rules
 
-The module networking standard (OXVM engine ADR 0029; the SDK's \`docs/wasm-modules.md\`, "Networking"):
+The module networking standard (OxVM engine ADR 0029; the SDK's \`docs/wasm-modules.md\`, "Networking"):
 
 1. Declare one reach in \`requires.host\`: none, \`net.vm\` or \`net.internet\`. Rust enforces it for every process of the module.
 2. With \`net.internet\`, disclose default hosts and the purpose in \`network\`; it is shown at install and never an allowlist.

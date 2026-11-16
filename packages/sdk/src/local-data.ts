@@ -4,7 +4,7 @@ import { VMError } from "./runtime/errors.js";
 import { decodePublicRuntime } from "./vm-options.js";
 
 /**
- * Erases all OXVM workspaces, restore points, images and IndexedDB stores of this page's
+ * Erases all OxVM workspaces, restore points, images and IndexedDB stores of this page's
  * origin: in its own storage, or with `runtime: { hosting: "frame" }` its part of the runtime
  * frame's storage, which this page cannot reach itself; other pages' data stays. Dispose every VM
  * first; an active workspace of this origin in another tab or frame makes this fail before

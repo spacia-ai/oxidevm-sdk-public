@@ -1,8 +1,8 @@
 # SDK migration
 
-## OXVM package rename
+## OxVM package rename
 
-The OXVM rename is prepared for the next approved public release. The new
+The OxVM rename is prepared for the next approved public release. The new
 packages are `@oxvm/sdk` and `@oxvm/cli`. Their command is `oxvm`.
 Do not use these commands before that release is available.
 
@@ -55,7 +55,7 @@ The new hosted default is `https://run.oxvm.dev`. Official runtime selections us
 `oxvm.dev` or any of its subdomains fails with `INVALID_ARGUMENT` before the VM
 starts, including alternate ports and trailing-dot hostnames. These hosts are
 reserved for the trusted application and its services. The provider cutover must
-remove legacy `*.oxvm.dev` guest preview routing before trusted OXVM services launch.
+remove legacy `*.oxvm.dev` guest preview routing before trusted OxVM services launch.
 Unchanged clients that hard-code the old preview domain need an upgrade; they
 cannot retain that preview service alongside the new trusted site. Change an explicitly configured old preview origin to `https://tabvm.dev`, or omit `preview` to use the official default. Keep per-session isolation. The retained official runtime host also selects the new preview domain when `preview` is omitted.
 
@@ -83,7 +83,7 @@ oxvm-bridge = "0.1.0"
 ```
 
 Update Rust paths to `oxvm_bridge::`. The new crate imports `oxvm_bridge_v1`.
-It requires the matching OXVM SDK. The SDK admits both this namespace and the
+It requires the matching OxVM SDK. The SDK admits both this namespace and the
 retained `oxidevm_bridge_v1` namespace through the same functions, permissions,
 memory and handles. Unknown functions, namespace lookalikes and other ABI majors
 are refused. Record layouts and signatures do not change, so ABI major 1 remains

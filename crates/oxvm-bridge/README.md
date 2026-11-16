@@ -1,9 +1,9 @@
 # oxvm-bridge
 
 Linux integration for Rust programs that run as WebAssembly (`wasm32-wasip1`) inside an
-[OXVM](https://oxvm.dev) virtual machine in the browser.
+[OxVM](https://oxvm.dev) virtual machine in the browser.
 
-OXVM runs compiled `wasm32-wasip1` programs as real Linux processes of the VM: standard Rust I/O, files, arguments,
+OxVM runs compiled `wasm32-wasip1` programs as real Linux processes of the VM: standard Rust I/O, files, arguments,
 environment, clocks and randomness work through WASI on the VM's live files. WASI Preview1 has no processes, no sockets
 and no working directory; this crate adds them:
 
@@ -41,15 +41,15 @@ Build with `cargo build --release --target wasm32-wasip1` and run the `.wasm` fi
 
 The program's module must declare the capabilities a call uses: `process.info` for `process::info`, `process.sync` for
 `Command`, and `net.vm` or `net.internet` for sockets. A call the module does not provide returns
-`Error::Unavailable` (`io::ErrorKind::Unsupported` for sockets). Outside OXVM every call returns that error, so code
+`Error::Unavailable` (`io::ErrorKind::Unsupported` for sockets). Outside OxVM every call returns that error, so code
 using the crate also builds and tests natively.
 
 Guide: <https://oxvm.dev/docs/guides/rust-programs/> · Interface reference:
 <https://oxvm.dev/docs/reference/wasi-bridge/>
 
-`oxvm-bridge` imports `oxvm_bridge_v1` and requires the matching OXVM SDK.
+`oxvm-bridge` imports `oxvm_bridge_v1` and requires the matching OxVM SDK.
 The SDK also serves the retained `oxidevm_bridge_v1` namespace through the same v1
-implementation, so previously compiled programs still work. Public error labels use OXVM. Function signatures
+implementation, so previously compiled programs still work. Public error labels use OxVM. Function signatures
 and records retain ABI major 1. Its only unsafe code is those calls, in one module.
 
 Licensed under the Apache License, Version 2.0.

@@ -1,6 +1,6 @@
-# OXVM SDK
+# OxVM SDK
 
-Run Linux tools inside a browser application with the framework-independent OXVM SDK.
+Run Linux tools inside a browser application with the framework-independent OxVM SDK.
 
 ```sh
 npm install @oxvm/sdk

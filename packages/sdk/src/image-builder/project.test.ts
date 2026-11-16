@@ -7,7 +7,7 @@ import { legacyImageLocations as defaultImageLocations } from "../default-images
 
 vi.mock("../defaults.generated.js", async () => ({ defaultImageLocations: (await import("../default-images.test-support.js")).legacyImageLocations }));
 
-it("uses OXVM staging for fresh configurations and keeps implicit legacy staging when loading legacy files", async () => {
+it("uses OxVM staging for fresh configurations and keeps implicit legacy staging when loading legacy files", async () => {
   expect(decodeProjectConfig({ mode: "userspace" }).assetBaseUrl).toBe("/oxvm/");
   const root = await mkdtemp(join(tmpdir(), "oxvm-config-"));
   try {

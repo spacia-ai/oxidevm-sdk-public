@@ -115,7 +115,7 @@ finished Linux programs, not Docker.
    using this explicit test path. Building an image does not require an engine.
    This test path does not change the application's hosted runtime configuration.
    If the engine is unavailable, report the automated browser test as blocked;
-   do not claim a successful Docker build proves OXVM compatibility.
+   do not claim a successful Docker build proves OxVM compatibility.
 
 For Bun-managed applications, use `bunx --no-install oxidevm` instead of
 `npm exec -- oxidevm`. Keep using the CLI installed with the project.

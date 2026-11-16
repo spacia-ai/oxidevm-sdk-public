@@ -155,7 +155,7 @@ describe("snapshot catalog", () => {
     const named = manifest(context, FIRST, { label: "Before upgrading Next" });
     await context.catalog.commit(named);
     await context.catalog.commit(manifest(context, SECOND));
-    // A newer OXVM rewrote FIRST in a later schema; SECOND's manifest cannot be read at all.
+    // A newer OxVM rewrote FIRST in a later schema; SECOND's manifest cannot be read at all.
     await recommit(context.root, FIRST, { ...JSON.parse(new TextDecoder().decode(encodeSnapshotManifest(named))), schema: 5 });
     await recommit(context.root, SECOND, "{");
 

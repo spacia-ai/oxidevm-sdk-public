@@ -19,7 +19,7 @@ async function present(project: string, name: string): Promise<boolean> {
 export async function moduleProjectFiles(project: string): Promise<typeof canonicalFiles> {
   const [canonical, legacy] = await Promise.all([canonicalFiles, legacyFiles].map(async files =>
     (await Promise.all([files.declaration, files.lock, files.generated].map(name => present(project, name)))).some(Boolean)));
-  if (canonical === true && legacy === true) throw new VMError("INVALID_ARGUMENT", "Both OXVM and legacy OxideVM module files exist; keep one coherent module project", { reason: "project-file-conflict" });
+  if (canonical === true && legacy === true) throw new VMError("INVALID_ARGUMENT", "Both OxVM and legacy OxideVM module files exist; keep one coherent module project", { reason: "project-file-conflict" });
   return legacy === true ? legacyFiles : canonicalFiles;
 }
 

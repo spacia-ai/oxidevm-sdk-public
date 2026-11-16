@@ -58,7 +58,7 @@ describe("frame-hosted doctor checks", () => {
     expect(status({ ...healthy, page: { secureContext: false, crossOriginIsolated: false, missingFeatures: ["wasm-simd", "wasm-tail-calls"] } }).slice(0, 3)).toEqual([
       "secure-context: the application page is not a secure context; serve it over HTTPS or from localhost",
       "cross-origin-isolation: the application page is not cross-origin isolated; serve it with Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp or credentialless",
-      "wasm-features: this browser lacks features OXVM requires: wasm-simd, wasm-tail-calls",
+      "wasm-features: this browser lacks features OxVM requires: wasm-simd, wasm-tail-calls",
     ]);
   });
 });

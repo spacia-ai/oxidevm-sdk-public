@@ -1,10 +1,10 @@
 [package]
 name = "oxvm-bridge"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
-description = "Process identity, native Linux programs and VM sockets for Rust programs running as WebAssembly (wasm32-wasip1) in an OXVM virtual machine"
+description = "Process identity, native Linux programs and VM sockets for Rust programs running as WebAssembly (wasm32-wasip1) in an OxVM virtual machine"
 repository = "https://github.com/spacia-ai/oxvm-sdk-public"
 homepage = "https://oxvm.dev"
 documentation = "https://docs.rs/oxvm-bridge"

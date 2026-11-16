@@ -1,6 +1,6 @@
 ---
 name: oxvm-starter
-description: Extend an OXVM generated starter with Linux Python and pandas, CSV upload, a DataFrame preview, charts, editing or terminal interactions.
+description: Extend an OxVM generated starter with Linux Python and pandas, CSV upload, a DataFrame preview, charts, editing or terminal interactions.
 license: Apache-2.0
 ---
 
@@ -8,7 +8,7 @@ Use the package names installed in the project. New projects use `@oxvm/sdk`
 and `@oxvm/cli`. Keep `@oxidevm/sdk`, `@oxidevm/cli`, the `oxidevm` command,
 and legacy project files until the user explicitly requests migration.
 
-# Extend the OXVM data starter
+# Extend the OxVM data starter
 
 Read `AGENT_SKILLS.json` when present, `package.json`, `src/main.ts`, `src/analysis.ts`, `src/python.ts`, and the existing tests before changing the starter. Use the installed SDK declarations for APIs. Treat these file names as the generated layout, not a requirement to replace an existing application's structure.
 
@@ -34,7 +34,7 @@ The default recipe builds NumPy and pandas from pinned sources and needs a separ
 - Preserve the Linux terminal, resize, interrupts, persistent edits and the reset confirmation. Do not reset data to make a test pass.
 - Avoid stale results after an upload or failed run. Keep export availability tied to the current dataset and completed result.
 - Render uploaded values and program output as text. Do not create HTML from CSV contents.
-- Keep the real OXVM logo, current colors and the clear starter/demo label. Put setup guidance outside the Linux terminal and workbench.
+- Keep the real OxVM logo, current colors and the clear starter/demo label. Put setup guidance outside the Linux terminal and workbench.
 
 Run the project type check, production build and focused tests. In the browser, run the sample, upload a small custom CSV, edit the analysis and verify the new result. Explain any browser or image test that could not run.
 

@@ -1,6 +1,6 @@
 ---
 name: oxvm-module-author
-description: Create, change, test or release an OXVM WebAssembly module, a repository that packages a WebAssembly program with a typed manifest and adapter for `oxvm wasm add`, declare its network reach, or install such a module into an application.
+description: Create, change, test or release an OxVM WebAssembly module, a repository that packages a WebAssembly program with a typed manifest and adapter for `oxvm wasm add`, declare its network reach, or install such a module into an application.
 license: Apache-2.0
 ---
 
@@ -8,7 +8,7 @@ Use the package names installed in the project. New projects use `@oxvm/sdk`
 and `@oxvm/cli`. Keep `@oxidevm/sdk`, `@oxidevm/cli`, the `oxidevm` command,
 and legacy project files until the user explicitly requests migration.
 
-# Author or install an OXVM WebAssembly module
+# Author or install an OxVM WebAssembly module
 
 A module wraps a WebAssembly program so an application installs it with one command and runs it next to real Linux programs. Read the project's `package.json`, lockfile and the installed `@oxvm/sdk` and `@oxvm/cli` declarations first. A newer plugin does not upgrade the project's SDK.
 
@@ -79,4 +79,4 @@ Installing never turns a module's commands on. Turn them on per VM with `enableM
 
 A module with `net.internet` reaches the internet only after the application connects the VM through a relay (`vm.network.connect`) and the user allows the session; until then it gets `EPERM`. Programs it starts with `process.spawn` follow the VM's own network policy, not the module's reach. When a module's manifest names `sockets.connect` without a reach token (built by a CLI before 0.0.10), it has VM-only reach; rebuild it with `net.internet` to reach the internet.
 
-For details use the installed declarations and the [OXVM documentation](https://oxvm.dev/docs/), matching them to the installed SDK version. Engine and guest licenses remain separate from the Apache-2.0 SDK and skills.
+For details use the installed declarations and the [OxVM documentation](https://oxvm.dev/docs/), matching them to the installed SDK version. Engine and guest licenses remain separate from the Apache-2.0 SDK and skills.

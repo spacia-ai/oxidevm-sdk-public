@@ -1,7 +1,7 @@
 //! Linux integration for Rust programs that run as WebAssembly (`wasm32-wasip1`) inside an
-//! [OXVM](https://oxvm.dev) virtual machine.
+//! [OxVM](https://oxvm.dev) virtual machine.
 //!
-//! An OXVM module runs your compiled program with the SDK's `host.kit.wasi`: standard Rust I/O, files, arguments,
+//! An OxVM module runs your compiled program with the SDK's `host.kit.wasi`: standard Rust I/O, files, arguments,
 //! environment, clocks and randomness work through WASI on the VM's live Linux files. WASI Preview1 has no processes,
 //! no sockets and no working directory, so this crate adds them through the `oxvm_bridge_v1` imports the kit serves:
 //!
@@ -14,7 +14,7 @@
 //!   network reach, with TLS verified against the VM's trust store. Both implement [`std::io::Read`] and
 //!   [`std::io::Write`].
 //!
-//! Outside OXVM (or when the module does not declare the capability a call needs) every call returns
+//! Outside OxVM (or when the module does not declare the capability a call needs) every call returns
 //! [`Error::Unavailable`], so the crate also builds and tests natively.
 //!
 //! ```no_run
@@ -45,7 +45,7 @@ use std::fmt;
 pub enum Error {
     /// The host answered with a WASI errno.
     Host(u32),
-    /// The host is not running this program under the bridge (`NOSYS`), for example outside OXVM.
+    /// The host is not running this program under the bridge (`NOSYS`), for example outside OxVM.
     Unavailable,
     /// The host's answer broke the ABI.
     Protocol(&'static str),
@@ -71,9 +71,9 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Host(errno) => write!(f, "the OXVM host failed with WASI errno {errno}"),
-            Self::Unavailable => f.write_str("the OXVM bridge is not available to this program"),
-            Self::Protocol(reason) => write!(f, "the OXVM bridge broke its ABI: {reason}"),
+            Self::Host(errno) => write!(f, "the OxVM host failed with WASI errno {errno}"),
+            Self::Unavailable => f.write_str("the OxVM bridge is not available to this program"),
+            Self::Protocol(reason) => write!(f, "the OxVM bridge broke its ABI: {reason}"),
             Self::InvalidCommand(reason) => write!(f, "invalid native command: {reason}"),
             Self::TimedOut => {
                 f.write_str("the native command ran past its deadline and was killed")
@@ -102,15 +102,15 @@ mod tests {
         assert_eq!(Error::from_errno(8), Error::Host(8));
         assert_eq!(
             Error::Host(44).to_string(),
-            "the OXVM host failed with WASI errno 44"
+            "the OxVM host failed with WASI errno 44"
         );
         assert_eq!(
             Error::Unavailable.to_string(),
-            "the OXVM bridge is not available to this program"
+            "the OxVM bridge is not available to this program"
         );
         assert_eq!(
             Error::Protocol("x").to_string(),
-            "the OXVM bridge broke its ABI: x"
+            "the OxVM bridge broke its ABI: x"
         );
     }
 }

@@ -6,7 +6,7 @@
 
 /** A module command's name, which is also its stub's file name; names with the reserved prefix are refused too. */
 export const MODULE_COMMAND_NAME = /^[a-z0-9][a-z0-9_.+-]{0,63}$/u;
-/** Names that start with this prefix belong to OXVM. */
+/** Names that start with this prefix belong to OxVM. */
 export const RESERVED_COMMAND_PREFIX = "oxidevm";
 
 export function isModuleCommandName(name: string): boolean {
