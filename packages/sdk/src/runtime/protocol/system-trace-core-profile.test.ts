@@ -273,3 +273,27 @@ it("decodes the current record31 in trace53 without weakening historical version
   expect(decodeCoreRuntimeProfile(current, 53).recordVersion).toBe(31);
   expect(() => decodeCoreRuntimeProfile({ ...current, recordVersion: 32 }, 53)).toThrow();
 });
+
+it("decodes record32 with its syscall path counters in trace55 only", () => {
+  const current = { ...EMPTY_CORE_RUNTIME_PROFILE, recordVersion: 32, jitInBlockSyscalls: 2n, jitInBlockSyscallContinues: 2n, plainSyscallsQuiet: 2n };
+  const decoded = decodeCoreRuntimeProfile(current, 55);
+  expect(decoded.recordVersion).toBe(32);
+  expect(decoded.jitInBlockSyscallContinues).toBe(2n);
+  expect(decoded.plainSyscallsQuiet).toBe(2n);
+  expect(() => decodeCoreRuntimeProfile(current, 54)).toThrow();
+  expect(() => decodeCoreRuntimeProfile({ ...current, jitInBlockSyscalls: 3n }, 55)).toThrow("reconcile");
+  expect(decodeCoreRuntimeProfile({ ...EMPTY_CORE_RUNTIME_PROFILE, recordVersion: 31 }, 54).plainSyscallsQuiet).toBe(0n);
+});
+
+it("decodes record33 with the file size limit count in trace56 and record32 in trace55", () => {
+  const current = { ...EMPTY_CORE_RUNTIME_PROFILE, recordVersion: 33, plainSyscallsQuiet: 2n, plainSyscallDeclinedFileSizeLimit: 4n };
+  const decoded = decodeCoreRuntimeProfile(current, 56);
+  expect(decoded.recordVersion).toBe(33);
+  expect(decoded.plainSyscallDeclinedFileSizeLimit).toBe(4n);
+  expect(() => decodeCoreRuntimeProfile(current, 55)).toThrow();
+  const record32 = Object.fromEntries(Object.entries({ ...EMPTY_CORE_RUNTIME_PROFILE, recordVersion: 32, plainSyscallsQuiet: 2n }).filter(([key]) => key !== "plainSyscallDeclinedFileSizeLimit"));
+  const archived = decodeCoreRuntimeProfile(record32, 55);
+  expect(archived.recordVersion).toBe(32);
+  expect(archived.plainSyscallDeclinedFileSizeLimit).toBe(0n);
+  expect(() => decodeCoreRuntimeProfile({ ...record32, plainSyscallDeclinedFileSizeLimit: 1n }, 55)).toThrow("historical");
+});

@@ -50,7 +50,10 @@ export function traceRingElf(iterations = 4_000_000, subtract = false, shape: "r
   hotJump(8200, 12288);
   code.set([0xff, 0xc9, 0x0f, 0x85, 0, 0, 0, 0], 12288);
   view.setInt32(headers + 12292, 128 - 12296, true);
-  code.set([0x89, 0xc7, 0x81, 0xe7, 255, 0, 0, 0, 0xb8, 231, 0, 0, 0, 0x0f, 0x05], 12296);
+  // exit_group never returns. A block now goes on after its `syscall` (JIT ABI 94), so the bytes
+  // that follow are decoded as its successor: end with ud2, as compiled programs do, instead of
+  // leaving the page's zero bytes there to be translated as a long run of instructions.
+  code.set([0x89, 0xc7, 0x81, 0xe7, 255, 0, 0, 0, 0xb8, 231, 0, 0, 0, 0x0f, 0x05, 0x0f, 0x0b], 12296);
   return elf;
 }
 

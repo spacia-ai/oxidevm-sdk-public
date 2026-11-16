@@ -1,4 +1,5 @@
 import type { CoreJitReuseProfile } from "./core-jit-reuse.js";
+import type { CoreSyscallPathProfile } from "./core-syscall-paths.js";
 import type { CodeSegmentContext } from "./code-segment-context.js";
 import { exactKeys, integer, record, string } from "../decode.js";
 import { CORE_API_VERSION, JIT_INTERPRET_REASONS, type CoreJitInterpretReason, type CoreJitModuleExit } from "../core-abi.js";
@@ -248,9 +249,9 @@ export interface CoreCacheConflictDistanceBuckets {
 }
 
 export interface CoreRuntimeProfile
-  extends CoreTranslationCoherenceProfile, CoreJitDeferralProfile, CoreJitReuseProfile {
+  extends CoreTranslationCoherenceProfile, CoreJitDeferralProfile, CoreJitReuseProfile, CoreSyscallPathProfile {
   readonly recordVersion:
-    9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31;
+    9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | 32 | 33;
   readonly enabled: boolean;
   readonly decodeCacheHits: bigint;
   readonly decodeCacheMisses: bigint;
@@ -812,7 +813,9 @@ export interface SystemTraceSnapshot {
     | 51
     | 52
     | 53
-    | 54;
+    | 54
+    | 55
+    | 56;
   readonly executionMode:
     | "unknown"
     | "tiered"

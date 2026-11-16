@@ -476,7 +476,7 @@ describe("core ABI run-result codec", () => {
 describe("core ABI JIT-action codec", () => {
   it("matches the 64K direct-dispatch context layout", () => {
     expect(CORE_API_VERSION).toBe(19);
-    expect(JIT_API_VERSION).toBe(93);
+    expect(JIT_API_VERSION).toBe(94);
     expect(JIT_CONTEXT_LENGTH).toBe(6_315_496);
   });
 

@@ -1,4 +1,5 @@
 import { CORE_JIT_REUSE_KEYS, jitReuseFromValues } from "../protocol/core-jit-reuse.js";
+import { CORE_SYSCALL_PATH_KEYS, CORE_SYSCALL_PATH_KEYS_V32, syscallPathsFromValues } from "../protocol/core-syscall-paths.js";
 import { CoreAbiError } from "../core-abi.ts";
 import { decodeCodeSegmentContext, type CodeSegmentContext } from "../protocol/code-segment-context.ts";
 import {
@@ -41,6 +42,8 @@ const CORE_FIELD_COUNT_V28 = 240;
 const CORE_FIELD_COUNT_V29 = 258;
 const CORE_FIELD_COUNT_V30 = 259;
 const CORE_FIELD_COUNT_V31 = 287;
+const CORE_FIELD_COUNT_V32 = 309;
+const CORE_FIELD_COUNT_V33 = 310;
 const LEGACY_WORKLOAD_HEADER_LENGTH = 64;
 const WORKLOAD_HEADER_LENGTH_V11 = 80;
 const WORKLOAD_HEADER_LENGTH_V12 = 96;
@@ -81,7 +84,11 @@ export function decodeCoreRuntimeProfile(
     throw fault("runtime profile has an invalid payload length");
   }
   const corePayloadLength = (
-    recordVersion >= 31
+    recordVersion >= 33
+      ? CORE_FIELD_COUNT_V33
+      : recordVersion >= 32
+      ? CORE_FIELD_COUNT_V32
+      : recordVersion >= 31
       ? CORE_FIELD_COUNT_V31
       : recordVersion >= 30
       ? CORE_FIELD_COUNT_V30
@@ -137,6 +144,9 @@ export function decodeCoreRuntimeProfile(
   }
   const decoded: CoreRuntimeProfile = {
     ...jitReuseFromValues(recordVersion >= 31 ? CORE_JIT_REUSE_KEYS.map((_, index) => field(CORE_FIELD_COUNT_V30 + index)) : []),
+    ...syscallPathsFromValues(recordVersion >= 32
+      ? (recordVersion >= 33 ? CORE_SYSCALL_PATH_KEYS : CORE_SYSCALL_PATH_KEYS_V32).map((_, index) => field(CORE_FIELD_COUNT_V31 + index))
+      : []),
     // Record v22 holds the coherence block at fields 210-235; v23 appends field 236.
     ...translationCoherenceFromValues(
       CORE_TRANSLATION_COHERENCE_RECORD_KEYS.slice(
@@ -483,7 +493,7 @@ export function decodeCoreRuntimeProfile(
 }
 
 function isRecordVersion(value: number): value is CoreRuntimeProfile["recordVersion"] {
-  return value >= 9 && value <= 31;
+  return value >= 9 && value <= 33;
 }
 
 function decodeCodeSegment(view: DataView, offset: number, version: number, mode: number): CodeSegmentContext {

@@ -1,4 +1,5 @@
 import { CORE_JIT_REUSE_KEYS, decodeJitReuse, EMPTY_CORE_JIT_REUSE } from "./core-jit-reuse.js";
+import { CORE_SYSCALL_PATH_KEYS_V32, CORE_SYSCALL_PATH_KEYS_V33, decodeSyscallPaths, EMPTY_CORE_SYSCALL_PATHS, SYSCALL_PATHS_TRACE_SCHEMA, SYSCALL_PATHS_V33_TRACE_SCHEMA } from "./core-syscall-paths.js";
 import { coreRecordVersionForTrace } from "./core-profile-versions.js";
 export { coreRecordVersionForTrace, coreTraceVersionForRecord } from "./core-profile-versions.js";
 import { boolean, exactKeys, integer, record } from "../decode.js";
@@ -161,6 +162,7 @@ export const EMPTY_CORE_RUNTIME_PROFILE: CoreRuntimeProfile = {
   ...EMPTY_CORE_TRANSLATION_COHERENCE,
   ...EMPTY_CORE_JIT_DEFERRAL,
   ...EMPTY_CORE_JIT_REUSE,
+  ...EMPTY_CORE_SYSCALL_PATHS,
   recordVersion: 30,
   enabled: false,
   decodeCacheHits: 0n,
@@ -508,6 +510,8 @@ export function decodeCoreRuntimeProfile(
                             ...(schemaVersion >= 50 ? CORE_JIT_DEFERRAL_KEYS : []),
                             ...(schemaVersion >= 52 ? CORE_TRANSLATION_COHERENCE_KEYS_V52 : []),
                             ...(schemaVersion >= 53 ? CORE_JIT_REUSE_KEYS : []),
+                            ...(schemaVersion >= SYSCALL_PATHS_TRACE_SCHEMA ? CORE_SYSCALL_PATH_KEYS_V32 : []),
+                            ...(schemaVersion >= SYSCALL_PATHS_V33_TRACE_SCHEMA ? CORE_SYSCALL_PATH_KEYS_V33 : []),
                             ...(schemaVersion >= 43 ? CORE_PROFILE_KEYS_V43 : []),
                             ...(schemaVersion >= 44 ? CORE_TRANSLATION_COHERENCE_KEYS_V44 : []),
                           ]
@@ -541,6 +545,8 @@ export function decodeCoreRuntimeProfile(
       ...(schemaVersion < 44 ? CORE_TRANSLATION_COHERENCE_KEYS_V44 : []),
       ...(schemaVersion < 52 ? CORE_TRANSLATION_COHERENCE_KEYS_V52 : []),
       ...(schemaVersion < 53 ? CORE_JIT_REUSE_KEYS : []),
+      ...(schemaVersion < SYSCALL_PATHS_TRACE_SCHEMA ? CORE_SYSCALL_PATH_KEYS_V32 : []),
+      ...(schemaVersion < SYSCALL_PATHS_V33_TRACE_SCHEMA ? CORE_SYSCALL_PATH_KEYS_V33 : []),
       ...(schemaVersion < 30
         ? ["jitDispatchMissAddressSpace" as const]
         : ["jitDispatchMissCr3" as const]),
@@ -634,6 +640,7 @@ export function decodeCoreRuntimeProfile(
     ...decodeTranslationCoherence(profile, schemaVersion),
     ...decodeJitDeferral(profile, schemaVersion),
     ...decodeJitReuse(profile, schemaVersion),
+    ...decodeSyscallPaths(profile, schemaVersion),
     recordVersion,
     enabled,
     decodeCacheHits: nonnegativeBigint(
@@ -1453,7 +1460,7 @@ function decodeRuntimeRecordVersion(
     decoded === 9 || decoded === 10 || decoded === 11 || decoded === 12
     || decoded === 13 || decoded === 14 || decoded === 15 || decoded === 16
     || decoded === 17 || decoded === 18 || decoded === 19 || decoded === 20 || decoded === 21
-    || decoded === 22 || decoded === 23 || decoded === 24 || decoded === 25 || decoded === 26 || decoded === 27 || decoded === 28 || decoded === 29 || decoded === 30 || decoded === 31
+    || decoded === 22 || decoded === 23 || decoded === 24 || decoded === 25 || decoded === 26 || decoded === 27 || decoded === 28 || decoded === 29 || decoded === 30 || decoded === 31 || decoded === 32 || decoded === 33
   ) return decoded;
   throw new TypeError("core runtime profile record version is unsupported");
 }
