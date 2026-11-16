@@ -3,7 +3,7 @@ import { lstat, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { exactKeys, record, string } from "../packages/sdk/src/runtime/decode.ts";
 
-const repository = "https://github.com/spacia-ai/oxidevm-skills";
+const repository = "https://github.com/spacia-ai/oxvm-skills";
 const version = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const resource = /^[a-z0-9]+(?:-[a-z0-9]+)*\/(?:SKILL\.md|agents\/openai\.yaml)$/u;
 
@@ -11,7 +11,10 @@ export function decodeSkillsPin(value: unknown) {
   const pin = record(value, "agent skills pin");
   exactKeys(pin, ["schemaVersion", "repository", "revision", "skillsVersion", "files"]);
   const revision = string(pin["revision"], "skills revision"), skillsVersion = string(pin["skillsVersion"], "skills version");
-  if (pin["schemaVersion"] !== 1 || pin["repository"] !== repository || !/^[a-f0-9]{40}$/u.test(revision) || !version.test(skillsVersion)) throw new Error("Invalid agent skills source identity");
+  const source = string(pin["repository"], "skills repository");
+  // Keep the immutable 0.0.27 pin readable so the normal pin owner can replace it.
+  const retained027 = source === "https://github.com/spacia-ai/oxidevm-skills" && revision === "50c9078f3eea440973e264f6790a25adf225f352" && skillsVersion === "0.0.27";
+  if (pin["schemaVersion"] !== 1 || source !== repository && !retained027 || !/^[a-f0-9]{40}$/u.test(revision) || !version.test(skillsVersion)) throw new Error("Invalid agent skills source identity");
   const entries = pin["files"];
   if (!Array.isArray(entries) || entries.length < 1 || entries.length > 16) throw new Error("Agent skill inventory must be bounded");
   const files = Array.from<unknown>(entries).map(value => {
@@ -22,7 +25,7 @@ export function decodeSkillsPin(value: unknown) {
   });
   if (new Set(files.map(file => file.path)).size !== files.length) throw new Error("Agent skill inventory must be unique");
   for (const file of files) if (!files.some(entry => entry.path === `${file.path.split("/")[0] ?? ""}/SKILL.md`)) throw new Error("Agent resource has no SKILL.md");
-  return { schemaVersion: 1 as const, repository, revision, skillsVersion, files };
+  return { schemaVersion: 1 as const, repository: source, revision, skillsVersion, files };
 }
 
 /** One checked source produces both clients' discoverable files, including on Windows. */

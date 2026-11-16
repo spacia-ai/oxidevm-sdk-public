@@ -3,7 +3,7 @@ import { VMError } from "../../errors.js";
 import { AssistanceTraffic } from "./assistance-traffic.js";
 import { installationStreams } from "./installation-stream.js";
 import { CAPTURE_READ_WINDOW } from "./installation-capture.js";
-import { CAPTURE_DATA_LANE, INSTALLATION_DATA_LANE } from "../../protocol/assistance-installation.js";
+import { CAPTURE_DATA_LANE, INSTALLATION_DATA_LANE, INSTALLATION_WRITE_WINDOW } from "../../protocol/assistance-installation.js";
 import type { InstallationRequest } from "../../protocol/assistance-installation.js";
 import type { InstallationReply } from "../../protocol/assistance-installation-reply.js";
 
@@ -463,16 +463,26 @@ it("issues the next write before the previous acknowledgement and preserves sequ
 
 it("reports a short write completion as a protocol failure instead of re-issuing the remainder", async () => {
   const traffic = new AssistanceTraffic(6);
+  const requests: InstallationRequest[] = [];
+  const acknowledgement = Promise.withResolvers<undefined>();
   const agent = { installation(_id: number, request: InstallationRequest): Promise<InstallationReply> {
+    requests.push(request);
     const op = request.operation;
+    if (op.kind === "acknowledge") return acknowledgement.promise.then(() => reply(request, { kind: "acknowledged" }));
     return Promise.resolve(reply(request, op.kind === "write" ? { kind: "written", count: 1 }
       : op.kind === "stop" ? { kind: "stopped" } : { kind: "acknowledged" }));
   } };
   const pipe = installationStreams(agent, identity, 1, traffic);
   const writer = pipe.output.getWriter();
   await writer.write(new Uint8Array([1, 2, 3]));
-  await expect(writer.write(new Uint8Array([4]))).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+  // Writes resolve at admission, so fill the window before completing the short write.
+  for (let slot = 1; slot < INSTALLATION_WRITE_WINDOW; slot += 1) await writer.write(new Uint8Array([4]));
+  const refused = expect(writer.write(new Uint8Array([5]))).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+  acknowledgement.resolve(undefined);
+  await refused;
   await expect(pipe.close()).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });
+  expect(requests.filter(request => request.operation.kind === "write").map(request => request.operation))
+    .toEqual([{ kind: "write", bytes: new Uint8Array([1, 2, 3]) }, ...Array.from({ length: INSTALLATION_WRITE_WINDOW - 1 }, () => ({ kind: "write", bytes: new Uint8Array([4]) }))]);
   // An uncertain completion fences the window rather than returning it.
   expect(traffic.pendingBytes).toBeGreaterThan(0);
 });

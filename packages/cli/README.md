@@ -24,5 +24,5 @@ Fresh projects use `oxvm.config.ts` and `oxvm.lock.json`. Existing legacy
 project files remain supported. Keep one coherent set of project files.
 
 Read the [documentation](https://oxvm.dev/docs/) and
-[migration guide](https://github.com/spacia-ai/oxidevm-sdk-public/blob/main/docs/migration.md).
+[migration guide](https://github.com/spacia-ai/oxvm-sdk-public/blob/main/docs/migration.md).
 The CLI uses Apache-2.0. Engine and guest licenses remain separate.

@@ -37,3 +37,17 @@ it("production builds retain license materials and refuse the old public engine 
     }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+it("serves only bounded module-cache files without exposing other project files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oxvm-module-assets-"));
+  try {
+    await mkdir(join(root, ".oxvm/modules/fixture"), { recursive: true });
+    await writeFile(join(root, ".oxvm/modules/fixture/LICENSE"), "module notice");
+    expect(await developmentAsset(root, "/.oxvm/modules/fixture/LICENSE", "/.oxvm/modules/")).toBe(join(root, ".oxvm/modules/fixture/LICENSE"));
+    for (const path of ["/.oxvm/starter.json", "/.oxvm/modules/../starter.json", "/.oxvm/modules/%2e%2e/starter.json", "/.oxvm/modules/%5csecret", "/.oxvm/modules/%00secret"]) {
+      expect(await developmentAsset(root, path, "/.oxvm/modules/")).toBeUndefined();
+    }
+    await symlink(tmpdir(), join(root, ".oxvm/modules/escape"));
+    expect(await developmentAsset(root, "/.oxvm/modules/escape/secret", "/.oxvm/modules/")).toBeUndefined();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

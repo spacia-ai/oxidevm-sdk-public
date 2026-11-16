@@ -10,7 +10,7 @@ vi.mock("./starter.generated.js", async () => {
   const compliance = { url: `https://cdn.oxidevm.dev/engine/${engine}/compliance/${digest}/compliance.json`, bytes: 100, sha256: digest };
   return { starterRelease: { schemaVersion: 2, sdkVersion: sdk.sdkVersion, engineRelease: engine, engineCompliance: compliance,
     image: { mode: "userspace", manifestUrl: `https://cdn.oxidevm.dev/images/oxidevm-starter-nginx/0.0.2/${"a".repeat(64)}/manifest.json`, manifestSHA256: "a".repeat(64), trust: { algorithm: "Ed25519", keyId: "fixture", publicKey: "MCowBQYDK2VwAyEAqa1J60wlujbHvQ5zc11ydVv2ZlAFvjX7FyMwF6Yn3cs=" } },
-    archive: { url: "https://cdn.oxidevm.dev/images/oxidevm-starter-nginx/0.0.2/bundle.tgz", bytes: 1000, sha256: "b".repeat(64) }, materialsSHA256: "c".repeat(64), materialsUrl: "https://github.com/spacia-ai/oxidevm-sdk-public/releases/download/image-oxidevm-starter-nginx-v0.0.2/OPEN-SOURCE-NOTICE.md" } };
+    archive: { url: "https://cdn.oxidevm.dev/images/oxidevm-starter-nginx/0.0.2/bundle.tgz", bytes: 1000, sha256: "b".repeat(64) }, materialsSHA256: "c".repeat(64), materialsUrl: "https://github.com/spacia-ai/oxvm-sdk-public/releases/download/image-oxidevm-starter-nginx-v0.0.2/OPEN-SOURCE-NOTICE.md" } };
 });
 
 it("normal init creates a hosted starter without downloading engine, image or compliance files", async () => {
@@ -22,7 +22,7 @@ it("normal init creates a hosted starter without downloading engine, image or co
     expect(code, stderr.join("\n") + stdout.join("\n")).toBe(0);
     expect(fetch).not.toHaveBeenCalled();
     const skills: unknown = JSON.parse(await readFile(join(root, "app/AGENT_SKILLS.json"), "utf8"));
-    expect(skills).toMatchObject({ schemaVersion: 1, repository: "https://github.com/spacia-ai/oxidevm-skills" });
+    expect(skills).toMatchObject({ schemaVersion: 1, repository: "https://github.com/spacia-ai/oxvm-skills" });
     for (const skill of ["oxvm-sdk", "oxvm-starter", "oxvm-debugging"]) {
       const canonical = await readFile(join(root, "app/.agents/skills", skill, "SKILL.md"), "utf8");
       expect(await readFile(join(root, "app/.claude/skills", skill, "SKILL.md"), "utf8")).toBe(canonical);

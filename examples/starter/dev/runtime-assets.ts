@@ -4,10 +4,10 @@ import { dirname, join, resolve, sep } from "node:path";
 import type { Connect, Plugin } from "vite";
 import { isPreviewHost } from "./preview-host.ts";
 
-export async function developmentAsset(root: string, request: string): Promise<string | undefined> {
+export async function developmentAsset(root: string, request: string, prefix: "/oxvm/" | "/.oxvm/modules/" = "/oxvm/"): Promise<string | undefined> {
   let path: string;
   try { path = decodeURIComponent(request.split("?")[0] ?? ""); } catch { return undefined; }
-  if (!path.startsWith("/oxvm/") || path.includes("\\") || path.split("/").slice(1).some(part => ["", ".", ".."].includes(part)) || Array.from(path).some(char => char.charCodeAt(0) < 32)) return undefined;
+  if (!path.startsWith(prefix) || path.includes("\\") || path.split("/").slice(1).some(part => ["", ".", ".."].includes(part)) || Array.from(path).some(char => char.charCodeAt(0) < 32)) return undefined;
   const target = resolve(root, `.${path}`), base = resolve(root);
   if (!target.startsWith(`${base}${sep}`)) return undefined;
   let current = base;
@@ -26,10 +26,13 @@ export function runtimeAssets(): Plugin {
   return { name: "oxidevm-development-assets", configResolved(config) { projectRoot = config.root; publicDir = config.publicDir; }, configureServer(server) {
     const root = join(server.config.root, ".oxvm/assets");
     const middleware: Connect.NextHandleFunction = (request, response, next) => {
-      if (isPreviewHost(request.headers.host ?? "") || !(request.url ?? "").startsWith("/oxvm/")) { next(); return; }
+      const url = request.url ?? "";
+      const moduleFile = url.startsWith("/.oxvm/modules/") && !new URLSearchParams(url.split("?")[1]).has("import");
+      if (isPreviewHost(request.headers.host ?? "") || !url.startsWith("/oxvm/") && !moduleFile) { next(); return; }
       void (async () => {
         if (request.method !== "GET" && request.method !== "HEAD") { response.writeHead(405).end(); return; }
-        const file = await developmentAsset(root, request.url ?? "");
+        // Vite treats extensionless notices as JavaScript; module fetches must retain their authenticated bytes.
+        const file = moduleFile ? await developmentAsset(server.config.root, url, "/.oxvm/modules/") : await developmentAsset(root, url);
         if (file === undefined) { response.writeHead(404).end(); return; }
         response.setHeader("Content-Type", file.endsWith(".wasm") ? "application/wasm" : file.endsWith(".json") ? "application/json" : file.endsWith(".js") ? "text/javascript" : file.endsWith(".html") ? "text/html" : "application/octet-stream");
         response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");

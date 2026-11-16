@@ -11,7 +11,7 @@ export async function stageStarter(root: string): Promise<void> {
   const sdk: unknown = JSON.parse(await readFile(join(root, "packages/sdk/package.json"), "utf8"));
   const version = string(record(sdk, "SDK package")["version"], "SDK version");
   Object.assign(files, await stageAgentSkills(root, version));
-  const release = "https://github.com/spacia-ai/oxidevm-sdk-public";
+  const release = "https://github.com/spacia-ai/oxvm-sdk-public";
   for (const path of paths) {
     const bytes = await readFile(join(root, "examples/starter", path));
     files[path] = bytes.toString((path.endsWith(".woff2") || path.endsWith(".png")) ? "base64" : "utf8")
