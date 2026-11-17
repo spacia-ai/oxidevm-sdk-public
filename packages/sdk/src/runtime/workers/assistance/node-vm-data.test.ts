@@ -35,3 +35,26 @@ it("refuses inherited functions and object coercion inside data programs", () =>
     expect(() => evaluateContextData(source, { value: {} }, "/data.js", new ExecutableSources())).toThrow(/data scripts/u);
   }
 });
+
+/** A value from another V8 context compared by content: its RegExp is not this realm's RegExp. */
+function plain(value: unknown): unknown {
+  if (Object.prototype.toString.call(value) === "[object RegExp]") return `regexp ${String(value)}`;
+  if (Array.isArray(value)) return value.map(plain);
+  if (typeof value === "object" && value !== null) return Object.fromEntries(Object.entries(value).map(([key, entry]): [string, unknown] => [key, plain(entry)]));
+  return value;
+}
+
+it("serves a called function that only returns data, the form of webpack's magic comments", () => {
+  for (const comment of ['webpackChunkName: "page", webpackMode: "lazy"', 'webpackInclude: /\\.json$/i, webpackExports: ["a", "b"], webpackIgnore: true', ""]) {
+    const source = `(function(){return {${comment}};})()`;
+    const expected: unknown = native.runInContext(source, native.createContext(undefined));
+    expect(plain(evaluateContextData(source, {}, "/comment.js", new ExecutableSources()))).toEqual(plain(expected));
+  }
+});
+
+it("refuses a called function that does more than return data", () => {
+  for (const source of ['(function(){fetch("https://example.invalid");return {};})()', "(function(a){return {a};})()", "(async function(){return {};})()", "(function*(){return {};})()",
+    "(function(){return {};})(1)", "(function named(){return named;})()", "(function(){return this;})()", "(function(){return arguments;})()", "(function(){return {};})()();"]) {
+    expect(() => evaluateContextData(source, {}, "/comment.js", new ExecutableSources())).toThrow(/data scripts/u);
+  }
+});

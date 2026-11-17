@@ -6,6 +6,7 @@ import { lowerModuleBindings } from "./module-bindings.ts";
 import { createModuleRecord, linkModuleGraph, type ModuleRecord } from "./module-records.ts";
 import { instantiateModule } from "./module-execution.ts";
 import { lowerScriptImports } from "./script-imports.ts";
+import { lowerEvaluatedSource } from "./evaluated-sources.ts";
 import { createCommonJSLoader, isNodeBuiltin } from "./commonjs.ts";
 import { commonJSNames, commonJSSource, commonJSValues } from "./commonjs-namespace.ts";
 import { importAttributes, validateImportAttributes } from "./import-attributes.ts";
@@ -73,7 +74,7 @@ export function createLocalModuleLoader(
   }
 
   const commonjs = createCommonJSLoader(files, builtins, resolve, admit, (sourceText, path, module, require) => {
-    const script = lowerScriptImports(sourceText, path, files);
+    const script = lowerScriptImports(sourceText, path, files, code => lowerEvaluatedSource(compiler, code, path));
     sources.registerApplication(path, sourceText);
     if (script.memoryException) onNextMemoryException?.(path);
     const compile = (body: string) => new Evaluator("exports", "require", "module", "__filename", "__dirname", script.importName, body);
@@ -194,7 +195,9 @@ export function createLocalModuleLoader(
         dynamicImport: (specifier: unknown, options?: unknown) => importLocal(specifier, path, options),
       meta: { ...record(context["meta"], "module metadata"), ...(path.startsWith("node:") ? { url: path } : {
         url: urls.pathToFileURL(path).href, filename: path, dirname: path.slice(0, path.lastIndexOf("/")) || "/",
-      }) },
+      }),
+        // Node answers at once with a URL; SystemJS's own `meta.resolve` returns a promise of a path.
+        resolve: (specifier: unknown) => { const found = resolve(String(specifier), path, "import"); return found.startsWith("node:") ? found : urls.pathToFileURL(found).href; } },
       }, implementationFactory));
       const exportCell = callable(publish, "export");
       for (const [name, cell] of module.exports) exportCell(name, cell);

@@ -23,6 +23,6 @@ it("exposes exactly the advanced values the barrel names, so a new runtime expor
 
 it("exports the native frame version and highest operation set this SDK serves (ADR 0026, 2.8)", () => {
   // The engine's compatibility check compares them with the Node-API host it builds.
-  expect(diagnostics.NATIVE_FRAME_VERSION).toBe(17);
+  expect(diagnostics.NATIVE_FRAME_VERSION).toBe(18);
   expect(diagnostics.NATIVE_OPERATION_SET).toBe(2);
 });

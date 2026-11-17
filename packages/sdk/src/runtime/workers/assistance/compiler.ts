@@ -1,4 +1,4 @@
-import { preserveEmptyAsyncGenerators } from "./async-intrinsics.js";
+import { preserveEmptyAsyncFunctions } from "./async-intrinsics.js";
 
 /** A pinned compiler's callable boundary; dependency values never escape unchecked. */
 export interface AssistanceCompiler {
@@ -106,7 +106,7 @@ export function transformSource(
   filename: string,
   inputSourceMap?: string,
 ): TransformedSource {
-  const prepared = preserveEmptyAsyncGenerators(source, filename, format, inputSourceMap);
+  const prepared = preserveEmptyAsyncFunctions(source, filename, format, inputSourceMap);
   source = prepared.code;
   inputSourceMap = prepared.map;
   const common = { filename, sourceMaps: true, swcrc: false, configFile: false };

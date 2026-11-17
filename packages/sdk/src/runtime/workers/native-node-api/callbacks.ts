@@ -8,6 +8,7 @@ type Entry = { readonly kind: Kind; readonly token: object };
 const entries = new Map<bigint, Entry>(), slots = new Set<bigint>(), apply = Reflect.apply;
 const entryGet = Reflect.get(entries, "get"), entrySet = Reflect.get(entries, "set"), entryHas = Reflect.get(entries, "has"), entryDelete = Reflect.get(entries, "delete"), entryKeys = Reflect.get(entries, "keys"), entryIterator = Reflect.get(entries, Symbol.iterator);
 const slotHas = Reflect.get(slots, "has"), slotAdd = Reflect.get(slots, "add");
+const generations = new Map<number, number>(), generationGet = Reflect.get(generations, "get"), generationSet = Reflect.get(generations, "set");
 const entryNext = Reflect.get(apply(entryIterator, entries, []), "next"), keyNext = Reflect.get(apply(entryKeys, entries, []), "next");
 const NativeFinalizationRegistry = FinalizationRegistry, registry = new NativeFinalizationRegistry<bigint>(() => undefined);
 const register = Reflect.get(registry, "register"), unregister = Reflect.get(registry, "unregister");
@@ -20,25 +21,32 @@ export type NativeCallbackEffects = {
 /** JavaScript reachability owns retirement; the guest owns callback slots and their generations. */
 export class NativeCallbacks {
   readonly #entries = new Map<bigint, Entry>();
-  readonly #generations = new Uint32Array(4096);
+  /** The last generation claimed in each slot the helper has used. */
+  readonly #generations = new Map<number, number>();
+  readonly #slots: number;
   readonly #registry: FinalizationRegistry<bigint>;
   #closed = false;
-  constructor(readonly prefix: bigint, readonly effects: NativeCallbackEffects) {
+  /**
+   * `slots`: the helper's callback table size, which its bridge version fixes (`nativeCallbackSlots`); an identity is
+   * `generation * slots + slot`. The bridge always passes it; without it the table is the one before bridge 18.
+   */
+  constructor(readonly prefix: bigint, readonly effects: NativeCallbackEffects, slots = 4096) {
+    this.#slots = slots;
     this.#registry = new NativeFinalizationRegistry(identity => { this.#finish(identity, true); });
   }
   get live(): number { return nativeMapSize(this.#entries); }
   active(identity: bigint): boolean { return apply(entryHas, this.#entries, [identity]); }
   validate(identity: bigint): void {
     if (this.#closed || identity < 0n || identity >> 32n !== this.prefix >> 32n) protocol("Invalid native callback environment");
-    const local = Number(identity & 0xffff_ffffn), generation = floor(local / 4096);
-    const previous = this.#generations[local % 4096] ?? 0;
-    if (generation === 0 || generation <= previous || apply(entryHas, this.#entries, [this.prefix | BigInt(previous * 4096 + local % 4096)])) protocol("Stale native callback generation");
+    const local = Number(identity & 0xffff_ffffn), slots = this.#slots, generation = floor(local / slots);
+    const claimed: unknown = apply(generationGet, this.#generations, [local % slots]), previous = typeof claimed === "number" ? claimed : 0;
+    if (generation === 0 || generation <= previous || apply(entryHas, this.#entries, [this.prefix | BigInt(previous * slots + local % slots)])) protocol("Stale native callback generation");
   }
   validateAll(identities: readonly bigint[]): void {
     const slots = new Set<bigint>();
     for (const identity of identities) {
       this.validate(identity);
-      const slot = identity % 4096n;
+      const slot = (identity & 0xffff_ffffn) % BigInt(this.#slots);
       if (apply(slotHas, slots, [slot])) protocol("Conflicting native callback slots");
       apply(slotAdd, slots, [slot]);
     }
@@ -55,7 +63,7 @@ export class NativeCallbacks {
   #claim(identity: bigint, kind: Kind, environment: bigint): object {
     this.validate(identity); this.effects.claim(identity, environment);
     const local = Number(identity & 0xffff_ffffn), token = {};
-    this.#generations[local % 4096] = floor(local / 4096);
+    apply(generationSet, this.#generations, [local % this.#slots, floor(local / this.#slots)]);
     apply(entrySet, this.#entries, [identity, { kind, token }]);
     return token;
   }

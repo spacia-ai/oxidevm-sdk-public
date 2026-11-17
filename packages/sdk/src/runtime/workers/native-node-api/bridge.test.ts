@@ -214,10 +214,10 @@ it("rejects invalid application exit statuses before native cleanup", () => {
 });
 
 it("preserves a pending application exception across internal callback ownership messages", () => {
-  const add: NativeFrame = { kind: 3, sequence: 1, scope: 1n, environment: 0n, operation: "napi_add_finalizer", status: 0, args: [1n, 4103n, 1n], bytes: new Uint8Array() };
+  const add: NativeFrame = { kind: 3, sequence: 1, scope: 1n, environment: 0n, operation: "napi_add_finalizer", status: 0, args: [1n, 0x10_0007n, 1n], bytes: new Uint8Array() };
   const test = fixture([
     add, { ...completion, operation: "claim-callback", sequence: 2, scope: 2n },
-    { ...add, sequence: 2, operation: "napi_delete_reference", args: [4096n] },
+    { ...add, sequence: 2, operation: "napi_delete_reference", args: [0x10_0000n] },
     { ...completion, operation: "retire-callback", sequence: 3, scope: 3n }, completion,
   ]);
   test.bridge.values.add({}); const error = new Error("pending application error");
@@ -263,6 +263,14 @@ it("retires a stale readiness wait and services a prefetched async frame without
   expect(test.bridge.pending).toBe(1);
   expect(test.reads()).toBe(1);
   expect(test.failures).toEqual([]);
+});
+
+it("admits hundreds of live thread-safe functions and queued work items, as one bundler build holds", () => {
+  const live = (kind: 6 | 7, identity: number): NativeFrame => ({ kind, sequence: identity, scope: 0x1_0000_0000n | BigInt(identity), environment: 0n, operation: kind === 6 ? "async-queued" : "async-reference", status: 0, args: kind === 6 ? [BigInt(identity)] : [BigInt(identity), 1n], bytes: new Uint8Array() });
+  const frames = [...Array.from({ length: 300 }, (_, index) => live(7, index + 1)), ...Array.from({ length: 300 }, (_, index) => live(6, index + 301))];
+  const test = fixture([...frames, completion]); test.bridge.load("/fixture.node");
+  expect(test.failures).toEqual([]);
+  expect(test.bridge.pending).toBe(600);
 });
 
 it("traces actual invocation and result frames with their original scope identity", () => {

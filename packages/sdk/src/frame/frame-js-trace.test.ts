@@ -17,7 +17,7 @@ it("uses public trace exports across a hosted frame and retires access on dispos
   const { client } = await connect(linux);
   if (client.mode !== "userspace") throw new Error("Expected Userspace frame");
   await configureJSProcessTrace(client, 32);
-  expect(await readJSProcessTrace(client)).toEqual({ dropped: 7n, events: [], placements: [], failures: [], refusals: [] });
+  expect(await readJSProcessTrace(client)).toEqual({ dropped: 7n, droppedDecisions: null, events: [], placements: [], failures: [], refusals: [] });
   expect(read.mock.calls).toEqual([[32], [undefined]]);
   await client.dispose();
   await expect(readJSProcessTrace(client)).rejects.toMatchObject({ code: "PROTOCOL_ERROR" });

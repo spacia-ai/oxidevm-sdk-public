@@ -55,3 +55,18 @@ it("retains autoClose:false descriptors until explicit close and waits for in-fl
   await new Promise<void>(resolve => { finished.close(resolve); });
   expect(finished.fd).toBeNull(); expect(closed).toBe(2);
 });
+
+it("lets a function-style subclass initialise itself through ReadStream, as graceful-fs does", async () => {
+  let sent = false;
+  const module = createNodeReadStreams(() => Promise.resolve({ fd: 10,
+    read: bytes => { if (sent) return Promise.resolve({ bytesRead: 0 }); sent = true; bytes.set([104, 105]); return Promise.resolve({ bytesRead: 2 }); }, close: () => Promise.resolve() }), createAsyncContext());
+  function Legacy(this: object, ...args: unknown[]): void { Reflect.apply(module.ReadStream, this, args); }
+  const base: unknown = Reflect.get(module.ReadStream, "prototype");
+  if (typeof base !== "object") throw new Error("The stream constructor has no prototype");
+  Reflect.set(Legacy, "prototype", Object.create(base));
+  const stream: unknown = Reflect.construct(Legacy, ["input"]);
+  if (!(stream instanceof module.ReadStream)) throw new Error("The subclass instance is not a ReadStream");
+  const parts: Uint8Array[] = [];
+  for await (const part of stream) { if (!(part instanceof Uint8Array)) throw new Error("Expected bytes"); parts.push(part); }
+  expect(Buffer.concat(parts).toString()).toBe("hi"); expect(stream.bytesRead).toBe(2); expect(stream.path).toBe("input");
+});

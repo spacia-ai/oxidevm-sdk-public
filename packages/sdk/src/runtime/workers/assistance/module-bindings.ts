@@ -123,7 +123,8 @@ export function lowerModuleBindings(source: string, filename: string): ModuleBin
     } else if (t.isExportNamedDeclaration(statement)) {
       if (statement.declaration != null) {
         body.push(statement.declaration);
-        for (const local of Object.keys(t.getBindingIdentifiers(statement.declaration))) {
+        // Outer bindings only: a function declaration also "binds" its parameters, which are not the module's names.
+        for (const local of Object.keys(t.getOuterBindingIdentifiers(statement.declaration))) {
           exports.push({ local, exported: local });
         }
       }

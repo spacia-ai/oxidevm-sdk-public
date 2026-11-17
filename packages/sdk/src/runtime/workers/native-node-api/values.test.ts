@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NativeValues } from "./values.js";
+import { NATIVE_ASYNC_LIMIT } from "./codec.js";
 import { installProxyRegistry } from "../../proxy-brand.js";
 
 // The value owner runs in a process realm, which records its proxies (ADR 0026, 2.11).
@@ -149,10 +150,13 @@ describe("Node-API values", () => {
 
   it("bounds live scopes and promises and releases capacity after retirement", () => {
     const values = new NativeValues(() => undefined, () => undefined);
-    for (let index = 1n; index <= 192n; index++) values.createScope(index);
-    expect(() => values.createScope(193n)).toThrow(/scope/u);
-    values.retireScope(1n); values.createScope(193n);
-    for (let index = 0; index < 128; index++) values.dispatch("napi_create_promise", [], new Uint8Array());
+    // One scope per queued asynchronous operation and 64 nested calls, beside the root scope.
+    const scopes = BigInt(NATIVE_ASYNC_LIMIT + 64);
+    for (let index = 1n; index <= scopes; index++) values.createScope(index);
+    expect(() => values.createScope(scopes + 1n)).toThrow(/scope/u);
+    values.retireScope(1n); values.createScope(scopes + 1n);
+    // A bundler holds hundreds of unsettled native promises during one build.
+    for (let index = 0; index < NATIVE_ASYNC_LIMIT; index++) values.dispatch("napi_create_promise", [], new Uint8Array());
     expect(() => values.dispatch("napi_create_promise", [], new Uint8Array())).toThrow(/promise limit/u);
     values.dispatch("napi_resolve_deferred", [1n, values.add(undefined)], new Uint8Array());
     expect(values.dispatch("napi_create_promise", [], new Uint8Array()).status).toBe(0);

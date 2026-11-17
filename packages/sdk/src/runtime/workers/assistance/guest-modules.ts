@@ -52,11 +52,11 @@ export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDep
   function admit(path: string): void {
     if (path.includes("\0") || /[\r\n]/u.test(path)) throw new TypeError("Invalid module path");
     const installed = path.split("/").includes("node_modules");
-    if (roots !== undefined && !installed && !path.startsWith("/workspace/") && !frozen(paths.normalize(path))) throw unsupported(path, "module is outside the admitted code roots");
+    if (roots !== undefined && !installed && !path.startsWith("/workspace/") && !frozen(paths.normalize(path))) throw unadmitted(path, "module is outside the admitted code roots");
     if (dependencies === undefined && installed) throw unsupported(path, "installed-package execution is unavailable");
     if (roots !== undefined && installed) {
       const normalized = paths.normalize(path), cacheDirectory = liveCache(normalized);
-      if (!frozen(normalized) && (cacheDirectory === undefined || path.endsWith(".node") || normalized === cacheDirectory)) throw unsupported(path, "installed module is outside the admitted dependency generation");
+      if (!frozen(normalized) && (cacheDirectory === undefined || path.endsWith(".node") || normalized === cacheDirectory)) throw unadmitted(path, "installed module is outside the admitted dependency generation");
     }
     if (path.endsWith(".node") && loadNative === undefined) throw unsupported(path, "native addons are unavailable");
   }
@@ -255,6 +255,10 @@ function missing(error: unknown): boolean {
 }
 function invalidMetadata(path: string): Error {
   return Object.assign(new Error(`Invalid package config ${path}.`), { code: "ERR_INVALID_PACKAGE_CONFIG" });
+}
+/** A module real Linux would load from a folder this launch did not capture: a limitation the next run remembers. */
+function unadmitted(path: string, reason: string): VMError {
+  return new VMError("FEATURE_NOT_AVAILABLE", reason, { path, backend: "assisted-node", lateFailure: "unadmitted-module", subject: path });
 }
 function unsupported(path: string, reason: string): VMError {
   return new VMError("FEATURE_NOT_AVAILABLE", reason, { path, backend: "assisted-node" });

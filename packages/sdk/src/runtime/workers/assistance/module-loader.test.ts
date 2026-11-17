@@ -28,6 +28,20 @@ it.each(["/workspace/vite/logger.js", "/workspace/space #?%/π.js"])("uses the g
   expect(namespace["dirname"]).toBe(posix.dirname(path));
 });
 
+it("answers import.meta.resolve with a file URL at once, as Node does", async () => {
+  const require = createRequire(import.meta.url), root = dirname(require.resolve("@swc/wasm-web"));
+  const compiler = initializeCompiler(compilerNamespace, await WebAssembly.compile(await readFile(join(root, "wasm_bg.wasm"))));
+  const system = await readFile(require.resolve("systemjs/dist/s.js"), "utf8");
+  const asked: (readonly [string, string])[] = [];
+  const loader = createLocalModuleLoader(compiler, system, {
+    resolve: (request, parent) => { asked.push([request, parent]); return request.startsWith("./") ? posix.join(posix.dirname(parent), request) : request; },
+    read: () => ({ source: "export const sibling = import.meta.resolve('./space #.js');", format: "module" }),
+  });
+  const namespace = await loader.import("/workspace/vite/logger.js");
+  expect(namespace["sibling"]).toBe(pathToFileURL("/workspace/vite/space #.js").href);
+  expect(asked).toContainEqual(["./space #.js", "/workspace/vite/logger.js"]);
+});
+
 it("resolves a compiled Module without a filename from the current cwd", async () => {
   const require = createRequire(import.meta.url), root = dirname(require.resolve("@swc/wasm-web"));
   const compiler = initializeCompiler(compilerNamespace, await WebAssembly.compile(await readFile(join(root, "wasm_bg.wasm"))));

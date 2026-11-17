@@ -8,6 +8,8 @@ import { NATIVE_OPERATION_SET } from "./versions.js";
 const arrayFrom = Array.from;
 const BigInt = globalThis.BigInt, Uint8Array = globalThis.Uint8Array;
 export const NATIVE_MAX_FRAME = 128 * 1024 * 1024 + 64 * 1024;
+/** Live asynchronous work items, thread-safe functions and deferred promises per process: the host's MAX_WORK and MAX_FUNCTIONS. */
+export const NATIVE_ASYNC_LIMIT = 4096;
 /** The newest bridge version; a process writes and reads frames at its host helper's version (OXCR 19). */
 export const NATIVE_FRAME_VERSION: NativeBridgeVersion = NATIVE_BRIDGE_VERSION;
 /** Rust admits only served hosts; a program naming a newer set is a forged or stale launch. */

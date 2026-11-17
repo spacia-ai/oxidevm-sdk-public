@@ -33,7 +33,7 @@ export function createFileOperations(cwd: () => string, asynchronous = false, co
   }
   function* open(value: unknown, flag: unknown = "r", mode: unknown = 0o666): FileOperation<number> {
     if (typeof flag !== "string" || !flags.includes(flag)) throw new TypeError("Unsupported open flags");
-    const result = yield* perform({ kind: "open", path: path(value), flags: flags.indexOf(flag), mode: number(mode, 0o7777) });
+    const result = yield* perform({ kind: "open", path: path(value), flags: flags.indexOf(flag), mode: permissions(mode ?? 0o666) });
     if (result.kind !== "opened") throw mismatch();
     return result.fd;
   }
@@ -261,8 +261,8 @@ export function createFileOperations(cwd: () => string, asynchronous = false, co
     rm: checked(rm, 1, 2),
     rmdir: checked(function* (value: unknown, options?: unknown): FileOperation<void> { noOptions(options); yield* unit({ kind: "rmdir", path: path(value) }); }, 1, 2),
     mkdir: checked(mkdir, 1, 2),
-    chmod: checked((value: unknown, mode: unknown) => unit({ kind: "chmod", path: path(value), mode: number(mode, 0o7777) }), 2, 2),
-    fchmod: checked((fd: unknown, mode: unknown) => unit({ kind: "fchmod", fd: descriptor(fd), mode: number(mode, 0o7777) }), 2, 2),
+    chmod: checked((value: unknown, mode: unknown) => unit({ kind: "chmod", path: path(value), mode: permissions(mode) }), 2, 2),
+    fchmod: checked((fd: unknown, mode: unknown) => unit({ kind: "fchmod", fd: descriptor(fd), mode: permissions(mode) }), 2, 2),
     truncate: checked((value: unknown, length: unknown = 0) => unit({ kind: "truncate", path: path(value), length: BigInt(number(length)) }), 1, 2),
     ftruncate: checked((fd: unknown, length: unknown = 0) => unit({ kind: "ftruncate", fd: descriptor(fd), length: BigInt(number(length)) }), 1, 2),
     rename: checked((value: unknown, destination: unknown) => unit({ kind: "rename", path: path(value), destination: path(destination) }), 2, 2),
@@ -387,6 +387,8 @@ function number(value: unknown, maximum = Number.MAX_SAFE_INTEGER): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > maximum) throw new RangeError("Invalid filesystem integer");
   return value;
 }
+/** Linux keeps the permission bits of a mode and drops the file-type bits `stat` reports with them. */
+function permissions(value: unknown): number { return number(value, 0xffff_ffff) & 0o7777; }
 function descriptor(value: unknown): number {
   const result = number(value, 0xffff_ffff);
   if (result === 0) throw new RangeError("Invalid filesystem descriptor");

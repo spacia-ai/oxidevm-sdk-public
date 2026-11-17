@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
-import { bindAsyncEvents, EventEmitter, createInputStream, createOutputStream } from "./node-streams.js";
+import { bindAsyncEvents, EventEmitter, createInputStream, createOutputStream, sendBufferedOutput } from "./node-streams.js";
 import { createAsyncContext } from "./async-context.js";
+import { ASSISTANCE_LIMITS } from "../../protocol/assistance.js";
 
 it("lets middleware replace event methods while retaining registration context", () => {
   const context = createAsyncContext(), store = new context.AsyncLocalStorage<string>();
@@ -31,6 +32,19 @@ it("binds all asynchronous listener registration forms without changing plain sy
   store.run("registration", () => plain.on("event", () => { seen.push(store.getStore()); }));
   store.run("synchronous", () => plain.emit("event"));
   expect(seen.at(-1)).toBe("synchronous");
+});
+
+it("accepts one write larger than the transport window and reports backpressure, as Node does", async () => {
+  const context = createAsyncContext(), acknowledgement = Promise.withResolvers<undefined>(), sizes: number[] = [];
+  const output = createOutputStream(async bytes => { sizes.push(bytes.byteLength); await acknowledgement.promise; }, context);
+  const large = new Uint8Array(3 * 1024 * 1024).fill(7), written = Promise.withResolvers<undefined>();
+  expect(output.write(large)).toBe(false);
+  expect(output.write("tail", () => { written.resolve(undefined); })).toBe(false);
+  expect(output.writableLength).toBe(large.byteLength + 4);
+  acknowledgement.resolve(undefined);
+  await written.promise;
+  expect(sizes).toEqual([large.byteLength, 4]);
+  output.destroy();
 });
 
 it("keeps output pending until Linux/browser acknowledgement and preserves write callback context", async () => {
@@ -129,4 +143,15 @@ it("commits synchronous stdio writes before an immediate process exit", () => {
   const output = createOutputStream(bytes => { chunks.push(new TextDecoder().decode(bytes)); }, createAsyncContext());
   output.write("first"); output.write("second");
   expect(chunks).toEqual(["first", "second"]);
+});
+
+it("hands over the output still queued behind an unacknowledged write, as an exiting process must", () => {
+  const sent: string[] = [], flushed: string[] = [];
+  const output = createOutputStream(bytes => { sent.push(Buffer.from(bytes).toString()); return new Promise<void>(() => undefined); }, createAsyncContext());
+  output.write("first\n"); output.write("second\n"); output.write("x".repeat(ASSISTANCE_LIMITS.chunk + 1));
+  expect(sent).toEqual(["first\n"]);
+  sendBufferedOutput(output, bytes => { flushed.push(Buffer.from(bytes).toString()); });
+  expect(flushed).toEqual(["second\n", "x".repeat(ASSISTANCE_LIMITS.chunk), "x"]);
+  const idle = createOutputStream(() => undefined, createAsyncContext());
+  idle.write("done\n"); sendBufferedOutput(idle, () => { throw new Error("nothing is queued"); });
 });

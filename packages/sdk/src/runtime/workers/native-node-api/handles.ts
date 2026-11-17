@@ -1,6 +1,10 @@
 import { protocol } from "../../js-process/codec.js";
 import { NapiFailure } from "./errors.js";
 import { nativeMapSize } from "./collection-size.js";
+import { NATIVE_ASYNC_LIMIT } from "./codec.js";
+
+/** The root scope, one scope per queued asynchronous operation, and 64 nested calls. */
+const MAX_TRANSPORTS = 1 + NATIVE_ASYNC_LIMIT + 64;
 
 const BigInt = globalThis.BigInt, Set = globalThis.Set;
 
@@ -34,7 +38,7 @@ export class NativeHandles {
   get currentTransport(): bigint { return this.#current; }
 
   createTransport(identity: bigint): void {
-    if (identity <= 0n || identity > 0x1_ffff_ffffn || apply(transportHas, this.#transports, [identity]) || nativeMapSize(this.#transports) >= 193) protocol("Invalid or exhausted native handle scope");
+    if (identity <= 0n || identity > 0x1_ffff_ffffn || apply(transportHas, this.#transports, [identity]) || nativeMapSize(this.#transports) >= MAX_TRANSPORTS) protocol("Invalid or exhausted native handle scope");
     apply(transportSet, this.#transports, [identity, { handles: new Set<bigint>(), public: [] }]);
   }
   retireTransport(identity: bigint): void {

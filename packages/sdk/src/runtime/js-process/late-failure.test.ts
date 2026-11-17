@@ -133,3 +133,30 @@ it("names a launch over its shared-buffer budget and reports it with Rust's code
   expect(lateFailureSentence({ kind: "shared-buffer-budget", detail: "9437184 of 8388608 bytes" })).toBe("This program's add-on shared more memory with JavaScript than the fast path allows (9437184 of 8388608 bytes); its next run uses full Linux.");
   expect(decodeLateFailure({ kind: "shared-buffer-budget", detail: "1 of 0 bytes" })).toEqual({ kind: "shared-buffer-budget", detail: "1 of 0 bytes" });
 });
+
+it("names a module outside the captured folders and reports it with Rust's code 8", () => {
+  const path = "/workspace/app/packages/site/node_modules/plugin/index.js";
+  expect(lateFailureOf(new VMError("FEATURE_NOT_AVAILABLE", "x", { lateFailure: "unadmitted-module", subject: path }))).toEqual({ kind: "unadmitted-module", detail: path });
+  expect(lateFailureKind(8)).toBe("unadmitted-module");
+  expect(lateFailureSentence({ kind: "unadmitted-module", detail: path })).toBe(`This program loaded ${path}, which lies outside the folders the fast path captured; its next run uses full Linux.`);
+});
+
+it("names a write into the read-only dependency folders and reports it with Rust's code 9", () => {
+  const path = "/workspace/app/node_modules/$app";
+  expect(lateFailureKind(9)).toBe("read-only-dependencies");
+  expect(lateFailureKind(10)).toBeUndefined();
+  expect(decodeLateFailure({ kind: "read-only-dependencies", detail: path })).toEqual({ kind: "read-only-dependencies", detail: path });
+  expect(lateFailureSentence({ kind: "read-only-dependencies", detail: path })).toBe(`This program wrote to ${path}, inside the dependency folders the fast path keeps read-only; its next run uses full Linux.`);
+});
+
+it("does not blame a touched missing export for the exit code a program chooses after a signal", () => {
+  // Next.js answers Ctrl+C with exit 130; graceful-fs had only probed fs.lutimes.
+  const touched = { kind: "unavailable-builtin", detail: "node:fs.lutimes" } as const;
+  const received: unknown[] = [];
+  const interrupted = lateFailureReporter(() => undefined, failure => { received.push(failure); }, () => touched);
+  interrupted.signalled(); interrupted.exited(130);
+  expect(received).toEqual([]);
+  const failing = lateFailureReporter(() => undefined, failure => { received.push(failure); }, () => touched);
+  failing.exited(1);
+  expect(received).toEqual([touched]);
+});

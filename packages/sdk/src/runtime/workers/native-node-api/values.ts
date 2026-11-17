@@ -9,6 +9,7 @@ import { nativeMapSize } from "./collection-size.js";
 import type { AsyncContext } from "../assistance/async-context.js";
 import { NativeAsyncContexts } from "./async-contexts.js";
 import { decodeNativeString, encodeNativeString, readNativeUtf8 } from "./strings.js";
+import { NATIVE_ASYNC_LIMIT } from "./codec.js";
 import { nativeBigInt64, nativeBigIntFromWords, nativeBigIntWords, nativeDate, nativeDateTime, nativeDouble, nativeDoubleBits, nativeIsDate, nativeSignedInteger, nativeUnsignedInteger } from "./extended-values.js";
 import { nativeBoolean, nativeInstanceOf, nativeNumber, nativeObject, nativeSetProperty, nativeString, nativePrototypeOf, nativeHasOwn, nativeGetProperty, nativeHasProperty, nativeDeleteProperty, nativeDefineProperty, nativeFreeze, nativeSeal, nativeCreateObject, nativeApply, nativeConstruct } from "./properties.js";
 import { nativeIsArrayBuffer, nativeIsDataView, nativeIsDetachedArrayBuffer, nativeIsTypedArray, nativeIsPromise, nativeIsError, nativeIsSharedArrayBuffer } from "./value-brands.js";
@@ -32,7 +33,9 @@ interface Wrapped { readonly pointer: bigint; readonly finalizer: bigint }
 const wrappedValues = new WeakMap<object, Wrapped>(), tags = new WeakMap<object, readonly [bigint, bigint]>();
 const wrappedGet = Reflect.get(wrappedValues, "get"), wrappedSet = Reflect.get(wrappedValues, "set"), wrappedHas = Reflect.get(wrappedValues, "has"), wrappedDelete = Reflect.get(wrappedValues, "delete");
 const tagGet = Reflect.get(tags, "get"), tagSet = Reflect.get(tags, "set");
-type NativeValueOptions = Pick<NativeCallbackEffects, "claim" | "retire"> & { readonly runtime?: "node" | "bun"; readonly operationSet?: number; readonly sharedBufferBudget?: number };
+type NativeValueOptions = Pick<NativeCallbackEffects, "claim" | "retire"> & { readonly runtime?: "node" | "bun"; readonly operationSet?: number; readonly sharedBufferBudget?: number;
+  /** The helper's callback table size, which its bridge version fixes; the bridge always passes it. */
+  readonly callbackSlots?: number };
 type NativeClassSignature = { readonly kind: "constructor" | "method"; readonly receivers: WeakSet<object> };
 const NativeArray = Array, arrayFrom = Array.from;
 const empty = new Uint8Array();
@@ -76,7 +79,7 @@ export class NativeValues {
     this.#references = new NativeReferences(this.#prefix);
     this.#operationSet = options.operationSet ?? 0;
     this.#buffers = new NativeBuffers(releaseBuffer, this.#operationSet >= 2, options.sharedBufferBudget);
-    this.#callbacks = new NativeCallbacks(this.#prefix, { claim: options.claim, retire: options.retire, finalize });
+    this.#callbacks = new NativeCallbacks(this.#prefix, { claim: options.claim, retire: options.retire, finalize }, options.callbackSlots);
     this.#runtime = options.runtime ?? "node";
   }
   registerEnvironment(identity: bigint, version: number): "node" | "bun" {
@@ -489,7 +492,7 @@ export class NativeValues {
         case "napi_create_dataview": shape(3); return result(createNativeDataView(args[0], at(1), args[2], this.#runtime));
         case "napi_get_value_bool": shape(1); if (typeof at(0) !== "boolean") throw new NapiFailure(7); return ok(at(0) === true ? 1n : 0n);
         case "napi_create_promise": {
-          shape(0); if (nativeMapSize(this.#deferred) >= 128 || this.#nextDeferred === 0xffff_ffff) protocol("Native promise limit"); const id = this.#prefix | BigInt(++this.#nextDeferred);
+          shape(0); if (nativeMapSize(this.#deferred) >= NATIVE_ASYNC_LIMIT || this.#nextDeferred === 0xffff_ffff) protocol("Native promise limit"); const id = this.#prefix | BigInt(++this.#nextDeferred);
           const deferred = this.#promiseFactory.create<unknown>(); applyCollection(deferredSet, this.#deferred, [id, deferred]);
           return ok(id, this.add(deferred.promise));
         }

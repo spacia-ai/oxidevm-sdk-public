@@ -87,12 +87,15 @@ it("preserves globally registered symbols at zero references as pinned Node does
 it("returns a resource status at live capacity and fences a recycled slot's previous generation", () => {
   const values = fixture();
   values.withEnvironment(2n, () => {
-    const ids = Array.from({ length: 4096 }, () => reference(values, {}));
-    expect(values.dispatch("napi_create_reference", [values.add({}), 1n], empty).status).toBe(9);
+    // A reference identity is `generation * 2^20 + slot`; a slot serves 4,095 generations.
+    // One handle serves every reference: a scope holds far fewer live handles than there are reference slots.
+    const target = values.add({}), create = (): bigint => { const id = values.dispatch("napi_create_reference", [target, 1n], empty).args[0]; if (id === undefined) throw new Error("Missing reference"); return id; };
+    const ids = Array.from({ length: 1 << 20 }, create);
+    expect(values.dispatch("napi_create_reference", [target, 1n], empty).status).toBe(9);
     const stale = ids.at(-1); if (stale === undefined) throw new Error("Missing last reference");
-    for (const id of ids) expect(values.dispatch("napi_delete_reference", [id], empty).status).toBe(0);
-    for (let cycle = 0; cycle < 8192; cycle++) {
-      const id = reference(values, {}); expect(id).not.toBe(stale); expect(id & 0xfffn).toBe(stale & 0xfffn);
+    for (const id of ids) if (values.dispatch("napi_delete_reference", [id], empty).status !== 0) throw new Error("A live reference was not deleted");
+    for (let cycle = 0; cycle < 2048; cycle++) {
+      const id = create(); expect(id).not.toBe(stale); expect(id & 0xf_ffffn).toBe(stale & 0xf_ffffn);
       expect(values.dispatch("napi_get_reference_value", [stale], empty).status).toBe(1);
       expect(values.dispatch("napi_delete_reference", [id], empty).status).toBe(0);
     }

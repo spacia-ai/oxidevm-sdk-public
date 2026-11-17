@@ -50,7 +50,7 @@ for (const throwing of [false, true]) {
     references.dispose();
     expect(observed.failure).toBeUndefined(); expect(observed.effects).toBe(0);
     expect(observed.result?.held?.value).toBe(target); expect(observed.result?.count).toBe(1);
-    expect(observed.result?.second).toBe((observed.result?.first ?? 0n) + 4096n);
+    expect(observed.result?.second).toBe((observed.result?.first ?? 0n) + 0x10_0000n);
     expect(observed.result?.stale).toMatchObject({ status: 1 });
   });
 
