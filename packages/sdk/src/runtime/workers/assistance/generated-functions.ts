@@ -24,8 +24,9 @@ export function installGeneratedFunctions(compiler: AssistanceCompiler, realmVal
   const intrinsicToString: unknown = Reflect.get(prototype, "toString");
   if (typeof intrinsicToString !== "function") throw new TypeError("Function prototype has no toString");
   let sequence = 0;
-  const compile = (args: readonly unknown[]): object => {
-    const original: unknown = Reflect.apply(NativeFunction, undefined, args);
+  const compile = (args: readonly unknown[], parser: unknown = NativeFunction): object => {
+    if (typeof parser !== "function") throw new TypeError("Invalid function constructor");
+    const original: unknown = Reflect.apply(parser, undefined, args);
     if (typeof original !== "function") throw new TypeError("Function constructor returned a non-function");
     const source = string(Reflect.apply(intrinsicToString, original, []), "generated function source");
     if (compiler.hasDynamicImport(source)) throw new TypeError("Dynamic imports in generated functions are not supported");
@@ -62,12 +63,20 @@ export function installGeneratedFunctions(compiler: AssistanceCompiler, realmVal
       replace(realm, "eval", () => { throw new TypeError("Direct and indirect eval are not supported by the local-script profile"); });
     }
     // Obtain each intrinsic in its own realm; never return an untransformed
-    // AsyncFunction/GeneratorFunction constructor to application code.
+    // AsyncFunction/GeneratorFunction constructor to application code. AsyncFunction
+    // compiles like Function (the compiler keeps `(async function () {}).constructor`
+    // reaching it); the generator constructors stay refused.
     for (const expression of ["async function(){}", "function*(){}", "async function*(){}"] ) {
       const inspect: unknown = Reflect.apply(NativeFunction, undefined, [`return Object.getPrototypeOf(${expression});`]);
       if (typeof inspect !== "function") throw new TypeError("Invalid constructor inspector");
       const functionPrototype = object(Reflect.apply(inspect, undefined, []));
-      replace(functionPrototype, "constructor", () => { throw new TypeError("This dynamic function constructor is not supported"); });
+      const intrinsic: unknown = Reflect.get(functionPrototype, "constructor");
+      replace(functionPrototype, "constructor", expression === "async function(){}" && typeof intrinsic === "function"
+        ? new Proxy(intrinsic, {
+            apply(_target, _receiver, args: unknown[]) { return compile(args, intrinsic); },
+            construct(_target, args: unknown[]) { return compile(args, intrinsic); },
+          })
+        : () => { throw new TypeError("This dynamic function constructor is not supported"); });
     }
   } catch (error) {
     for (const reset of restore.reverse()) reset();

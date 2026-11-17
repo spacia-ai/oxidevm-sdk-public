@@ -114,9 +114,8 @@ export function bindAsyncWritable(output: Writable | Duplex, context: AsyncConte
       if ((second !== undefined && typeof second !== "function" && (typeof second !== "string" || !Buffer.isEncoding(second)))
         || (callback !== undefined && typeof callback !== "function")) throw new TypeError("Unsupported stream write arguments");
       const bytes = typeof value === "string" ? Buffer.from(value, typeof second === "string" ? second : "utf8") : value;
-      if (output.writableLength + bytes.byteLength > ASSISTANCE_LIMITS.stream) {
-        throw new VMError("QUOTA_EXCEEDED", "Writable stream queue exhausted");
-      }
+      // No size limit here, as in Node: the queue holds bytes the program already owns, write() answers
+      // false above the high-water mark, and each sender splits a chunk for its bounded transport.
       const run = context.capture();
       return write(bytes, error => {
         if (callback !== undefined) run(() => { Reflect.apply(callback, output, error === undefined ? [] : [error]); });
@@ -189,3 +188,15 @@ export function createInputStream(context: AsyncContext) {
 }
 
 export function isEventListener(value: unknown): value is (...args: unknown[]) => void { return typeof value === "function"; }
+
+/** `process.exit` cannot wait for an acknowledgement, so the writes still queued behind an unacknowledged one are
+ * handed over here, in order and in protocol-sized chunks. Node writes its standard streams before it exits. */
+export function sendBufferedOutput(output: Writable, send: (bytes: Uint8Array) => void): void {
+  const queued: unknown = Reflect.get(output, "writableBuffer");
+  if (!Array.isArray(queued)) return;
+  for (const entry of queued) {
+    const chunk: unknown = typeof entry === "object" && entry !== null ? Reflect.get(entry, "chunk") : undefined;
+    if (!(chunk instanceof Uint8Array)) continue;
+    for (let offset = 0; offset < chunk.length; offset += ASSISTANCE_LIMITS.chunk) send(chunk.subarray(offset, offset + ASSISTANCE_LIMITS.chunk));
+  }
+}

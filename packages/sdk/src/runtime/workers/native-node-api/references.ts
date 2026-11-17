@@ -3,7 +3,8 @@ import { NapiFailure } from "./errors.js";
 type Held = { readonly value: unknown };
 type Reference = { readonly environment: bigint; readonly rooted: boolean; readonly finalizer: bigint; count: number; strong: Held | undefined; readonly weak: WeakRef<WeakKey> | undefined };
 type Slot = { generation: number; reference: Reference | undefined };
-const capacity = 4096, maximumGeneration = 0xfffff;
+/** A reference identity is `generation * capacity + slot` in 32 bits. Every wrapped native object holds a reference until it is collected. */
+const capacity = 1 << 20, maximumGeneration = 0xfff;
 const Number = globalThis.Number, BigInt = globalThis.BigInt, floor = Math.floor;
 const symbolKeyFor = Symbol.keyFor, NativeWeakRef = WeakRef, apply = Reflect.apply;
 const free: number[] = [], freePop = Reflect.get(free, "pop"), freePush = Reflect.get(free, "push");
@@ -44,7 +45,7 @@ export class NativeReferences {
   }
   get(identity: bigint, environment: bigint): Held | undefined { return this.#held(this.#slot(identity, environment).reference); }
   delete(identity: bigint, environment: bigint): bigint {
-    const current = this.#slot(identity, environment), index = Number(identity & 0xfffn), slot = this.#slots[index];
+    const current = this.#slot(identity, environment), index = Number(identity & 0xffff_ffffn) % capacity, slot = this.#slots[index];
     if (slot === undefined) throw new NapiFailure(1);
     slot.reference = undefined;
     // Exhausted generations retire their slot instead of aliasing a stale reference.

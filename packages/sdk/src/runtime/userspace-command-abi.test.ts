@@ -98,13 +98,13 @@ function launch({ version = 21, bridge = 16, build = Uint8Array.of(0), operation
   if (fork) writer.u64(8n);
   return writer.strings(["node", "scripts/custom.cjs"]).strings(["PATH=/usr/bin:/bin"]).finish();
 }
-it("carries the host helper's bridge version from the acceleration profile (OXCR 19): 15, 16 or 17, anything else refused", () => {
-  for (const bridge of [15, 16, 17]) expect(decodeUserspaceCommandRequest(launch({ bridge })).program).toMatchObject({ kind: "native-node", profile: { bridgeVersion: bridge } });
-  for (const bridge of [0, 14, 18, 255]) expect(() => decodeUserspaceCommandRequest(launch({ bridge }))).toThrow(/bridge version/u);
+it("carries the host helper's bridge version from the acceleration profile (OXCR 19): 15 to 18, anything else refused", () => {
+  for (const bridge of [15, 16, 17, 18]) expect(decodeUserspaceCommandRequest(launch({ bridge })).program).toMatchObject({ kind: "native-node", profile: { bridgeVersion: bridge } });
+  for (const bridge of [0, 14, 19, 255]) expect(() => decodeUserspaceCommandRequest(launch({ bridge }))).toThrow(/bridge version/u);
   for (const version of [19, 20, 22]) expect(() => decodeUserspaceCommandRequest(launch({ version }))).toThrow(/version mismatch/u);
   const program = decodeUserspaceCommandRequest(launch()).program;
   if (program.kind !== "native-node") throw new Error("Expected native profile");
-  for (const bridgeVersion of [undefined, 14, 18, "16", 16n]) expect(() => decodeNativeProcessProgram({ ...program, profile: { ...program.profile, bridgeVersion } })).toThrow();
+  for (const bridgeVersion of [undefined, 14, 19, "16", 16n]) expect(() => decodeNativeProcessProgram({ ...program, profile: { ...program.profile, bridgeVersion } })).toThrow();
 });
 it("carries the bytes a launch may share with native code and rejects a budget outside the bridge's limit (OXCR 21)", () => {
   const program = decodeUserspaceCommandRequest(launch({ budget: 8 * 1024 * 1024 })).program;

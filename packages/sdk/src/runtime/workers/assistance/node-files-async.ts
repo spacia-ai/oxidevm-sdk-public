@@ -5,6 +5,9 @@ import { fileAccessConstants, createFileOperations, type FileOperation } from ".
 
 /** Only the driver differs from fs.*Sync: completion resumes the same operation
  * program, including descriptor cleanup after a transport or Linux failure. */
+/** File operations one process runs at once; the rest wait their turn. */
+const CONCURRENT_FILE_OPERATIONS = 64;
+
 export function createAsyncFiles(
   call: (operation: AssistanceOperation) => Promise<AssistanceResult>,
   cwd: () => string,
@@ -14,8 +17,23 @@ export function createAsyncFiles(
   copyOpenMode?: 10,
 ) {
   const operations = createFileOperations(cwd, true, copyOpenMode);
+  // Node queues file work on its thread pool; a program may start any number at once (@vercel/nft starts 1,024).
+  // Here each running operation holds one of the process's activity slots, so the ones beyond the bound wait in
+  // order. A finishing operation hands its slot straight to the next waiter, which keeps the process alive.
+  const waiting: ((release: () => void) => void)[] = [];
+  let running = 0;
+  function acquire(): (() => void) | Promise<() => void> {
+    if (running >= CONCURRENT_FILE_OPERATIONS) return new Promise(resolve => { waiting.push(resolve); });
+    const release = retain(); running += 1;
+    return release;
+  }
+  function finish(release: () => void): void {
+    const next = waiting.shift();
+    if (next !== undefined) { next(release); return; }
+    running -= 1; release();
+  }
   async function run<Result>(program: FileOperation<Result>, initial?: IteratorResult<AssistanceOperation, Result>): Promise<Result> {
-    const release = retain();
+    const slot = acquire(), release = typeof slot === "function" ? slot : await slot;
     try {
       let step = initial ?? program.next();
       while (step.done !== true) {
@@ -25,7 +43,7 @@ export function createAsyncFiles(
         step = program.next(result);
       }
       return step.value;
-    } finally { release(); }
+    } finally { finish(release); }
   }
   function fileHandle(descriptor: number) {
     let closing: Promise<void> | undefined;

@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { NativeCallbacks } from "./callbacks.js";
+import { nativeCallbackSlots } from "../../native-bridge-version.js";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
 it("claims callbacks for their module and retires cancelled finalizers once", () => {
@@ -63,4 +64,18 @@ it("keeps a posted finalizer's slot claimed until its native immediate or teardo
   expect(events.slice(3)).toEqual([["finalize", 4097n]]);
   later[1]?.();
   expect(events).toHaveLength(4);
+});
+
+it("reads a bridge 18 identity as generation * 2^20 + slot, with more than 4,096 callbacks alive", () => {
+  const slots = nativeCallbackSlots(18), claimed: bigint[] = [];
+  const callbacks = new NativeCallbacks(0n, { claim: identity => { claimed.push(identity); }, retire: () => undefined, finalize: () => undefined }, slots);
+  const identity = (generation: number, slot: number): bigint => BigInt(generation * slots + slot);
+  for (let slot = 0; slot < 5000; slot++) callbacks.add({}, identity(1, slot), "finalizer", 1n);
+  expect(callbacks.live).toBe(5000); expect(claimed).toHaveLength(5000);
+  // The same number is a stale generation of slot 904 in the 4,096-slot table of bridge 17 and earlier.
+  expect(() => { callbacks.validate(identity(1, 4999)); }).toThrow(/Stale native callback generation/u);
+  callbacks.cancel(identity(1, 4999)); callbacks.validate(identity(2, 4999));
+  expect(() => { callbacks.validateAll([identity(1, 6000), identity(2, 6000)]); }).toThrow(/Conflicting native callback slots/u);
+  expect(nativeCallbackSlots(17)).toBe(4096);
+  callbacks.dispose();
 });

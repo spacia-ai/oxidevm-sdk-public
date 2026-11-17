@@ -54,4 +54,11 @@ describe("fs additions", () => {
     for await (const entry of early) { expect(entry.isFile()).toBe(true); break; }
     await expect(early.close()).rejects.toMatchObject({ code: "ERR_DIR_CLOSED" });
   });
+
+  it("returns one promises object holding the runtime's operations and the additions", () => {
+    const tree = fakeTree(), more = createNodeFilesMore(tree.promises);
+    // Node's `fs.promises` and `fs/promises` are one object; Next.js calls `fs.promises.opendir`.
+    expect(Reflect.get(more.promises, "readdir")).toBe(Reflect.get(tree.promises, "readdir"));
+    expect(Object.keys(more.promises)).toEqual([...Object.keys(tree.promises), "cp", "mkdtemp", "opendir"]);
+  });
 });

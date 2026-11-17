@@ -125,3 +125,28 @@ it.each(["async/**/function*", "async function/**/ *", "async function// comment
   if (typeof fn !== "function") throw new Error("Missing native generator");
   expect(Object.getPrototypeOf(fn)).toBe(Object.getPrototypeOf(async function* () {}));
 });
+
+it("keeps empty async functions and arrows native, so a program reaches the AsyncFunction constructor", async () => {
+  const require = createRequire(import.meta.url), root = dirname(require.resolve("@swc/wasm-web"));
+  const compiler = initializeCompiler(compilerNamespace, await WebAssembly.compile(await readFile(join(root, "wasm_bg.wasm"))));
+  const source = "const empty = async function() {}; const result = [empty, async () => {}, async function() {}.constructor, async function work() { await 1; }];";
+  for (const format of ["commonjs", "module"] as const) {
+    const transformed = transformSource(compiler, source, format, "/intrinsics.js");
+    expect(transformed.code.replaceAll(/\s+/gu, "")).toContain("asyncfunction(){}.constructor");
+  }
+  const transformed = transformSource(compiler, source, "commonjs", "/intrinsics.cjs");
+  const evaluate: unknown = Reflect.apply(Function, undefined, [transformed.code + "\nreturn result;"]);
+  if (typeof evaluate !== "function") throw new Error("Missing evaluator");
+  const actual: unknown = Reflect.apply(evaluate, undefined, []);
+  if (!Array.isArray(actual)) throw new Error("Missing function observations");
+  const native: unknown = Object.getPrototypeOf(async () => { await Promise.resolve(); });
+  if (typeof native !== "object" || native === null) throw new Error("Missing native async prototype");
+  const observed: readonly unknown[] = actual, [empty, arrow, constructor, work] = observed;
+  if (typeof empty !== "function") throw new Error("Missing empty async function");
+  expect(Object.getPrototypeOf(empty)).toBe(native);
+  expect(empty.name).toBe("empty");
+  expect(Object.getPrototypeOf(arrow)).toBe(native);
+  expect(constructor).toBe(Reflect.get(native, "constructor"));
+  // A function with a body is still lowered.
+  expect(Object.getPrototypeOf(work)).toBe(Function.prototype);
+});

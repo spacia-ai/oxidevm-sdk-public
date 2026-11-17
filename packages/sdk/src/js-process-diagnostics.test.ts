@@ -139,7 +139,7 @@ it("reports each late fast-path failure Rust remembered, in the trace's one ordi
   expect(decodeJSProcessTrace(failure(5, "signal 11")).failures[0]).toMatchObject({ kind: "host-crash", detail: "signal 11" });
   expect(decodeJSProcessTrace(failure(7, "9437184 of 8388608 bytes")).failures[0]).toMatchObject({ kind: "shared-buffer-budget", detail: "9437184 of 8388608 bytes" });
   // Trials report initializer errors (6) as verdicts; they are never trace failures.
-  for (const bytes of [failure(0, "x"), failure(6, "x"), failure(9, "x"), failure(1, "a\nb"), failure(1, "x", 40, 1n), failure(1, "x").subarray(0, -1)]) {
+  for (const bytes of [failure(0, "x"), failure(6, "x"), failure(10, "x"), failure(1, "a\nb"), failure(1, "x", 40, 1n), failure(1, "x").subarray(0, -1)]) {
     expect(() => decodeJSProcessTrace(bytes)).toThrow();
   }
 });
@@ -272,7 +272,7 @@ it("refuses trace 18 refusals Rust cannot record", () => {
   expect(() => decodeJSProcessTrace(trace18([refusal({ ordinal: 1n })], 1))).toThrow();
   expect(() => decodeJSProcessTrace(trace18([refusal(), refusal()]))).toThrow();
   expect(() => decodeJSProcessTrace(trace18([refusal()]).subarray(0, -1))).toThrow();
-  expect(() => decodeJSProcessTrace(new Writer().raw(new TextEncoder().encode("OXJT")).u32(20).u64(0n).u32(0).u32(0).u32(0).u32(0).finish())).toThrow("version mismatch");
+  expect(() => decodeJSProcessTrace(new Writer().raw(new TextEncoder().encode("OXJT")).u32(21).u64(0n).u32(0).u32(0).u32(0).u32(0).finish())).toThrow("version mismatch");
 });
 
 /** A trace 19 placement of a node launch: no roots, then the deciding add-on and what it lacks. */
@@ -317,4 +317,15 @@ it("names the add-on that placed a launch in Linux and what it lacks (OXJT 19)",
   // An unrelated reason, a detail without an add-on, an unprintable detail, a relative path, or an admitted launch with one.
   for (const bytes of [placement19(0, linuxReason(11), addon, ""), placement19(0, linuxReason(45), "", "napi_x"), placement19(0, linuxReason(45), addon, "a\nb"), placement19(0, linuxReason(45), "relative.node", ""),
     placement19(1, writer => writer.u64(2n).u64(3n).u64(8n).u8(2), addon, "")]) expect(() => decodeJSProcessTrace(bytes)).toThrow();
+});
+
+it("reads trace 20's separate counts of overwritten service rows and overwritten decision rows", () => {
+  const trace = (services: bigint, decisions: bigint) => new Writer().raw(new TextEncoder().encode("OXJT")).u32(20).u64(services).u64(decisions).u32(0).u32(1).u32(0).u32(0)
+    .u64(900_000n).u32(10).u32(10).u64(9n).u8(0).u8(1).u64(2n).u64(3n).u64(8n).u8(1)
+    .u32(1).path("/workspace/app/main.cjs").path("node24-bun1-v1").u8(0).u32(0).path("").path("").finish();
+  // A build's file reads overwrote 899,000 service rows; the placement is still there and none was lost.
+  expect(decodeJSProcessTrace(trace(899_000n, 0n))).toMatchObject({ dropped: 899_000n, droppedDecisions: 0n, placements: [{ ordinal: 900_000n, placement: "browser", basis: "no-addons" }] });
+  expect(decodeJSProcessTrace(trace(0n, 3n)).droppedDecisions).toBe(3n);
+  // Before trace 20 the rows shared one queue, so the split is not known.
+  expect(decodeJSProcessTrace(placement19(1, writer => writer.u64(2n).u64(3n).u64(8n).u8(1))).droppedDecisions).toBeNull();
 });

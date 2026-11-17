@@ -5,7 +5,7 @@ import { decodeProcessId, type ProcessId } from "../../values.js";
 
 /** ADR 0026: why an admitted program failed after it started. Rust owns the codes
  * (`LateFailureKind`), the record and the decision; the SDK only names what it saw. */
-export type LateFailureKind = "unavailable-builtin" | "unqualified-addon" | "unsupported-node-api" | "eval-worker" | "host-crash" | "shared-buffer-budget";
+export type LateFailureKind = "unavailable-builtin" | "unqualified-addon" | "unsupported-node-api" | "eval-worker" | "host-crash" | "shared-buffer-budget" | "unadmitted-module" | "read-only-dependencies";
 /** The kinds a process observes itself and reports (command operation 5). */
 export type ReportedLateFailureKind = Exclude<LateFailureKind, "host-crash">;
 /** A limitation a process reported; host crashes reach the trace from Rust only. */
@@ -22,8 +22,8 @@ export interface AccelerationNotice {
   readonly message: string;
 }
 
-const CODES: Readonly<Record<LateFailureKind, number>> = { "unavailable-builtin": 1, "unqualified-addon": 2, "unsupported-node-api": 3, "eval-worker": 4, "host-crash": 5, "shared-buffer-budget": 7 };
-const KINDS: readonly LateFailureKind[] = ["unavailable-builtin", "unqualified-addon", "unsupported-node-api", "eval-worker", "host-crash", "shared-buffer-budget"];
+const CODES: Readonly<Record<LateFailureKind, number>> = { "unavailable-builtin": 1, "unqualified-addon": 2, "unsupported-node-api": 3, "eval-worker": 4, "host-crash": 5, "shared-buffer-budget": 7, "unadmitted-module": 8, "read-only-dependencies": 9 };
+const KINDS: readonly LateFailureKind[] = ["unavailable-builtin", "unqualified-addon", "unsupported-node-api", "eval-worker", "host-crash", "shared-buffer-budget", "unadmitted-module", "read-only-dependencies"];
 const COMMAND_REPORT = 5;
 const MAX_DETAIL = 255;
 
@@ -54,7 +54,7 @@ function isLateFailureKind(value: string): value is ReportedLateFailureKind {
  * error an add-on initializer threw. Rust remembers it as the add-on's verdict. */
 export type TrialFailureKind = ReportedLateFailureKind | "addon-init-threw";
 export interface TrialFailure { readonly kind: TrialFailureKind; readonly detail: string }
-const TRIAL_CODES: Readonly<Record<TrialFailureKind, number>> = { "unavailable-builtin": 1, "unqualified-addon": 2, "unsupported-node-api": 3, "eval-worker": 4, "addon-init-threw": 6, "shared-buffer-budget": 7 };
+const TRIAL_CODES: Readonly<Record<TrialFailureKind, number>> = { "unavailable-builtin": 1, "unqualified-addon": 2, "unsupported-node-api": 3, "eval-worker": 4, "addon-init-threw": 6, "shared-buffer-budget": 7, "unadmitted-module": 8, "read-only-dependencies": 9 };
 // Operations 6 and 7 are the caught-signal notice and signal exit of ADR 0027.
 const TRIAL_REPORT = 8, TRIAL_DEADLINE = 9, TRIAL_SUSPEND = 10;
 
@@ -134,6 +134,8 @@ export function lateFailureSentence(failure: { readonly kind: LateFailureKind; r
     case "unsupported-node-api": return `This program's add-on called ${failure.detail}, which the fast path does not provide yet; its next run uses full Linux.`;
     case "eval-worker": return "This program started a worker thread from source text, which the fast path does not run; its next run uses full Linux.";
     case "host-crash": return `This program's add-on stopped the fast path with ${failure.detail}; its next run uses full Linux.`;
+    case "unadmitted-module": return `This program loaded ${failure.detail}, which lies outside the folders the fast path captured; its next run uses full Linux.`;
+    case "read-only-dependencies": return `This program wrote to ${failure.detail}, inside the dependency folders the fast path keeps read-only; its next run uses full Linux.`;
     case "shared-buffer-budget": return `This program's add-on shared more memory with JavaScript than the fast path allows (${failure.detail}); its next run uses full Linux.`;
   }
 }
@@ -155,14 +157,16 @@ export interface LateFailureReporter {
   /** A fast-path limitation is explained in one sentence and handed on; any other error is
    * printed, and a missing export the process touched is explained and handed on. */
   uncaught(error: unknown): void;
-  /** A failing exit hands on a missing export the process touched. */
+  /** A failing exit hands on a missing export the process touched, unless the exit answers a signal. */
   exited(code: number): void;
+  /** A signal reached the program's own listener: the exit code it then chooses is its answer, not a failure. */
+  signalled(): void;
 }
 
 /** Hands at most one late failure per process to Rust, so it remembers the program, and prints
  * its one-sentence explanation. Without a receiver it only prints errors. */
 export function lateFailureReporter(print: (value: unknown) => void, receive: ((failure: LateFailure) => void) | undefined, touched: () => LateFailure | undefined): LateFailureReporter {
-  let reported = false;
+  let reported = false, signalled = false;
   const report = (failure: LateFailure | undefined): void => {
     if (failure === undefined || receive === undefined || reported) return;
     reported = true;
@@ -177,6 +181,7 @@ export function lateFailureReporter(print: (value: unknown) => void, receive: ((
       if (limitation === undefined) print(error);
       report(limitation ?? touched());
     },
-    exited: code => { if (code !== 0) report(touched()); },
+    exited: code => { if (code !== 0 && !signalled) report(touched()); },
+    signalled: () => { signalled = true; },
   };
 }

@@ -2,8 +2,8 @@ import type { FileDescriptor, LinuxSyncFiles } from "../../../js-process-types.j
 import { descriptor, protocol, Reader, viewBytes, writeBytes, type LinuxOperation } from "../../js-process/codec.js";
 import { files } from "../../js-process/file-operations.js";
 import { integer } from "../../decode.js";
-import { decodeNativeFrame, encodeNativeFrame, NATIVE_FRAME_VERSION, NATIVE_MAX_FRAME, type NativeFrame } from "./codec.js";
-import type { NativeBridgeVersion } from "../../native-bridge-version.js";
+import { decodeNativeFrame, encodeNativeFrame, NATIVE_ASYNC_LIMIT, NATIVE_FRAME_VERSION, NATIVE_MAX_FRAME, type NativeFrame } from "./codec.js";
+import { nativeCallbackSlots, type NativeBridgeVersion } from "../../native-bridge-version.js";
 import { VMError } from "../../errors.js";
 import { NativeValues } from "./values.js";
 import { decodeNativeMetadata, encodeNativeString } from "./strings.js";
@@ -88,6 +88,7 @@ export class NativeBridge {
       claim: (identity, environment) => { this.#call("claim-callback", () => [identity, environment]); },
       retire: identity => { this.#call("retire-callback", () => [identity]); },
       operationSet: events.operationSet ?? 0,
+      callbackSlots: nativeCallbackSlots(this.#version),
       ...(events.sharedBufferBudget === undefined ? {} : { sharedBufferBudget: events.sharedBufferBudget }),
     });
   }
@@ -186,7 +187,7 @@ export class NativeBridge {
       const reply = { ...frame, kind: 4, ...result };
       this.#write(reply); this.events.trace?.(reply);
     } else if (frame.kind === 6) {
-      if (frame.operation !== "async-queued" || frame.args.length !== 1 || frame.args[0] !== BigInt(frame.sequence) || nativeSetSize(this.#pending) >= 128 || apply(pendingHas, this.#pending, [BigInt(frame.sequence)])) protocol("Invalid queued native work");
+      if (frame.operation !== "async-queued" || frame.args.length !== 1 || frame.args[0] !== BigInt(frame.sequence) || nativeSetSize(this.#pending) >= NATIVE_ASYNC_LIMIT || apply(pendingHas, this.#pending, [BigInt(frame.sequence)])) protocol("Invalid queued native work");
       if (frame.status !== 0 || frame.bytes.byteLength !== 0) protocol("Invalid queued native work payload");
       this.values.createScope(frame.scope); apply(pendingAdd, this.#pending, [BigInt(frame.sequence)]); this.events.changed();
     } else if (frame.kind === 5) {
@@ -199,7 +200,7 @@ export class NativeBridge {
       const identity = BigInt(frame.sequence), state = frame.args[1];
       if (frame.operation !== "async-reference" || frame.args.length !== 2 || frame.args[0] !== identity || frame.status !== 0 || frame.bytes.byteLength !== 0 || state === undefined || state > 2n) protocol("Invalid native event-loop reference");
       if (state === 2n) { if (!apply(referenceDelete, this.#references, [identity])) protocol("Stale native event-loop reference"); }
-      else { if (!apply(referenceHas, this.#references, [identity]) && (state !== 1n || nativeMapSize(this.#references) >= 128)) protocol("Invalid native reference admission"); apply(referenceSet, this.#references, [identity, state === 1n]); }
+      else { if (!apply(referenceHas, this.#references, [identity]) && (state !== 1n || nativeMapSize(this.#references) >= NATIVE_ASYNC_LIMIT)) protocol("Invalid native reference admission"); apply(referenceSet, this.#references, [identity, state === 1n]); }
       this.events.changed();
     } else if (frame.kind === 8) {
       const signal = frame.args[0];

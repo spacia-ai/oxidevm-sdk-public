@@ -24,10 +24,11 @@ function bytesOf(value: unknown): Uint8Array {
 const ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 /** `fs.cp`, `fs/promises.mkdtemp` and `fs.opendir` over the
- * runtime's real file operations. `cp` walks directories through readdir and
+ * runtime's real file operations. The returned `promises` holds the runtime's own operations and these
+ * additions: it is the one object both `fs.promises` and `fs/promises` are, as in Node. `cp` walks directories through readdir and
  * copies file bytes; `mkdtemp` retries a six-character suffix until the
  * directory is new. */
-export function createNodeFilesMore(promises: FilePromises) {
+export function createNodeFilesMore<P extends FilePromises>(promises: P) {
   async function opendir(path: unknown, options?: unknown) {
     const input = typeof options === "string" ? { encoding: options } : options;
     if (input !== undefined && (typeof input !== "object" || input === null)) throw new TypeError("Invalid opendir options");
@@ -76,7 +77,7 @@ export function createNodeFilesMore(promises: FilePromises) {
     }
     throw Object.assign(new Error("mkdtemp: too many attempts"), { code: "EEXIST" });
   }
-  return { promises: { cp, mkdtemp, opendir }, cp: (source: unknown, destination: unknown, options: unknown, callback?: unknown): void => {
+  return { promises: { ...promises, cp, mkdtemp, opendir }, cp: (source: unknown, destination: unknown, options: unknown, callback?: unknown): void => {
     if (typeof options === "function") { callback = options; options = undefined; }
     cp(source, destination, options).then(() => { if (typeof callback === "function") Reflect.apply(callback, undefined, [null]); },
       (error: unknown) => { if (typeof callback === "function") Reflect.apply(callback, undefined, [error]); });

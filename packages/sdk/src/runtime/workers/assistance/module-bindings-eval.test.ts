@@ -44,3 +44,18 @@ it.each([
 ])("keeps dynamic source and transformed import bindings gated: %s", source => {
   expect(() => lowerModuleBindings(source, "/eval.mjs")).toThrow("direct lexical eval");
 });
+
+// Found by the engine's test set with zod 4 (`{ ...schemas }` over `export function stringFormat(format, fn, _params = {})`):
+// a declaration exports the names it binds in the module, never a function's parameters or a class's members.
+it("exports only what an exported declaration binds in the module scope", async () => {
+  const source = 'export function format(first, { nested }, [item], _params = {}, ...rest) { return [first, nested, item, _params, rest.length]; }\n'
+    + 'export class Shape { constructor(side) { this.side = side; } area(scale) { return this.side * scale; } }\n'
+    + 'export const { left, right: renamed } = { left: 1, right: 2 }, [head] = [3];\n'
+    + 'export async function* stream(count) { yield count; }\n';
+  expect(lowerModuleBindings(source, "/workspace/eval.mjs").exports.map(binding => binding.exported).sort()).toEqual(["Shape", "format", "head", "left", "renamed", "stream"]);
+  const namespace = await evaluate(source);
+  expect(Object.keys(namespace as object).sort()).toEqual(["Shape", "format", "head", "left", "renamed", "stream"]);
+  // Reading every export, as an object spread of the namespace does, must not throw.
+  const copy = { ...namespace };
+  expect(copy["left"]).toBe(1); expect(copy["renamed"]).toBe(2); expect(copy["head"]).toBe(3);
+});

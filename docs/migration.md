@@ -529,6 +529,15 @@ engine:pin` refuses a schema 3 release.
   again (`+ host:net.internet`), `oxidevm wasm doctor` has a new closed check,
   `network`, and `oxidevm wasm add --json` reports `network` for a module with
   a reach. `oxidevm wasm build` has a new warning, `adapter-network`.
+- **A million live native callbacks (bridge 18).** A callback identity now
+  carries a 20-bit slot, so the helper can hold 1,048,576 functions and
+  finalizers at once; every wrapped native object holds one until it is
+  collected, and one Astro build wraps more than the 4,096 of earlier bridges.
+  The SDK also admits 4,096 live asynchronous work items, thread-safe functions
+  and unsettled native promises (128 before). The image builder writes
+  `bridge\t18`, so the helper it is given must be the bridge 18 helper of the
+  engine release this SDK pins. Images with a `bridge\t17` row or older keep
+  their limits and run as before.
 - **Asynchronous completions wait for a turn (bridge 17).** The image builder now
   writes `bridge\t17` into an acceleration profile, so the helper it is given
   must be the bridge 17 helper of the engine release this SDK pins. A profile

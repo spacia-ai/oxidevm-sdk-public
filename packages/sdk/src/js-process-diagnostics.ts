@@ -60,7 +60,7 @@ const rejectionReasons: ReadonlyMap<number, AccelerationRejectionReason> = new M
  * (empty when none is named). */
 export interface AccelerationAddonObservation { readonly path: string; readonly detail: string }
 /** The newest reason code of each trace version that has placements. */
-const lastReason: ReadonlyMap<number, number> = new Map([[15, 38], [16, 40], [17, 42], [18, 42], [19, 54]]);
+const lastReason: ReadonlyMap<number, number> = new Map([[15, 38], [16, 40], [17, 42], [18, 42], [19, 54], [20, 54]]);
 /** A module command runs in Linux for its own reasons (41, 42), a full command table (36) or the command context gate (1-10). */
 const moduleCommandReasons: ReadonlySet<number> = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 36, 41, 42]);
 type LinuxPlacement = { readonly placement: "linux"; readonly reason: AccelerationRejectionReason; readonly environment: AccelerationEnvironmentRejection | null; readonly addon: AccelerationAddonObservation | null };
@@ -102,8 +102,12 @@ export interface JSProcessRefusalEvent {
   readonly destination: { readonly family: "unix" } | { readonly family: "ipv4" | "ipv6"; readonly address: string; readonly port: number };
 }
 export interface JSProcessTrace {
-  /** All four lists share one bounded ring and monotonic ordinal sequence. */
+  /** All four lists share one monotonic ordinal sequence. From trace 20 the service events have a bounded queue of
+   * their own and this counts the ones it overwrote; before, it counts overwritten rows of any kind. */
   readonly dropped: bigint;
+  /** Placements, late failures and refusals overwritten in their own bounded queue; null before trace 20, where they
+   * shared the service events' queue. */
+  readonly droppedDecisions: bigint | null;
   readonly events: readonly JSProcessTraceEvent[];
   readonly placements: readonly JSProcessPlacementEvent[];
   readonly failures: readonly JSProcessLateFailureEvent[];
@@ -131,9 +135,11 @@ export function decodeJSProcessTrace(bytes: Uint8Array): JSProcessTrace {
   const r = new Reader(bytes);
   if (new TextDecoder().decode(r.raw(4)) !== "OXJT") protocol("JS trace magic mismatch");
   const version = r.u32();
-  if (version < 15 || version > 19) protocol("JS trace version mismatch");
-  const dropped = r.u64(), count = r.u32(), placementCount = r.u32(), failureCount = r.u32(), refusalCount = version < 18 ? 0 : r.u32(), events: JSProcessTraceEvent[] = [], placements: JSProcessPlacementEvent[] = [];
-  if (count + placementCount + failureCount + refusalCount > 4096) protocol("JS trace exceeds capacity");
+  if (version < 15 || version > 20) protocol("JS trace version mismatch");
+  const dropped = r.u64(), droppedDecisions = version < 20 ? null : r.u64(), count = r.u32(), placementCount = r.u32(), failureCount = r.u32(), refusalCount = version < 18 ? 0 : r.u32(), events: JSProcessTraceEvent[] = [], placements: JSProcessPlacementEvent[] = [];
+  // Trace 20 bounds the service events and the decisions apart; earlier traces bound them together.
+  const decisionCount = placementCount + failureCount + refusalCount;
+  if (version < 20 ? count + decisionCount > 4096 : count > 4096 || decisionCount > 4096) protocol("JS trace exceeds capacity");
   const ordinals = new Set<bigint>();
   let previous = 0n;
   for (let index = 0; index < count; index++) {
@@ -151,7 +157,7 @@ export function decodeJSProcessTrace(bytes: Uint8Array): JSProcessTrace {
     placements.push(subject === 2 ? modulePlacement(r, version, common, placement) : nativePlacement(r, version, { ...common, subject: subject === 0 ? "node" : "bun", runtime: subject === 0 ? "node" : "bun" }, placement));
   }
   const failures = decodeLateFailures(r, failureCount, ordinals), refusals = decodeRefusals(r, refusalCount, ordinals); r.end();
-  return { dropped, events, placements, failures, refusals };
+  return { dropped, droppedDecisions, events, placements, failures, refusals };
 }
 
 function serviceOperation(number: number, version: number): JSProcessTraceEvent["operation"] {

@@ -9,6 +9,19 @@ const Evaluator = Function;
 const forbidden = new Set(["__proto__", "prototype", "constructor"]);
 const unavailable = (): never => { throw new VMError("FEATURE_NOT_AVAILABLE", "vm contexts support only data scripts with plain data values"); };
 
+/** `(function(){return <expression>;})()` stands for its returned expression, which is then held to the data
+ * subset like any other; webpack reads its magic comments in this form. Any other function is refused below. */
+function unwrapReturnedData(program: t.Program): void {
+  const [statement] = program.body;
+  if (program.body.length !== 1 || program.directives.length !== 0 || !t.isExpressionStatement(statement)) return;
+  const call = statement.expression;
+  if (!t.isCallExpression(call) || call.arguments.length !== 0 || !t.isFunctionExpression(call.callee)) return;
+  const { id, async: asynchronous, generator, params, body } = call.callee, [returned] = body.body;
+  if (id !== null && id !== undefined || asynchronous || generator || params.length !== 0 || body.directives.length !== 0 || body.body.length !== 1) return;
+  if (!t.isReturnStatement(returned) || returned.argument === null || returned.argument === undefined) return;
+  statement.expression = returned.argument;
+}
+
 /** This data-script subset creates no V8 context. It executes no functions or ambient browser operations. */
 export function evaluateContextData(source: string, context: object, filename: string, sources: ExecutableSources): unknown {
   let nodes = 0, bytes = source.length * 2;
@@ -40,6 +53,7 @@ export function evaluateContextData(source: string, context: object, filename: s
   const names = Object.keys(context).filter(name => t.isValidIdentifier(name));
   const bindings = new Set(["globalThis", "undefined", ...names]);
   const tree = parse(source, { sourceType: "script", sourceFilename: filename });
+  unwrapReturnedData(tree.program);
   traverseModule(tree, {
     enter(path) {
       charge(8);
@@ -47,7 +61,7 @@ export function evaluateContextData(source: string, context: object, filename: s
       if (!(t.isFile(node) || t.isProgram(node) || t.isExpressionStatement(node) || t.isEmptyStatement(node)
         || t.isAssignmentExpression(node, { operator: "=" }) || t.isMemberExpression(node) || t.isIdentifier(node)
         || t.isObjectExpression(node) || t.isObjectProperty(node) || t.isArrayExpression(node)
-        || t.isStringLiteral(node) || t.isNumericLiteral(node) || t.isBooleanLiteral(node) || t.isNullLiteral(node)
+        || t.isStringLiteral(node) || t.isRegExpLiteral(node) || t.isNumericLiteral(node) || t.isBooleanLiteral(node) || t.isNullLiteral(node)
         || t.isLogicalExpression(node) || t.isUnaryExpression(node) || t.isDirective(node) || t.isDirectiveLiteral(node))) unavailable();
       if (t.isAssignmentExpression(node) && !t.isMemberExpression(node.left)) unavailable();
       if (t.isMemberExpression(node)) {

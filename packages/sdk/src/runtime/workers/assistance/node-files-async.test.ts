@@ -102,3 +102,24 @@ it("delivers native access errors and preserves callback context and constants i
   expect(await done.promise).toEqual([null, "access"]);
   expect(operations).toEqual([{ kind: "access", path: "denied", mode: 2 }, { kind: "access", path: "value", mode: 0 }]);
 });
+
+it("makes file operations beyond the concurrency bound wait their turn instead of exhausting the process's activity slots", async () => {
+  // @vercel/nft (Next.js "Collecting build traces") starts up to 1,024 file reads at once.
+  let retained = 0, peak = 0;
+  const replies: PromiseWithResolvers<AssistanceResult>[] = [];
+  const fs = createAsyncFiles(() => { const reply = Promise.withResolvers<AssistanceResult>(); replies.push(reply); return reply.promise; },
+    () => "/workspace", createAsyncContext(), () => {
+      if (retained >= 256) throw new Error("activity slots exhausted");
+      retained += 1; peak = Math.max(peak, retained);
+      return () => { retained -= 1; };
+    });
+  const all = Promise.all(Array.from({ length: 1024 }, (_, index) => fs.promises.access(`/workspace/${String(index)}`)));
+  expect(replies).toHaveLength(64);
+  for (let answered = 0; answered < 1024; answered += 1) {
+    while (replies.length <= answered) await Promise.resolve();
+    expect(retained).toBeGreaterThan(0);
+    replies[answered]?.resolve({ kind: "unit" });
+  }
+  await all;
+  expect(peak).toBe(64); expect(retained).toBe(0);
+});

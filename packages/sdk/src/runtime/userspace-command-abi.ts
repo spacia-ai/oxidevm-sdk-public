@@ -268,7 +268,7 @@ export function decodeNativeProcessProgram(input: unknown): Extract<UserspaceCom
   const p = record(program["profile"], "native compatibility profile"); exactKeys(p, ["runtime", "executable", "runtimeSHA256", "identity", "roots", "basis", "dependencyGeneration", "artifacts", "moduleSearchPaths", "requiredCapabilities", "bridgeVersion", "operationSet", "sharedBufferBudget", "runtimeBuild"]);
   const operationSet = integer(p["operationSet"], "native operation set", 0, 0xffff), sharedBufferBudget = integer(p["sharedBufferBudget"], "native shared-buffer budget", 1, NATIVE_MAX_SHARED_BYTES);
   const requiredCapabilities = p["requiredCapabilities"], bridgeVersion = p["bridgeVersion"];
-  if (bridgeVersion !== 15 && bridgeVersion !== 16 && bridgeVersion !== 17) protocol("Unknown native bridge version of the host helper");
+  if (bridgeVersion !== 15 && bridgeVersion !== 16 && bridgeVersion !== 17 && bridgeVersion !== 18) protocol("Unknown native bridge version of the host helper");
   if (requiredCapabilities !== 0 && requiredCapabilities !== 1 && requiredCapabilities !== 2 && requiredCapabilities !== 3 || requiredCapabilities !== 0 && p["identity"] !== "native-parity-fixture-v1") protocol("Invalid native capability requirements");
   const runtimeSHA256 = string(p["runtimeSHA256"], "native runtime digest");
   if (!/^[a-f0-9]{64}$/u.test(runtimeSHA256)) protocol("Invalid native runtime digest");
