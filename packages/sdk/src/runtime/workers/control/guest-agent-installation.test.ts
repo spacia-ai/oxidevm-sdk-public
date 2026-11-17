@@ -76,6 +76,12 @@ it.each([6, 7] as const)("v%s drains installation events on the existing pump an
     }
     expect(requests).toBe(before);
   }
+  // No dialect of the system agent decodes a file-time request, so none is sent.
+  const sent = requests;
+  for (const operation of [{ kind: "utime", path: "/workspace/file", atime: 0n, mtime: "now" }, { kind: "lutime", path: "/workspace/link", atime: "omit", mtime: 1n }, { kind: "futime", fd: 7, atime: 1n, mtime: 2n }] as const) {
+    await expect(agent.assistance(2, { session: binding.session, generation: 1, process: 1, sequence: 1, operation })).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE", message: expect.stringContaining("File time") as unknown });
+  }
+  expect(requests).toBe(sent);
   agent.setInstallationEvents(binding, receive);
   expect(() => agent.setInstallationEvents(binding, receive)).toThrow();
   const event: InstallationEvent = { ...binding, sequence: 1, event: { kind: "output", child: 1, stream: "stdout", bytes: new Uint8Array(65536) } };

@@ -1,6 +1,6 @@
 import { Buffer } from "buffer";
 import { VMError } from "../../errors.js";
-import { ASSISTANCE_LIMITS, type AssistanceOperation } from "../../protocol/assistance.js";
+import { ASSISTANCE_LIMITS, type AssistanceFileTime, type AssistanceOperation } from "../../protocol/assistance.js";
 import type { AssistanceResult } from "../../protocol/assistance-reply.js";
 import { fileURLToPath } from "./node-url.js";
 
@@ -244,6 +244,13 @@ export function createFileOperations(cwd: () => string, asynchronous = false, co
     }
     return { recursive, path: first };
   }
+  /** Node validates the path or descriptor, then each time; a time Linux cannot hold fails as it does there. */
+  function* times(target: { readonly kind: "utime" | "lutime"; readonly path: string } | { readonly kind: "futime"; readonly fd: number }, atime: unknown, mtime: unknown): FileOperation<void> {
+    const named = target.kind === "futime";
+    const selected = { atime: fileTime(atime, named ? "atime" : "time"), mtime: fileTime(mtime, named ? "mtime" : "time") };
+    if (selected.atime === "invalid" || selected.mtime === "invalid") nodeResult({ kind: "error", code: "EINVAL", errno: 22, syscall: target.kind, path: "path" in target ? target.path : null, destination: null });
+    else yield* unit({ ...target, atime: selected.atime, mtime: selected.mtime });
+  }
   return {
     access: checked((value: unknown, mode?: unknown) => unit({ kind: "access", path: path(value), mode: accessMode(mode) }), 1, 2),
     open: checked(open, 1, 3), close: checked(close, 1, 1),
@@ -263,6 +270,9 @@ export function createFileOperations(cwd: () => string, asynchronous = false, co
     mkdir: checked(mkdir, 1, 2),
     chmod: checked((value: unknown, mode: unknown) => unit({ kind: "chmod", path: path(value), mode: permissions(mode) }), 2, 2),
     fchmod: checked((fd: unknown, mode: unknown) => unit({ kind: "fchmod", fd: descriptor(fd), mode: permissions(mode) }), 2, 2),
+    utimes: checked((value: unknown, atime: unknown, mtime: unknown) => times({ kind: "utime", path: path(value) }, atime, mtime), 0, 3),
+    lutimes: checked((value: unknown, atime: unknown, mtime: unknown) => times({ kind: "lutime", path: path(value) }, atime, mtime), 0, 3),
+    futimes: checked((fd: unknown, atime: unknown, mtime: unknown) => times({ kind: "futime", fd: descriptor(fd) }, atime, mtime), 0, 3),
     truncate: checked((value: unknown, length: unknown = 0) => unit({ kind: "truncate", path: path(value), length: BigInt(number(length)) }), 1, 2),
     ftruncate: checked((fd: unknown, length: unknown = 0) => unit({ kind: "ftruncate", fd: descriptor(fd), length: BigInt(number(length)) }), 1, 2),
     rename: checked((value: unknown, destination: unknown) => unit({ kind: "rename", path: path(value), destination: path(destination) }), 2, 2),
@@ -381,6 +391,29 @@ function accessMode(value: unknown): number {
   const mode = Math.trunc(value);
   if (!Number.isFinite(mode) || mode < 0 || mode > 7) throw Object.assign(new RangeError("Access mode must be between 0 and 7"), { code: "ERR_OUT_OF_RANGE" });
   return mode;
+}
+
+/** The intrinsic itself: it answers for a Date of any realm and throws for every other value, as Node's `isDate` tells them apart. */
+const dateTime: unknown = Object.getOwnPropertyDescriptor(Date.prototype, "getTime")?.value;
+/** Node's `toUnixTimestamp`, then libuv's conversion of those seconds (`uv__fs_to_timespec`): a numeric string is its
+ * number, a negative number means now, and a date is its milliseconds over 1000. Of the seconds, an infinite value is
+ * UTIME_NOW, NaN (an invalid date) UTIME_OMIT, and any other is truncated to whole seconds and nanoseconds. Seconds
+ * outside a signed 64-bit word are "invalid": Linux answers Node with EINVAL for them. */
+function fileTime(value: unknown, name: string): AssistanceFileTime | "invalid" {
+  let seconds: number;
+  if (typeof value === "string" && !Number.isNaN(Number(value))) seconds = Number(value);
+  else if (typeof value === "number" && Number.isFinite(value)) { if (value < 0) return "now"; seconds = value; }
+  else {
+    let milliseconds: unknown;
+    try { if (typeof dateTime === "function") milliseconds = Reflect.apply(dateTime, value, []); } catch { /* Not a Date: refused below. */ }
+    if (typeof milliseconds !== "number") throw Object.assign(new TypeError(`The "${name}" argument must be an instance of Date or an Time in seconds.`), { code: "ERR_INVALID_ARG_TYPE" });
+    seconds = milliseconds / 1000;
+  }
+  if (Number.isNaN(seconds)) return "omit";
+  if (!Number.isFinite(seconds)) return "now";
+  if (seconds >= 2 ** 63 || seconds < -(2 ** 63)) return "invalid";
+  const whole = Math.trunc(seconds), nanoseconds = Math.trunc((seconds - whole) * 1e9);
+  return BigInt(whole) * 1_000_000_000n + BigInt(nanoseconds);
 }
 
 function number(value: unknown, maximum = Number.MAX_SAFE_INTEGER): number {

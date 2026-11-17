@@ -6,7 +6,8 @@ export interface LocalModuleFiles {
   readonly dependencies?: ModuleDependencyIdentity;
   readonly loadNative?: (path: string) => unknown;
   resolve(specifier: string, parent: string, kind: "require" | "import"): string;
-  read(path: string): { readonly source: string; readonly format: ModuleFormat };
+  /** `kind` is how the module is loaded when the caller knows it; Node admits fewer extensions to `import`. */
+  read(path: string, kind?: "require" | "import"): { readonly source: string; readonly format: ModuleFormat };
 }
 import type { AssistedDependencyIdentity } from "../../protocol/assistance-broker.ts";
 import type { JSProcessIdentity } from "../../js-process/codec.js";

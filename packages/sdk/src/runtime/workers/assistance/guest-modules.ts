@@ -4,6 +4,7 @@ import { createNodePath } from "./node-path.ts";
 import { fileURLToPath } from "./node-url.ts";
 import { resolvePackageTarget } from "./package-target.ts";
 import { isNodeBuiltin } from "./commonjs.ts";
+import { lateFailureError } from "../../js-process/late-failure.ts";
 
 interface GuestModuleFiles {
   readFileSync(path: string, encoding: "utf8"): unknown;
@@ -22,6 +23,7 @@ export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDep
   conditions: readonly string[] = []): LocalModuleFiles {
   const dependencies = selected === undefined ? undefined : Object.freeze({ ...selected });
   const roots = dependencies !== undefined && "profile" in dependencies ? dependencies.roots : undefined;
+  const node = dependencies === undefined || !("profile" in dependencies) || dependencies.runtime === "node";
   const paths = createNodePath(() => "/");
   const canonicalMetadata = new Map<string, ModulePathInfo>();
   const packageMetadata = new Map<string, Record<string, unknown>>();
@@ -175,7 +177,9 @@ export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDep
       return resolve(fileURLToPath(url), parent, kind, depth + 1);
     }
     if (isNodeBuiltin(specifier)) return specifier.startsWith("node:") ? specifier : `node:${specifier}`;
-    if (!(specifier.startsWith("/") || specifier.startsWith("./") || specifier.startsWith("../"))) {
+    // CommonJS also takes "." and ".." as relative: the requiring file's directory and its parent.
+    const relative = specifier.startsWith("/") || specifier.startsWith("./") || specifier.startsWith("../") || (kind === "require" && (specifier === "." || specifier === ".."));
+    if (!relative) {
       if (dependencies === undefined) throw unsupported(specifier, "installed-package resolution is unavailable");
       const own = scope(parent);
       if (specifier.startsWith("#")) {
@@ -234,8 +238,9 @@ export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDep
     ...(loadNative === undefined ? {} : { loadNative }),
     ...(dependencies === undefined ? {} : { dependencies }),
     resolve,
-    read(path) {
+    read(path, kind) {
       admit(path);
+      refuseTypeScript(path, kind, node);
       const text = source(path);
       if (path.endsWith(".json")) return { source: text, format: "json" };
       if (path.endsWith(".mjs")) return { source: text, format: "module" };
@@ -250,6 +255,22 @@ export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDep
   };
 }
 
+/** Node 24 strips the types from a `.ts`, `.mts` or `.cts` module it loads, and Bun transpiles those and `.tsx`.
+ * The fast path does neither, and read as JavaScript such a file dies of a SyntaxError on every run; this typed
+ * refusal is remembered instead, so the program's next run uses Linux. `.tsx` is not TypeScript to Node: `import`
+ * refuses the extension, and `require` reads the file as JavaScript, as this loader goes on to do. */
+function refuseTypeScript(path: string, kind: "require" | "import" | undefined, node: boolean): void {
+  if (!node) {
+    if (/[^/]\.(?:[cm]?ts|tsx)$/u.test(path)) throw lateFailureError("unavailable-builtin", "TypeScript transpilation is unavailable in browser-assisted processes", "TypeScript transpilation");
+    return;
+  }
+  if (/[^/]\.[cm]?ts$/u.test(path)) {
+    throw lateFailureError("unavailable-builtin", "TypeScript type stripping is unavailable in browser-assisted processes", "TypeScript type stripping");
+  }
+  if (kind === "import" && /[^/]\.tsx$/u.test(path)) {
+    throw Object.assign(new TypeError(`Unknown file extension ".tsx" for ${path}`), { code: "ERR_UNKNOWN_FILE_EXTENSION" });
+  }
+}
 function missing(error: unknown): boolean {
   return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR");
 }

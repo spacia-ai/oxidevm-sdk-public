@@ -18,7 +18,7 @@ export function refusingModules(modules: LocalModuleFiles): { readonly modules: 
     }
   };
   return {
-    modules: { ...modules, resolve: (specifier, parent, kind) => keep(() => modules.resolve(specifier, parent, kind)), read: path => keep(() => modules.read(path)) },
+    modules: { ...modules, resolve: (specifier, parent, kind) => keep(() => modules.resolve(specifier, parent, kind)), read: (path, kind) => keep(() => modules.read(path, kind)) },
     refused: () => refused,
   };
 }

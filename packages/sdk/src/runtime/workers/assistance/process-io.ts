@@ -5,6 +5,7 @@ import { BROKER_REPLY_VERSION, decodeBrokerCommand, type BrokerEvent, type Broke
 import { decodeAssistanceEvent, type AssistanceEvent } from "../../protocol/assistance-event.js";
 import { assistanceReplyCapacity, decodeAssistanceReply, matchAssistanceReply, type AssistanceResult } from "../../protocol/assistance-reply.js";
 import { closeMailbox, publishRequest, waitForReply } from "./mailbox.js";
+import { unavailableNodeApi } from "./node-capability.js";
 import { decodeForkReplyBytes, encodeForkRequest, type ForkReply, type ForkRequest } from "../../protocol/assistance-fork.js";
 import type { ChildSignal, ExitSignal, ForkTermination } from "../../protocol/assistance-broker.js";
 import type { LinuxSignal } from "../../process-signals.js";
@@ -95,6 +96,7 @@ export class ProcessIO {
   }
 
   callSync(operation: AssistanceOperation): AssistanceResult {
+    refuseFileTimes(operation);
     // A callback can block this worker before an earlier asynchronous ACK reply
     // runs its continuation. Drain queued supervision through the mailbox first
     // so Linux is not waiting for credits trapped behind this synchronous call.
@@ -148,6 +150,7 @@ export class ProcessIO {
   }
 
   call(operation: AssistanceOperation, referenced = true, signal?: AbortSignal): Promise<AssistanceResult> {
+    refuseFileTimes(operation);
     if (signal !== undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "Per-operation cancellation is unavailable in the system agent transport");
     if (isAssistanceSupervisoryOperation(operation)) {
       if (this.#closed !== undefined) throw this.#closed;
@@ -382,6 +385,11 @@ export class ProcessIO {
 /** The failure event's error keeps a bounded stack of an uncaught error: its
  * message alone cannot locate the fault in application code. */
 const FAILURE_STACK_BYTES = 4096;
+/** The system agent's dialects carry no file-time operation. The program sees the missing Node API as a late
+ * failure in its own worker (as `copyFile` is refused), and nothing a dialect cannot decode is sent to the guest. */
+function refuseFileTimes(operation: AssistanceOperation): void {
+  if (operation.kind === "utime" || operation.kind === "lutime" || operation.kind === "futime") unavailableNodeApi(`fs.${operation.kind}s`);
+}
 function failureWithStack(error: unknown): ReturnType<typeof serializeUnknownError> {
   const serialized = serializeUnknownError(error);
   if (!(error instanceof Error) || typeof error.stack !== "string" || error.stack.length === 0) return serialized;

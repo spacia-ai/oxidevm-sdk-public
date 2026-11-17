@@ -17,7 +17,7 @@ export function assistanceReplyCapacity(operation: AssistanceOperation): number 
     case "stdin": case "close-stdin": case "stop": case "terminal-ack":
     case "open": case "close": case "fstat": case "fsync": case "fdatasync":
     case "stat": case "lstat": case "readlink": case "realpath": case "unlink":
-    case "rmdir": case "mkdir": case "chmod": case "fchmod": case "truncate":
+    case "rmdir": case "mkdir": case "chmod": case "fchmod": case "truncate": case "utime": case "lutime": case "futime":
     case "ftruncate": case "rename": case "ack": case "access": case "getcwd": case "chdir": case "check-dependencies": return 20 * 1024;
   }
 }
@@ -289,7 +289,7 @@ export function matchAssistanceReply(request: AssistanceRequest, reply: Assistan
     case "getcwd": if (value.kind === "path" && value.path.startsWith("/")) return value; break;
     case "spawn": case "fork": if (value.kind === "spawned") return value; break;
     case "stop": if (value.kind === "unit" || value.kind === "terminal") return value; break;
-    case "access": case "chdir": case "close": case "fsync": case "fdatasync": case "unlink": case "rmdir": case "mkdir": case "chmod": case "fchmod": case "truncate": case "ftruncate": case "rename": case "link": case "symlink": case "close-stdin": case "signal": case "ack": case "terminal-ack":
+    case "access": case "chdir": case "close": case "fsync": case "fdatasync": case "unlink": case "rmdir": case "mkdir": case "chmod": case "fchmod": case "utime": case "lutime": case "futime": case "truncate": case "ftruncate": case "rename": case "link": case "symlink": case "close-stdin": case "signal": case "ack": case "terminal-ack":
       if (value.kind === "unit") return value; break;
   }
   return fail("assistance reply does not match operation");

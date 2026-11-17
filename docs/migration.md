@@ -529,6 +529,42 @@ engine:pin` refuses a schema 3 release.
   again (`+ host:net.internet`), `oxidevm wasm doctor` has a new closed check,
   `network`, and `oxidevm wasm add --json` reports `network` for a module with
   a reach. `oxidevm wasm build` has a new warning, `adapter-network`.
+- **Generic acceleration admission is on.** With the engine release this SDK
+  pins, Userspace decides by itself whether a `node` or `bun` launch under
+  `/workspace` runs on the fast path, for any project: add-ons are admitted by
+  static checks and a one-time sealed trial load instead of a fixed list, a
+  runtime binary outside the qualified builds is probed once, and an image
+  needs no acceleration profile. `commandInterceptors: "auto"` stays the
+  default and `OXIDEVM_ACCELERATION=off` still keeps a command and its children
+  in Linux. New in the placement trace: the `basis` values `verified` and
+  `trial`, the Linux reasons 43 to 54 (`addon-not-node-api`, `addon-glibc`,
+  `addon-unresolved-symbol`, `addon-library-unavailable`, `addon-trial-failed`,
+  `addon-trial-timeout`, `addon-trial-deferred`, `host-protocol-unsupported`,
+  `runtime-probe-pending`, `runtime-family-unsupported`, `runtime-probe-failed`,
+  `addon-names-unserved`) with the deciding add-on in `addon`, and the late
+  failure kinds `shared-buffer-budget`, `unadmitted-module` and
+  `read-only-dependencies`. A launch that a trial vouches for may share at most
+  8 MiB with native code.
+- **`JSProcessTrace.droppedDecisions` (trace 20).** Placements, late failures
+  and refusals have a bounded queue of their own, so service events no longer
+  push them out. `droppedDecisions` counts the ones that queue overwrote and is
+  `null` for an older engine; `dropped` now counts overwritten service events
+  only. Check `droppedDecisions` before treating `placements` as complete.
+- **Launches that now stay in Linux.** A TypeScript entry (`node main.ts`,
+  `bun main.ts`; `.ts`, `.mts`, `.cts`, `.tsx`) is placed in Linux with
+  `unsupported-invocation`, because the fast path neither strips types nor
+  transpiles. A TypeScript module a program imports is the late failure
+  `unavailable-builtin` (`TypeScript type stripping` under Node,
+  `TypeScript transpilation` under Bun). An install-phase package script
+  (`npm_lifecycle_event` of `preinstall`, `install`, `postinstall`,
+  `prepublish`, `preprepare`, `prepare` or `postprepare`) and everything it
+  starts is placed in Linux with `unsupported-environment`. A Linux program
+  that a fast-path process starts sees the normal writable project, including
+  `node_modules`; only the fast-path process itself holds them read-only.
+- **`node:fs` file times on the fast path.** `utimes`, `futimes` and `lutimes`
+  (callback, `Sync` and `fs.promises` forms, and `FileHandle.utimes`) are
+  served in Userspace with Node 24's argument rules and nanosecond precision.
+  In System mode they remain the late failure `unavailable-builtin`.
 - **A million live native callbacks (bridge 18).** A callback identity now
   carries a 20-bit slot, so the helper can hold 1,048,576 functions and
   finalizers at once; every wrapped native object holds one until it is

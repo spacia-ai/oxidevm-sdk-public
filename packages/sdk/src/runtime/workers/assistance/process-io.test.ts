@@ -351,3 +351,22 @@ it("keeps a bounded stack of an uncaught error in its failure event", () => {
   expect(stack).toContain("start-server.js:12:3");
   expect(stack.length).toBeLessThanOrEqual(4096);
 });
+
+it("refuses file times in the system agent transport as a remembered limitation, before dispatch", () => {
+  const send = vi.fn(), mailbox = createMailbox(), io = new ProcessIO(identity, mailbox, send);
+  try {
+    for (const [operation, subject] of [
+      [{ kind: "utime", path: "/file", atime: 0n, mtime: 0n }, "node:fs.utimes"],
+      [{ kind: "lutime", path: "/link", atime: 0n, mtime: 0n }, "node:fs.lutimes"],
+      [{ kind: "futime", fd: 7, atime: 0n, mtime: 0n }, "node:fs.futimes"],
+    ] as const) {
+      for (const call of [() => io.callSync(operation), () => io.call(operation)]) {
+        let failure: unknown;
+        try { void call(); } catch (error) { failure = error; }
+        expect(failure).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", detail: { lateFailure: "unavailable-builtin", subject } });
+      }
+    }
+    expect(send).not.toHaveBeenCalled(); expect(io.hasPending).toBe(false);
+  } finally { io.close(new Error("test cleanup")); }
+});
+

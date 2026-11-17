@@ -28,6 +28,9 @@ export type AssistanceSocketOperation =
   | { readonly kind: "socket-nodelay"; readonly fd: number; readonly enabled: boolean }
   | { readonly kind: "socket-keepalive"; readonly fd: number; readonly enabled: boolean; readonly delaySeconds: number };
 
+/** A time for utimensat(2): nanoseconds since the epoch (floored seconds must fit a signed 64-bit word), the current time, or "leave unchanged". */
+export type AssistanceFileTime = bigint | "now" | "omit";
+
 export type AssistanceOperation =
   | { readonly kind: "fork"; readonly process: number; readonly dependencies: Uint8Array<ArrayBuffer> | null }
   | { readonly kind: "watch-add"; readonly path: string }
@@ -47,6 +50,9 @@ export type AssistanceOperation =
   | { readonly kind: "stat" | "lstat" | "readdir" | "readdir-entries" | "readlink" | "realpath" | "unlink" | "rmdir"; readonly path: string }
   | { readonly kind: "mkdir" | "chmod"; readonly path: string; readonly mode: number }
   | { readonly kind: "fchmod"; readonly fd: number; readonly mode: number }
+  // Named as Node names the syscalls in its errors. The system agent's dialects (4 to 7) do not serve these three.
+  | { readonly kind: "utime" | "lutime"; readonly path: string; readonly atime: AssistanceFileTime; readonly mtime: AssistanceFileTime }
+  | { readonly kind: "futime"; readonly fd: number; readonly atime: AssistanceFileTime; readonly mtime: AssistanceFileTime }
   | { readonly kind: "truncate"; readonly path: string; readonly length: bigint }
   | { readonly kind: "ftruncate"; readonly fd: number; readonly length: bigint }
   | { readonly kind: "rename" | "link"; readonly path: string; readonly destination: string }
@@ -98,6 +104,7 @@ const tags = {
   realpath: 14, unlink: 15, rmdir: 16, mkdir: 17, chmod: 18, fchmod: 19,
   truncate: 20, ftruncate: 21, rename: 22, link: 23, symlink: 24,
   spawn: 25, stdin: 26, "close-stdin": 27, signal: 28, ack: 29, "terminal-ack": 30, "check-dependencies": 31, getcwd: 32, chdir: 33, access: 34, "readdir-entries": 35,
+  utime: 50, lutime: 51, futime: 52,
 } satisfies Record<AssistanceOperation["kind"], number>;
 
 const encoder = new TextEncoder();
@@ -111,6 +118,36 @@ function path(value: unknown, empty = false): string {
 function size(value: unknown): bigint {
   if (typeof value !== "bigint" || value < 0n || value > 0x7fff_ffff_ffff_ffffn) fail("invalid assistance offset");
   return value;
+}
+const NS_PER_SECOND = 1_000_000_000n, I64_MIN = -(2n ** 63n), I64_MAX = 2n ** 63n - 1n;
+/** Floored seconds and the nanoseconds 0..999,999,999 above them, as utimensat takes a time. */
+function timeParts(time: bigint): { readonly seconds: bigint; readonly nanoseconds: bigint } {
+  const nanoseconds = ((time % NS_PER_SECOND) + NS_PER_SECOND) % NS_PER_SECOND;
+  return { seconds: (time - nanoseconds) / NS_PER_SECOND, nanoseconds };
+}
+function fileTime(value: unknown): AssistanceFileTime {
+  if (value === "now" || value === "omit") return value;
+  if (typeof value !== "bigint") return fail("invalid assistance file time");
+  const { seconds } = timeParts(value);
+  if (seconds < I64_MIN || seconds > I64_MAX) fail("invalid assistance file time");
+  return value;
+}
+function writeFileTime(output: AgentPayloadWriter, time: AssistanceFileTime): void {
+  if (typeof time !== "bigint") { output.u8(time === "now" ? 1 : 2); return; }
+  const { seconds, nanoseconds } = timeParts(time);
+  output.u8(0).u64(BigInt.asUintN(64, seconds)).u32(Number(nanoseconds));
+}
+function readFileTime(input: AgentPayloadReader): unknown {
+  switch (input.u8()) {
+    case 0: {
+      const seconds = BigInt.asIntN(64, input.u64()), nanoseconds = input.u32();
+      if (nanoseconds >= 1_000_000_000) fail("invalid file time nanoseconds");
+      return seconds * NS_PER_SECOND + BigInt(nanoseconds);
+    }
+    case 1: return "now";
+    case 2: return "omit";
+    default: return fail("invalid file time tag");
+  }
 }
 function bytes(value: unknown): Uint8Array<ArrayBuffer> {
   if (!(value instanceof Uint8Array) || !(value.buffer instanceof ArrayBuffer) || value.byteLength > ASSISTANCE_LIMITS.chunk) fail("invalid assistance bytes");
@@ -199,6 +236,10 @@ export function decodeAssistanceOperation(value: unknown): AssistanceOperation {
       exactKeys(input, ["kind", "path", "mode"]); return { kind, path: path(input["path"]), mode: integer(input["mode"], "mode", 0, 0o7777) };
     case "fchmod":
       exactKeys(input, ["kind", "fd", "mode"]); return { kind, fd: id(input["fd"]), mode: integer(input["mode"], "mode", 0, 0o7777) };
+    case "utime": case "lutime":
+      exactKeys(input, ["kind", "path", "atime", "mtime"]); return { kind, path: path(input["path"]), atime: fileTime(input["atime"]), mtime: fileTime(input["mtime"]) };
+    case "futime":
+      exactKeys(input, ["kind", "fd", "atime", "mtime"]); return { kind, fd: id(input["fd"]), atime: fileTime(input["atime"]), mtime: fileTime(input["mtime"]) };
     case "truncate":
       exactKeys(input, ["kind", "path", "length"]); return { kind, path: path(input["path"]), length: size(input["length"]) };
     case "ftruncate":
@@ -277,6 +318,8 @@ export function encodeAssistanceRequest(value: unknown): Uint8Array<ArrayBuffer>
     case "stat": case "lstat": case "readdir": case "readdir-entries": case "readlink": case "realpath": case "unlink": case "rmdir": case "chdir": output.string(operation.path); break;
     case "mkdir": case "chmod": output.string(operation.path).u32(operation.mode); break;
     case "fchmod": output.u32(operation.fd).u32(operation.mode); break;
+    case "utime": case "lutime": output.string(operation.path); writeFileTime(output, operation.atime); writeFileTime(output, operation.mtime); break;
+    case "futime": output.u32(operation.fd); writeFileTime(output, operation.atime); writeFileTime(output, operation.mtime); break;
     case "truncate": output.string(operation.path).u64(operation.length); break;
     case "ftruncate": output.u32(operation.fd).u64(operation.length); break;
     case "rename": case "link": output.string(operation.path).string(operation.destination); break;
@@ -321,7 +364,8 @@ export function decodeAssistanceRequest(bytes: Uint8Array): AssistanceRequest {
 }
 
 function readOperation(input: AgentPayloadReader): unknown {
-  switch (input.u8()) {
+  const tag = input.u8();
+  switch (tag) {
     case 49: {
       const process = input.u32();
       const flag = input.u8();
@@ -388,6 +432,8 @@ function readOperation(input: AgentPayloadReader): unknown {
     case 32: return { kind: "getcwd" };
     case 33: return { kind: "chdir", path: input.string() };
     case 31: return { kind: "check-dependencies", policy: input.bytes() };
+    case 50: case 51: { const kind = tag === 50 ? "utime" : "lutime", path = input.string(); return { kind, path, atime: readFileTime(input), mtime: readFileTime(input) }; }
+    case 52: { const fd = input.u32(); return { kind: "futime", fd, atime: readFileTime(input), mtime: readFileTime(input) }; }
     default: return fail("unknown assistance operation tag");
   }
 }

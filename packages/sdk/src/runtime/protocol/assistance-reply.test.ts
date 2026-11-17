@@ -132,3 +132,17 @@ it("completes a fork with the native spawn reply shape only", async () => {
   expect(() => matchAssistanceReply(request, { ...reply, result: { kind: "unit" } })).toThrow();
   expect(assistanceReplyCapacity(request.operation)).toBe(20 * 1024);
 });
+
+it("answers a file time request with a unit reply only, within the small reply credit", () => {
+  for (const operation of [
+    { kind: "utime", path: "/file", atime: 0n, mtime: "now" },
+    { kind: "lutime", path: "/link", atime: "omit", mtime: 1n },
+    { kind: "futime", fd: 7, atime: 1n, mtime: 2n },
+  ] as const) {
+    const request: AssistanceRequest = { ...identity, operation };
+    expect(assistanceReplyCapacity(operation)).toBe(20 * 1024);
+    expect(matchAssistanceReply(request, { ...identity, result: { kind: "unit" } })).toEqual({ kind: "unit" });
+    expect(() => matchAssistanceReply(request, { ...identity, result: { kind: "path", path: "/file" } })).toThrow();
+  }
+});
+

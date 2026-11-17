@@ -427,6 +427,7 @@ export class GuestAgent {
     if (!this.assistanceAvailable) throw new VMError("FEATURE_NOT_AVAILABLE", "Assistance requires protocol-v6/v7 task services; rebuild the assistance development image");
     if (request.operation.kind === "check-dependencies" && this.dialect !== 7) throw new VMError("FEATURE_NOT_AVAILABLE", "Dependency admission requires a protocol-v7 guest");
     if ((request.operation.kind === "getcwd" || request.operation.kind === "chdir" || request.operation.kind === "access" || request.operation.kind === "readdir-entries" || request.operation.kind.startsWith("socket-") || request.operation.kind.startsWith("watch-")) && this.dialect !== 7) throw new VMError("FEATURE_NOT_AVAILABLE", "Process cwd, access, directory metadata, socket and watcher operations require a protocol-v7 guest");
+    if (request.operation.kind === "utime" || request.operation.kind === "lutime" || request.operation.kind === "futime") throw new VMError("FEATURE_NOT_AVAILABLE", "File time operations are not served by the system guest agent");
     const frame = await this.request(workerRequestId, AgentKind.assistance, encodeAssistanceRequest(request),
       request.operation.kind === "start" || request.operation.kind === "stop" ? 60_000 : null);
     if (frame.version !== 4 && frame.version !== 5 && frame.version !== 6 && frame.version !== 7) throw new VMError("PROTOCOL_ERROR", "Invalid assistance reply dialect");
