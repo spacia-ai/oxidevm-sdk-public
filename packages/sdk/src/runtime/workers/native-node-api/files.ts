@@ -2,6 +2,7 @@ import type { LinuxFileStat } from "../../../js-process-types.js";
 import { VMError } from "../../errors.js";
 import { descriptor, LinuxError, type LinuxOperation, type LinuxResult, noValue, operation, protocol, value, Writer } from "../../js-process/codec.js";
 import { files as operations } from "../../js-process/file-operations.js";
+import { atFileOperations, CWD } from "../../js-process/at-operations.js";
 import { decodeAddress, encodeAddress } from "../../js-process/sockets.js";
 import type { LinuxClient } from "../../js-process/transport.js";
 import type { AssistanceOperation, AssistanceSocketAddress } from "../../protocol/assistance.js";
@@ -13,6 +14,7 @@ import { linuxErrnoCode } from "../../linux-errno.js";
 
 // Mode10 is a private adapter capability and never enters the system-agent wire.
 const openFlags = [0, 2, 0o1101, 0o1102, 0o1301, 0o1302, 0o2101, 0o2102, 0o2301, 0o2302, 0o101];
+const AT_SYMLINK_NOFOLLOW = 0x100, AT_EMPTY_PATH = 0x1000;
 type Request = Generator<LinuxOperation<LinuxResult>, AssistanceResult, LinuxResult>;
 
 export function nativeModulePathInfo(client: Pick<LinuxClient, "sync">, path: string): ModulePathInfo {
@@ -92,6 +94,9 @@ function* fileRequest(input: AssistanceOperation, watches: NativeFileWatches): R
       case "readlink": return { kind: "path", path: yield* perform(operation(89, new Writer().path(input.path), result => new TextDecoder().decode(result.bytes))) };
       case "chmod": yield* perform(operation(90, new Writer().path(input.path).u64(input.mode), noValue)); break;
       case "fchmod": yield* perform(operation(91, new Writer().u64(input.fd).u64(input.mode), noValue)); break;
+      // utimensat_at carries nanoseconds, as Node's times do; the path form of `operations.utimes` stops at milliseconds.
+      case "utime": case "lutime": yield* perform(atFileOperations.utimensAt(CWD, input.path, input.atime, input.mtime, input.kind === "utime" ? 0 : AT_SYMLINK_NOFOLLOW)); break;
+      case "futime": yield* perform(atFileOperations.utimensAt(input.fd, "", input.atime, input.mtime, AT_EMPTY_PATH)); break;
       case "truncate": yield* perform(operation(76, new Writer().path(input.path).u64(input.length), noValue)); break;
       case "ftruncate": yield* perform(operation(77, new Writer().u64(input.fd).u64(input.length), noValue)); break;
       case "link": yield* perform(operation(86, new Writer().path(input.path).path(input.destination), noValue)); break;

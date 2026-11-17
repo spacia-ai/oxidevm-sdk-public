@@ -92,3 +92,30 @@ it.each([false, true])("reports accepted peers and only treats ENOTCONN as a lis
   failure = new Error("transport lost");
   await expect(Promise.resolve().then(query)).rejects.toBe(failure);
 });
+
+it("sets file times through utimensat_at: the path, the link itself, or the descriptor with AT_EMPTY_PATH", async () => {
+  const submitted: LinuxOperation<unknown>[] = [];
+  const service = createNativeFileService({
+    sync(operation) { submitted.push(operation); return operation.decode({ value: 0n, bytes: new Uint8Array() }); },
+    call(operation) { submitted.push(operation); return Promise.resolve(operation.decode({ value: 0n, bytes: new Uint8Array() })); },
+  });
+  const u64 = (value: bigint) => { const bytes = new Uint8Array(8); new DataView(bytes.buffer).setBigUint64(0, BigInt.asUintN(64, value), true); return [...bytes]; };
+  const path = (value: string) => { const text = new TextEncoder().encode(value); return [text.length, 0, 0, 0, ...text]; };
+  const AT_FDCWD = u64(-100n), UTIME_NOW = 0x3fff_ffffn, UTIME_OMIT = 0x3fff_fffen;
+  expect(service.callSync({ kind: "utime", path: "./file", atime: 1_123_456_789n, mtime: -1n })).toEqual({ kind: "unit" });
+  expect(await service.call({ kind: "lutime", path: "/link", atime: "now", mtime: "omit" })).toEqual({ kind: "unit" });
+  expect(service.callSync({ kind: "futime", fd: 7, atime: 7_250_000_000n, mtime: 8_750_000_000n })).toEqual({ kind: "unit" });
+  expect(submitted.map(operation => operation.number)).toEqual([65551, 65551, 65551]);
+  expect(submitted.map(operation => [...operation.payload])).toEqual([
+    [...AT_FDCWD, ...path("./file"), ...u64(1n), ...u64(123_456_789n), ...u64(-1n), ...u64(999_999_999n), ...u64(0n)],
+    [...AT_FDCWD, ...path("/link"), ...u64(0n), ...u64(UTIME_NOW), ...u64(0n), ...u64(UTIME_OMIT), ...u64(0x100n)],
+    [...u64(7n), ...path(""), ...u64(7n), ...u64(250_000_000n), ...u64(8n), ...u64(750_000_000n), ...u64(0x1000n)],
+  ]);
+});
+
+it("reports a refused file time by Node's syscall name, with the path the caller spelled", async () => {
+  const service = createNativeFileService({ sync() { throw new LinuxError(2); }, call() { return Promise.reject(new LinuxError(9)); } });
+  expect(service.callSync({ kind: "lutime", path: "gone", atime: 0n, mtime: 0n })).toEqual({ kind: "error", errno: 2, code: "ENOENT", syscall: "lutime", path: "gone", destination: null });
+  expect(await service.call({ kind: "futime", fd: 999, atime: 0n, mtime: 0n })).toEqual({ kind: "error", errno: 9, code: "EBADF", syscall: "futime", path: null, destination: null });
+});
+

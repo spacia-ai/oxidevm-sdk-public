@@ -114,3 +114,47 @@ it("shares bounded guest-7 fork operation bytes with Rust and rejects malformed 
   flagged[flagged.length - 1] = 2;
   expect(() => decodeAssistanceRequest(flagged)).toThrow();
 });
+
+describe("file time requests", () => {
+  const close = encodeAssistanceRequest({ ...identity, operation: { kind: "close", fd: 7 } });
+  const tagOffset = close.byteLength - 5;
+  const maximum = (2n ** 63n - 1n) * 1_000_000_000n + 999_999_999n, minimum = -(2n ** 63n) * 1_000_000_000n;
+
+  it("appends tags 50 to 52 and carries nanoseconds on both sides of the epoch, now and omit exactly", () => {
+    for (const [tag, operation] of [
+      [50, { kind: "utime", path: "./file", atime: 1_123_456_789n, mtime: -1_500_000_001n }],
+      [51, { kind: "lutime", path: "/link", atime: "now", mtime: "omit" }],
+      [52, { kind: "futime", fd: 7, atime: minimum, mtime: maximum }],
+    ] as const) {
+      const request = { ...identity, operation }, bytes = encodeAssistanceRequest(request);
+      expect(bytes[tagOffset]).toBe(tag);
+      expect(decodeAssistanceRequest(bytes)).toEqual(request);
+      for (let end = 0; end < bytes.length; end += 1) expect(() => decodeAssistanceRequest(bytes.slice(0, end))).toThrow();
+    }
+  });
+
+  it("writes a time before the epoch as floored seconds and nanoseconds 0 to 999,999,999", () => {
+    const bytes = encodeAssistanceRequest({ ...identity, operation: { kind: "futime", fd: 7, atime: -1n, mtime: 0n } });
+    const view = new DataView(bytes.buffer, bytes.byteOffset + tagOffset + 5);
+    expect([view.getUint8(0), view.getBigInt64(1, true), view.getUint32(9, true)]).toEqual([0, -1n, 999_999_999]);
+    expect([view.getUint8(13), view.getBigInt64(14, true), view.getUint32(22, true)]).toEqual([0, 0n, 0]);
+  });
+
+  it("refuses times, descriptors, paths and fields outside the contract on both sides of the wire", () => {
+    for (const operation of [
+      { kind: "utime", path: "/file", atime: 1, mtime: 0n },
+      { kind: "utime", path: "/file", atime: 0n, mtime: "never" },
+      { kind: "utime", path: "/file", atime: maximum + 1n, mtime: 0n },
+      { kind: "lutime", path: "/file", atime: 0n, mtime: minimum - 1n },
+      { kind: "lutime", path: "", atime: 0n, mtime: 0n },
+      { kind: "lutime", path: "/file", atime: 0n },
+      { kind: "futime", fd: 0, atime: 0n, mtime: 0n },
+      { kind: "futime", fd: 7, atime: 0n, mtime: 0n, path: "/file" },
+    ]) expect(() => encodeAssistanceRequest({ ...identity, operation })).toThrow();
+    const bytes = encodeAssistanceRequest({ ...identity, operation: { kind: "futime", fd: 7, atime: 0n, mtime: "now" } });
+    const unknownTime = bytes.slice(); unknownTime[tagOffset + 5] = 3;
+    expect(() => decodeAssistanceRequest(unknownTime)).toThrow();
+    const nanoseconds = bytes.slice(); new DataView(nanoseconds.buffer).setUint32(tagOffset + 14, 1_000_000_000, true);
+    expect(() => decodeAssistanceRequest(nanoseconds)).toThrow();
+  });
+});

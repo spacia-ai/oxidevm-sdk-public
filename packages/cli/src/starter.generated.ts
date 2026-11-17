@@ -2,11 +2,11 @@
 export const starterRelease: unknown = {
   "schemaVersion": 2,
   "sdkVersion": "0.0.32",
-  "engineRelease": "7d87ee8dbb6f7ee55a3b3ce23d4f205c50177cc125a17cb718438c976d61da85",
+  "engineRelease": "04a84d67b55012fabde4e8d1d835d406d7ef6e4da9c114b94e8842e897bab754",
   "engineCompliance": {
-    "url": "https://cdn.oxvm.dev/engine/7d87ee8dbb6f7ee55a3b3ce23d4f205c50177cc125a17cb718438c976d61da85/compliance/4ba3f1db4ff7aec4d57f2688b67e0e81109acac916424a81ce9d560a953c4e3e/compliance.json",
+    "url": "https://cdn.oxvm.dev/engine/04a84d67b55012fabde4e8d1d835d406d7ef6e4da9c114b94e8842e897bab754/compliance/1be4babbcb043c1a24097b5d0ef6ce8a04faad446990e5eefc3dc7ddf1c20a9f/compliance.json",
     "bytes": 746,
-    "sha256": "4ba3f1db4ff7aec4d57f2688b67e0e81109acac916424a81ce9d560a953c4e3e"
+    "sha256": "1be4babbcb043c1a24097b5d0ef6ce8a04faad446990e5eefc3dc7ddf1c20a9f"
   },
   "image": {
     "mode": "userspace",

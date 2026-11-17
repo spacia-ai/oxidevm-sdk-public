@@ -33,7 +33,7 @@ import { createHttpClients } from "./node-http-client.ts";
 import { createNodeReport } from "./node-report.js";
 import { nodeV8Memory } from "./node-memory.ts";
 import { nodeSqlite } from "./node-sqlite.js";
-import { unavailableNodeApi } from "./node-capability.ts";
+import { clearRefusedNodeApi, refusedNodeApi, unavailableNodeApi } from "./node-capability.ts";
 import { nodeAssert } from "./node-assert.ts";
 import { createWarningPrinter } from "./node-warnings.ts";
 import { NEXT_MEMORY_EXCEPTION } from "./next-memory.ts";
@@ -190,9 +190,10 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
     const text = nodeUtil.format(...values);
     (stream === "stdout" ? stdout : stderr).write(`${text}\n`);
   };
+  clearRefusedNodeApi();
   // The built-ins, created below, name the first missing export a process touched (ADR 0026).
   let touched: () => LateFailure | undefined = () => undefined;
-  const lateFailures = lateFailureReporter(error => { writeConsole("stderr", [error]); }, runtime.lateFailure, () => addons?.refused() ?? admitted.refused() ?? dependencyWrites.refused() ?? touched());
+  const lateFailures = lateFailureReporter(error => { writeConsole("stderr", [error]); }, runtime.lateFailure, () => addons?.refused() ?? admitted.refused() ?? dependencyWrites.refused() ?? refusedNodeApi() ?? touched());
   const printException = (error: unknown): void => { lateFailures.uncaught(error); };
   const exception: Parameters<ProcessRuntimeIO["setExceptionHandler"]>[0] = (error, origin, promise) => deliverProcessException(process, error, origin, printException, runtime.unhandledException, promise);
   scheduler.setExceptionHandler(error => exception(error, "uncaughtException"));

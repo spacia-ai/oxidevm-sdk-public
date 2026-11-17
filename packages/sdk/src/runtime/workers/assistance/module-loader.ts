@@ -114,7 +114,7 @@ export function createLocalModuleLoader(
     }
     const input = path.startsWith("node:")
       ? { source: builtinSource(builtins[path.slice(5)] ?? {}), format: "module" as const }
-      : files.read(path);
+      : files.read(path, "import");
     validateImportAttributes(attributes, input.format, path);
     if (input.format === "module" && !path.startsWith("node:")) sources.registerApplication(path, input.source);
     const source = input.format === "commonjs"

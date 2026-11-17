@@ -202,7 +202,7 @@ export function createCommonJSLoader(
     });
   }
   Module._extensions[".js"] = (module: Module, filename: string) => {
-    const input = files.read(filename);
+    const input = files.read(filename, "require");
     // Node 24 loads an ES module through require; a program that dies of this refusal is remembered and next runs in Linux.
     if (input.format === "module") throw new VMError("FEATURE_NOT_AVAILABLE", "synchronous ESM loading is not available", { backend: "assisted-node", path: filename, lateFailure: "unavailable-builtin", subject: "require(esm)" });
     module._compile(input.source, filename);
