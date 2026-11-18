@@ -3,7 +3,7 @@ import { record, string } from "../../decode.ts";
 import { VMError } from "../../errors.ts";
 import { type AssistanceCompiler, transformSource } from "./compiler.ts";
 import { lowerModuleBindings } from "./module-bindings.ts";
-import { createModuleRecord, linkModuleGraph, type ModuleRecord } from "./module-records.ts";
+import { commonJSView, createModuleRecord, linkModuleGraph, type ModuleRecord } from "./module-records.ts";
 import { instantiateModule } from "./module-execution.ts";
 import { lowerScriptImports } from "./script-imports.ts";
 import { lowerEvaluatedSource } from "./evaluated-sources.ts";
@@ -11,6 +11,7 @@ import { createCommonJSLoader, isNodeBuiltin } from "./commonjs.ts";
 import { commonJSNames, commonJSSource, commonJSValues } from "./commonjs-namespace.ts";
 import { importAttributes, validateImportAttributes } from "./import-attributes.ts";
 import { createNodeUrl } from "./node-url.ts";
+import { typelessPackageWarning } from "./module-detection.ts";
 import type { LocalModuleFiles } from "./module-files.ts";
 import { realmEvaluator } from "./node-vm.ts";
 export type { LocalModuleFiles } from "./module-files.ts";
@@ -95,12 +96,22 @@ export function createLocalModuleLoader(
     const result: unknown = Reflect.apply(evaluate, module.exports, [module.exports, require, module, path, path.slice(0, path.lastIndexOf("/")) || "/",
       (specifier: unknown, options?: unknown) => importLocal(specifier, path, options)]);
     return result;
-  }, { cwd: currentDirectory, sources });
+  }, { cwd: currentDirectory, sources, loadModule: (path, requirer) => requireModule(path, requirer) });
   // Node's `module` builtin is the CommonJS Module class itself: packages patch
   // `Module.prototype.require` and `Module._resolveFilename` (Next's require
   // hook aliases React through them), and every nested require routes through
   // `module.require` and `Module._resolveFilename`, so the patches take effect.
   builtins["module"] = commonjs.Module;
+
+  // Node warns once per package.json whose missing "type" made it reparse an imported file as a module.
+  const typelessPackages = new Set<string>();
+  function warnTypelessPackage(path: string, packageJSON: string): void {
+    if (typelessPackages.has(packageJSON)) return;
+    typelessPackages.add(packageJSON);
+    const process: unknown = Reflect.get(globalThis, "process");
+    const emit: unknown = typeof process === "object" && process !== null ? Reflect.get(process, "emitWarning") : undefined;
+    if (typeof emit === "function") Reflect.apply(emit, process, [typelessPackageWarning(urls.pathToFileURL(path).href, packageJSON), { code: "MODULE_TYPELESS_PACKAGE_JSON" }]);
+  }
 
   function prepare(path: string, created: string[] = [], attributes: Readonly<Record<string, string>> = {}): ModuleRecord {
     const existing = modules.get(path);
@@ -116,6 +127,7 @@ export function createLocalModuleLoader(
       ? { source: builtinSource(builtins[path.slice(5)] ?? {}), format: "module" as const }
       : files.read(path, "import");
     validateImportAttributes(attributes, input.format, path);
+    if ("typelessPackage" in input) warnTypelessPackage(path, input.typelessPackage);
     if (input.format === "module" && !path.startsWith("node:")) sources.registerApplication(path, input.source);
     const source = input.format === "commonjs"
       ? commonJSSource(commonJSNames(path, input.source, files, resolve))
@@ -157,9 +169,12 @@ export function createLocalModuleLoader(
   }
 
   Object.defineProperty(system, "resolve", { value: (specifier: unknown, parent?: string) => resolve(specifier, parent, "import") });
-  const instantiate = (pathValue: unknown): unknown => {
-    const path = resolve(pathValue, undefined, "import");
-    const module = modules.get(path) ?? prepare(path);
+  /** A module's compiled registration and its body, made once: SystemJS and the synchronous evaluator share them. */
+  const declarations = new WeakMap<ModuleRecord, { readonly dependencies: string[]; readonly setters: unknown; readonly execute: () => unknown }>();
+  function declaration(module: ModuleRecord) {
+    const known = declarations.get(module);
+    if (known !== undefined) return known;
+    const path = module.path;
     const source = transformSource(compiler, module.definition.code, "module", path, module.definition.map);
     const implementation = module.definition.implementation;
     const loweredImplementation = transformSource(compiler, implementation.code, "commonjs", path, implementation.map);
@@ -177,34 +192,112 @@ export function createLocalModuleLoader(
         typeof registration[1] !== "function" || registration[2] !== undefined) {
       throw new VMError("PROTOCOL_ERROR", "Compiler did not register an ESM module", { path });
     }
+    const dependencies: string[] = registration[0].map((value: unknown) => string(value, "module dependency"));
     const declare = callable(registration[1], "declare");
-    return [registration[0], (publish: unknown, contextValue: unknown) => {
-      const context = record(contextValue, "SystemJS context");
-      let factory: unknown;
-      const declared = record(Reflect.apply(declare, undefined, [
-        (name: unknown, value: unknown) => {
-          if (name !== module.definition.factoryName || typeof value !== "function") throw new TypeError("Invalid module factory registration");
-          factory = value;
-          return value;
-        },
-        { ...context, import: (specifier: unknown, options?: unknown) => importLocal(specifier, path, options) },
-      ]), "SystemJS declaration");
-      const registeredFactory = callable(factory, "registered factory");
-      const execute = instantiateModule(module, (runtime: unknown) => registeredFactory({
-        ...record(runtime, "module runtime"),
-        dynamicImport: (specifier: unknown, options?: unknown) => importLocal(specifier, path, options),
-      meta: { ...record(context["meta"], "module metadata"), ...(path.startsWith("node:") ? { url: path } : {
+    let factory: unknown;
+    const declared = record(Reflect.apply(declare, undefined, [
+      (name: unknown, value: unknown) => {
+        if (name !== module.definition.factoryName || typeof value !== "function") throw new TypeError("Invalid module factory registration");
+        factory = value;
+        return value;
+      },
+      { meta: {}, import: (specifier: unknown, options?: unknown) => importLocal(specifier, path, options) },
+    ]), "SystemJS declaration");
+    const registeredFactory = callable(factory, "registered factory");
+    const execute = instantiateModule(module, (runtime: unknown) => registeredFactory({
+      ...record(runtime, "module runtime"),
+      dynamicImport: (specifier: unknown, options?: unknown) => importLocal(specifier, path, options),
+      meta: path.startsWith("node:") ? { url: path } : {
         url: urls.pathToFileURL(path).href, filename: path, dirname: path.slice(0, path.lastIndexOf("/")) || "/",
-      }),
         // Node answers at once with a URL; SystemJS's own `meta.resolve` returns a promise of a path.
-        resolve: (specifier: unknown) => { const found = resolve(String(specifier), path, "import"); return found.startsWith("node:") ? found : urls.pathToFileURL(found).href; } },
-      }, implementationFactory));
+        resolve: (specifier: unknown) => { const found = resolve(String(specifier), path, "import"); return found.startsWith("node:") ? found : urls.pathToFileURL(found).href; },
+      },
+    }, implementationFactory));
+    const made = { dependencies, setters: declared["setters"], execute };
+    declarations.set(module, made);
+    return made;
+  }
+  /** Runs a module's body once. Its dependencies already ran: SystemJS or `evaluateSynchronously` ordered them. */
+  function runBody(module: ModuleRecord): unknown {
+    const state = module.evaluation;
+    if (state.status === "evaluated") return undefined;
+    if (state.status === "failed") throw state.error;
+    if (state.status === "pending") return state.promise;
+    module.evaluation = { status: "evaluating" };
+    let result: unknown;
+    try { result = declaration(module).execute(); } catch (error) {
+      module.evaluation = { status: "failed", error };
+      throw error;
+    }
+    if (!(result instanceof Promise)) {
+      module.evaluation = { status: "evaluated" };
+      return undefined;
+    }
+    const promise = result.then(() => { module.evaluation = { status: "evaluated" }; }, (error: unknown) => {
+      module.evaluation = { status: "failed", error };
+      throw error;
+    });
+    module.evaluation = { status: "pending", promise };
+    return promise;
+  }
+  const instantiate = (pathValue: unknown): unknown => {
+    const path = resolve(pathValue, undefined, "import");
+    const module = modules.get(path) ?? prepare(path);
+    const declared = declaration(module);
+    return [declared.dependencies, (publish: unknown) => {
       const exportCell = callable(publish, "export");
       for (const [name, cell] of module.exports) exportCell(name, cell);
-      return { setters: declared["setters"], execute };
+      return { setters: declared.setters, execute: () => runBody(module) };
     }, undefined];
   };
   Object.defineProperty(system, "instantiate", { value: instantiate });
+
+  /** Node 24's `require()` of an ES module: the graph links and runs synchronously, in dependency order. A graph
+   * with an unevaluated top-level `await`, or a module this same evaluation has not finished, is refused with
+   * Node's errors before any of its modules runs. */
+  function requireModule(path: string, requirer: string | undefined): unknown {
+    const created: string[] = [];
+    let module: ModuleRecord;
+    try {
+      module = prepare(path, created);
+    } catch (error) {
+      for (const added of created) modules.delete(added);
+      throw error;
+    }
+    const graph = new Set<ModuleRecord>();
+    const visit = (entry: ModuleRecord): void => {
+      if (graph.has(entry)) return;
+      graph.add(entry);
+      for (const dependency of entry.dependencies.values()) visit(dependency);
+    };
+    visit(module);
+    linkModuleGraph(graph, (dependency, name, importer) => dependency.path.startsWith("node:") &&
+      realExports?.[dependency.path.slice(5)]?.includes(name) === true ? unsupportedExport(dependency.path, name, importer.path) : undefined);
+    if (module.evaluation.status === "evaluating") {
+      throw Object.assign(new Error(`Cannot require() ES Module ${path} in a cycle. (from ${String(module.requiredBy ?? requirer)})`), { code: "ERR_REQUIRE_CYCLE_MODULE" });
+    }
+    if (module.evaluation.status === "pending" || [...graph].some(entry => entry.evaluation.status === "new" && entry.definition.topLevelAwait)) {
+      throw Object.assign(new Error("require() cannot be used on an ESM graph with top-level await. Use import() instead. To see where the " +
+        `top-level await comes from, use --experimental-print-required-tla.\n  From ${String(requirer)} \n  Requiring ${path} `), { code: "ERR_REQUIRE_ASYNC_MODULE" });
+    }
+    module.requiredBy ??= requirer;
+    evaluateSynchronously(module);
+    return commonJSView(module);
+  }
+  function evaluateSynchronously(module: ModuleRecord): void {
+    const state = module.evaluation;
+    if (state.status === "evaluated" || state.status === "evaluating") return;
+    if (state.status === "failed") throw state.error;
+    if (state.status === "pending") throw new TypeError(`ES module ${module.path} is still evaluating asynchronously`);
+    module.evaluation = { status: "evaluating" };
+    try {
+      for (const dependency of module.dependencies.values()) evaluateSynchronously(dependency);
+    } catch (error) {
+      module.evaluation = { status: "failed", error };
+      throw error;
+    }
+    runBody(module);
+  }
   return {
     sources,
     require: commonjs.require,

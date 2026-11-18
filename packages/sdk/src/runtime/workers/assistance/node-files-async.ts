@@ -2,6 +2,9 @@ import type { AssistanceOperation } from "../../protocol/assistance.js";
 import type { AssistanceResult } from "../../protocol/assistance-reply.js";
 import type { AsyncContext } from "./async-context.js";
 import { fileAccessConstants, createFileOperations, type FileOperation } from "./node-file-operations.js";
+import { mkdtemp } from "./node-file-mkdtemp.js";
+import { invalidArgType, type Inspect } from "./node-arg-type.js";
+import { unavailableNodeApi } from "./node-capability.js";
 
 /** Only the driver differs from fs.*Sync: completion resumes the same operation
  * program, including descriptor cleanup after a transport or Linux failure. */
@@ -14,8 +17,9 @@ export function createAsyncFiles(
   context: AsyncContext,
   retain: () => () => void,
   dispatch: (callback: () => void) => void = callback => callback(),
-  copyOpenMode?: 10,
+  options: { readonly copyOpenMode?: 10; readonly inspect?: Inspect } = {},
 ) {
+  const { copyOpenMode, inspect } = options;
   const operations = createFileOperations(cwd, true, copyOpenMode);
   // Node queues file work on its thread pool; a program may start any number at once (@vercel/nft starts 1,024).
   // Here each running operation holds one of the process's activity slots, so the ones beyond the bound wait in
@@ -118,6 +122,9 @@ export function createAsyncFiles(
       ).catch((error: unknown) => { queueMicrotask(() => { throw error; }); });
     };
   }
+  // Without the caller's inspect (esbuild's Go host), mkdtemp is a typed refusal; see createSyncFiles.
+  const words = (): Inspect => inspect ?? unavailableNodeApi("fs.mkdtemp");
+  const temporaryDirectory = callback(args => mkdtemp(args[0], args[1], words()), 1, 2);
   return {
     promises: {
       constants: fileAccessConstants,
@@ -130,6 +137,7 @@ export function createAsyncFiles(
       async lstat(...args: Parameters<typeof operations.lstat>) { return run(operations.lstat(...args)); },
       async readdir(...args: Parameters<typeof operations.readdir>) { return run(operations.readdir(...args)); },
       async mkdir(...args: Parameters<typeof operations.mkdir>) { return (await run(operations.mkdir(...args))).path; },
+      async mkdtemp(prefix: unknown, options?: unknown) { return run(mkdtemp(prefix, options, words())); },
       async copyFile(...args: Parameters<typeof operations.copyFile>) { return run(operations.copyFile(...args)); },
       async rm(...args: Parameters<typeof operations.rm>) { return run(operations.rm(...args)); },
       async rmdir(...args: Parameters<typeof operations.rmdir>) { return run(operations.rmdir(...args)); },
@@ -159,6 +167,12 @@ export function createAsyncFiles(
     fdatasync: callback(args => operations.fdatasync(args[0]), 1, 1),
     readdir: callback(args => operations.readdir(args[0], args[1]), 1, 2),
     mkdir: callback(args => operations.mkdir(args[0], args[1]), 1, 2, result => result.recursive ? [result.path] : []),
+    // Node's mkdtemp takes the callback from the second or third argument and names it "cb" when it is missing.
+    mkdtemp(prefix: unknown, options: unknown, completion?: unknown): void {
+      const selected = typeof options === "function" ? options : completion;
+      if (typeof selected !== "function") throw invalidArgType("cb", "function", selected, words());
+      temporaryDirectory(...(typeof options === "function" ? [prefix, selected] : [prefix, options, selected]));
+    },
     copyFile: callback(args => operations.copyFile(args[0], args[1], args[2]), 2, 3),
     rm: callback(args => operations.rm(args[0], args[1]), 1, 2),
     rmdir: callback(args => operations.rmdir(args[0], args[1]), 1, 2),

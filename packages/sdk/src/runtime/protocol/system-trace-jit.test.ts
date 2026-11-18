@@ -501,6 +501,86 @@ function u32(output: number[], value: number): void {
 }
 
 
+describe("branch hints of a translated module", () => {
+  /** One function entry for function 9: an unlikely branch at offset 5 and a likely one at 300. */
+  const HINTS = [1, 9, 2, 5, 1, 0, 0xac, 0x02, 1, 1];
+
+  it("accepts one hint section before the code and decodes the same map, moved by the section's length", () => {
+    const plain = generatedModule(16, false, 1, true);
+    const hinted = withSectionBeforeCode(plain, "metadata.code.branch_hint", HINTS);
+    const moved = hinted.byteLength - plain.byteLength;
+    expect(moved).toBeGreaterThan(HINTS.length);
+    const expected = decodeSystemJitModuleMap(plain);
+    expect(decodeSystemJitModuleMap(hinted)).toEqual({
+      ...expected,
+      operations: expected.operations.map(operation => ({
+        ...operation, wireStart: operation.wireStart + moved, wireEnd: operation.wireEnd + moved,
+      })),
+    });
+  });
+
+  it("keeps a hinted static prefix reusable", () => {
+    const prefix = withSectionBeforeCode(generatedModule(16, false, 1, true), "metadata.code.branch_hint", HINTS);
+    const prepared = decodeSystemJitModuleForInstall(aliasConcat(prefix, aliasSuffix()), prefix.byteLength);
+    expect(prepared.executablePrefixReusable).toBe(true);
+  });
+
+  it("still refuses a custom section it does not know, wherever it stands", () => {
+    const plain = generatedModule(16, false, 1, true);
+    expect(() => decodeSystemJitModuleMap(withSectionBeforeCode(plain, "metadata.code.other", HINTS))).toThrow(TypeError);
+    expect(() => decodeSystemJitModuleMap(withSectionBeforeCode(plain, "oxidevm.unknown", []))).toThrow(TypeError);
+  });
+
+  it("refuses hints after the code and a second hint section", () => {
+    const plain = generatedModule(16, false, 1, true);
+    const after = Array.from(plain), payload: number[] = [];
+    name(payload, "metadata.code.branch_hint"); payload.push(...HINTS); section(after, 0, payload);
+    expect(() => decodeSystemJitModuleMap(new Uint8Array(after))).toThrow("JIT Wasm branch hints");
+    const once = withSectionBeforeCode(plain, "metadata.code.branch_hint", HINTS);
+    expect(() => decodeSystemJitModuleMap(withSectionBeforeCode(once, "metadata.code.branch_hint", HINTS)))
+      .toThrow("unexpected JIT Wasm custom section");
+  });
+
+  it.each([
+    ["a hint of two bytes", [1, 9, 1, 5, 2, 0, 0]],
+    ["a value other than 0 or 1", [1, 9, 1, 5, 1, 2]],
+    ["offsets that do not ascend", [1, 9, 2, 5, 1, 0, 5, 1, 1]],
+    ["functions that do not ascend", [2, 9, 1, 5, 1, 0, 9, 1, 6, 1, 0]],
+    ["a function without hints", [1, 9, 0]],
+    ["trailing bytes", [1, 9, 1, 5, 1, 0, 0]],
+    ["a truncated entry", [1, 9, 1, 5, 1]],
+  ])("refuses %s", (_what, hints) => {
+    const module = withSectionBeforeCode(generatedModule(16, false, 1, true), "metadata.code.branch_hint", hints);
+    expect(() => decodeSystemJitModuleMap(module)).toThrow(TypeError);
+  });
+});
+
+/** `module` with a custom section named `sectionName` inserted right before its code section. */
+function withSectionBeforeCode(module: Uint8Array, sectionName: string, data: readonly number[]): Uint8Array<ArrayBuffer> {
+  let offset = 8;
+  for (;;) {
+    const id = module[offset];
+    if (id === undefined) throw new TypeError("the test module has no code section");
+    if (id === 10) break;
+    let length = 0, shift = 0, at = offset + 1;
+    for (;;) {
+      const byte = module[at];
+      if (byte === undefined) throw new TypeError("truncated test module");
+      at += 1;
+      length += (byte & 0x7f) * 2 ** shift;
+      shift += 7;
+      if ((byte & 0x80) === 0) break;
+    }
+    offset = at + length;
+  }
+  const output = Array.from(module.subarray(0, offset)), payload: number[] = [];
+  name(payload, sectionName);
+  payload.push(...data);
+  section(output, 0, payload);
+  output.push(...module.subarray(offset));
+  return new Uint8Array(output);
+}
+
 describe("certified executable prefixes", () => {
   it.each([false, true])("certifies a complete static prefix with a named artifact=%s", named => {
     const plain = generatedModule(16, false, 1, true);

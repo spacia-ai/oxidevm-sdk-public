@@ -34,6 +34,7 @@ export function interpretedActionReasonRecord<T>(
     "code-page-fault": make("code-page-fault"),
     "performance-overflow-boundary": make("performance-overflow-boundary"),
     "pending-virtual-interrupt": make("pending-virtual-interrupt"),
+    "no-entry-at-resume": make("no-entry-at-resume"),
   };
 }
 
@@ -48,7 +49,7 @@ export function decodeInterpretedActionReasonProfiles(
   if (schemaVersion < 36) throw new VMError("PROTOCOL_ERROR", "interpreted action reasons require trace schema 36");
   const profiles = record(value, "interpreted action reason profiles");
   const available = (reason: SystemInterpretedActionReason): boolean =>
-    schemaVersion >= (reason === "code-page-fault" ? 49 : reason === "compile-pending" ? 44 : reason === "pending-virtual-interrupt" ? 47 : reason === "performance-overflow-boundary" ? 46 : 36);
+    schemaVersion >= (reason === "no-entry-at-resume" ? 57 : reason === "code-page-fault" ? 49 : reason === "compile-pending" ? 44 : reason === "pending-virtual-interrupt" ? 47 : reason === "performance-overflow-boundary" ? 46 : 36);
   // Retain archived schemas while they remain supported. A projected zero is
   // allowed; an archived schema cannot attribute work to a future mechanism.
   exactKeys(profiles, SYSTEM_INTERPRETED_ACTION_REASONS.filter(available),

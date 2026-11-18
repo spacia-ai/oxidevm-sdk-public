@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "engineSource": "b4ef210c846573232af14c33ec0e0dfff34f4c93",
+  "files": [
+    {
+      "path": "spec/acceleration/node-options.vectors.tsv",
+      "copy": "packages/sdk/src/runtime/protocol/node-options.vectors.tsv",
+      "sha256": "144770b81abd974dad968752273edd9e098f4b0d0377dc1d7cdb5d779ba12079"
+    }
+  ]
+}

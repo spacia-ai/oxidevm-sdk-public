@@ -48,5 +48,5 @@ export default defineConfig(
   { files: ["packages/sdk/src/browser-tools/**/*.ts", "packages/sdk/src/image-builder/**/*.ts", "packages/cli/src/**/*.ts"], languageOptions: { globals: globals.node } },
   { files: ["packages/sdk/asset-source/native-process/entry.ts"], languageOptions: { globals: globals.browser, parserOptions: { project: ["./packages/sdk/tsconfig.native-process.json"] } } },
   { files: ["packages/sdk/asset-source/module-runner/entry.ts", "packages/sdk/asset-source/module-frame/bootstrap.ts"], languageOptions: { globals: globals.browser, parserOptions: { project: ["./packages/sdk/tsconfig.module-runner.json"] } } },
-  { files: ["tests/fixtures/assistance/*.cjs", "tests/fixtures/native-addon/*.cjs", "tests/fixtures/native-node-api/*.cjs", "tests/fixtures/nextjs-process-state.cjs"], languageOptions: { globals: globals.node } },
+  { files: ["tests/fixtures/assistance/**/*.cjs", "tests/fixtures/native-addon/*.cjs", "tests/fixtures/native-node-api/*.cjs", "tests/fixtures/nextjs-process-state.cjs"], languageOptions: { globals: globals.node } },
 );

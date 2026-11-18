@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "recorderSHA256": "5a912a5b360e10bbf0e4dade93ab8459f5bb9e7e73127dea80576a5b77d10ee6",
+  "node": {
+    "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+    "version": "v24.18.1"
+  },
+  "rows": [
+    {
+      "name": "plain",
+      "source": "exports.value = 1;",
+      "format": "commonjs"
+    },
+    {
+      "name": "import-declaration",
+      "source": "import 'node:os';",
+      "format": "module"
+    },
+    {
+      "name": "export-declaration",
+      "source": "export const value = 1;",
+      "format": "module"
+    },
+    {
+      "name": "export-list",
+      "source": "const value = 1; export { value };",
+      "format": "module"
+    },
+    {
+      "name": "import-meta",
+      "source": "const url = import.meta.url;",
+      "format": "module"
+    },
+    {
+      "name": "top-level-await",
+      "source": "await Promise.resolve();",
+      "format": "module"
+    },
+    {
+      "name": "await-in-for-of",
+      "source": "for await (const x of []) {}",
+      "format": "module"
+    },
+    {
+      "name": "redeclared-require",
+      "source": "const require = 1;",
+      "format": "module"
+    },
+    {
+      "name": "redeclared-module",
+      "source": "let module = 2;",
+      "format": "module"
+    },
+    {
+      "name": "redeclared-exports",
+      "source": "class exports {}",
+      "format": "module"
+    },
+    {
+      "name": "redeclared-filename",
+      "source": "const __filename = 'x';",
+      "format": "module"
+    },
+    {
+      "name": "redeclared-dirname",
+      "source": "const __dirname = 'x';",
+      "format": "module"
+    },
+    {
+      "name": "redeclared-require-and-return",
+      "source": "const require = 1; return;",
+      "format": "commonjs"
+    },
+    {
+      "name": "await-identifier",
+      "source": "var await = 1; exports.value = await;",
+      "format": "commonjs"
+    },
+    {
+      "name": "dynamic-import",
+      "source": "exports.load = () => import('node:os');",
+      "format": "commonjs"
+    },
+    {
+      "name": "import-in-string",
+      "source": "exports.text = \"import x from 'y'\";",
+      "format": "commonjs"
+    },
+    {
+      "name": "import-in-comment",
+      "source": "// import x from 'y'\nexports.value = 1;",
+      "format": "commonjs"
+    },
+    {
+      "name": "top-level-return",
+      "source": "return; exports.value = 1;",
+      "format": "commonjs"
+    },
+    {
+      "name": "return-then-export",
+      "source": "return; export {};",
+      "format": "module"
+    },
+    {
+      "name": "hashbang-import",
+      "source": "#!/usr/bin/env node\nimport 'node:os';",
+      "format": "module"
+    },
+    {
+      "name": "hashbang-plain",
+      "source": "#!/usr/bin/env node\nexports.value = 1;",
+      "format": "commonjs"
+    },
+    {
+      "name": "unrelated-syntax-error",
+      "source": "exports.value = ;",
+      "format": "commonjs"
+    },
+    {
+      "name": "broken-module-syntax",
+      "source": "import { from 'node:os';",
+      "format": "module"
+    },
+    {
+      "name": "await-in-function",
+      "source": "function f() { await 1; }",
+      "format": "commonjs"
+    },
+    {
+      "name": "await-and-require-call",
+      "source": "const os = require('node:os'); await 0;",
+      "format": "module"
+    },
+    {
+      "name": "strict-octal-and-export",
+      "source": "var n = 010; export {};",
+      "format": "module"
+    },
+    {
+      "name": "with-statement-and-await",
+      "source": "with ({}) {} await 0;",
+      "format": "commonjs"
+    },
+    {
+      "name": "arguments-and-export",
+      "source": "exports.n = arguments.length; export {};",
+      "format": "module"
+    },
+    {
+      "name": "html-comment-and-export",
+      "source": "<!-- comment\nexport {};",
+      "format": "module"
+    }
+  ]
+}

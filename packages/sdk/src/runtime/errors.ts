@@ -37,6 +37,11 @@ const WASM_TRAP_STACK_LIMIT = 8 * 1024;
 const ownedErrors = new WeakSet<object>();
 const hasOwnedError = ownedErrors.has.bind(ownedErrors), registerOwnedError = ownedErrors.add.bind(ownedErrors);
 
+/** A fast-path process worker's sink for its typed refusals (a `detail.lateFailure`). A program may catch a
+ * refusal and fail in its own words, as Vitest does with its startup error; the worker then still knows why. */
+let refusalObserver: ((error: VMError) => void) | undefined;
+export function observeRefusals(observer: ((error: VMError) => void) | undefined): void { refusalObserver = observer; }
+
 export class VMError extends Error {
   readonly code: VMErrorCode;
   readonly detail: Readonly<Record<string, unknown>> | undefined;
@@ -51,6 +56,7 @@ export class VMError extends Error {
     this.code = code;
     this.detail = detail;
     registerOwnedError(this);
+    if (detail !== undefined && typeof detail["lateFailure"] === "string") refusalObserver?.(this);
   }
 }
 

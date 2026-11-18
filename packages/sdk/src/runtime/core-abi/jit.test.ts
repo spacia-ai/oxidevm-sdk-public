@@ -5,7 +5,7 @@ function context(): Uint8Array {
   const bytes = new Uint8Array(JIT_CONTEXT_LENGTH);
   bytes.set(new TextEncoder().encode("OXJC"));
   const view = new DataView(bytes.buffer);
-  view.setUint16(4, 40, true);
+  view.setUint16(4, 41, true);
   view.setUint32(8, bytes.byteLength - 12, true);
   view.setBigUint64(208, 0xffff_ffff_ffff_ffffn, true);
   return bytes;

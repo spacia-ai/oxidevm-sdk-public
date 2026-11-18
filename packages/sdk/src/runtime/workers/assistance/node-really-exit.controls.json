@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "recorderSHA256": "24bbc8f0897a2069d142d64105a5ebfb68eaac05e352cb8ef769ae2c9dc0da2c",
+  "node": {
+    "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+    "version": "v24.18.1"
+  },
+  "rows": [
+    {
+      "name": "descriptor",
+      "body": "const d = Object.getOwnPropertyDescriptor(process, 'reallyExit'); log(typeof d.value, d.enumerable, d.writable, d.configurable, process.reallyExit.name, process.reallyExit.length);",
+      "stdout": [
+        "function true true true reallyExit 0"
+      ],
+      "status": 0
+    },
+    {
+      "name": "exit-calls-patched",
+      "body": "const o = process.reallyExit; process.reallyExit = function (c) { log('patched', c, this === process, process.exitCode); o.call(process, c); }; process.on('exit', c => log('exit', c)); process.exit(3);",
+      "stdout": [
+        "exit 3",
+        "patched 3 true 3"
+      ],
+      "status": 3
+    },
+    {
+      "name": "direct-skips-exit-event",
+      "body": "process.on('exit', c => log('exit', c)); process.exitCode = 5; process.reallyExit(7); log('after');",
+      "stdout": [],
+      "status": 7
+    },
+    {
+      "name": "direct-no-argument",
+      "body": "process.on('exit', c => log('exit', c)); process.reallyExit();",
+      "stdout": [],
+      "status": 0
+    },
+    {
+      "name": "direct-string",
+      "body": "process.reallyExit('9');",
+      "stdout": [],
+      "status": 9
+    },
+    {
+      "name": "direct-wraps",
+      "body": "process.reallyExit(260);",
+      "stdout": [],
+      "status": 4
+    },
+    {
+      "name": "direct-negative",
+      "body": "process.reallyExit(-1);",
+      "stdout": [],
+      "status": 255
+    },
+    {
+      "name": "direct-fraction",
+      "body": "process.reallyExit(3.9);",
+      "stdout": [],
+      "status": 3
+    },
+    {
+      "name": "natural-end-skips-patched",
+      "body": "const o = process.reallyExit; process.reallyExit = function (c) { log('patched', c); o.call(process, c); }; process.on('exit', c => log('exit', c)); process.exitCode = 2;",
+      "stdout": [
+        "exit 2"
+      ],
+      "status": 2
+    },
+    {
+      "name": "uncaught-skips-patched",
+      "body": "const o = process.reallyExit; process.reallyExit = function (c) { log('patched', c); o.call(process, c); }; process.on('exit', c => log('exit', c)); process.on('uncaughtException', () => { log('caught'); process.exitCode = 6; });  setTimeout(() => { throw new Error('boom'); }, 0);",
+      "stdout": [
+        "caught",
+        "exit 6"
+      ],
+      "status": 6
+    },
+    {
+      "name": "patched-returns",
+      "body": "process.reallyExit = function (c) { log('patched', c); }; process.on('exit', c => log('exit', c)); const value = process.exit(4); log('continued', typeof value); setTimeout(() => log('timer'), 0);",
+      "stdout": [
+        "exit 4",
+        "patched 4",
+        "continued undefined",
+        "timer",
+        "exit 4"
+      ],
+      "status": 4
+    },
+    {
+      "name": "exit-twice",
+      "body": "let n = 0; const o = process.reallyExit; process.reallyExit = function (c) { log('patched', c, ++n); if (n === 2) o.call(process, c); }; process.on('exit', c => log('exit', c)); process.exit(1); process.exit(8);",
+      "stdout": [
+        "exit 1",
+        "patched 1 1",
+        "patched 8 2"
+      ],
+      "status": 8
+    }
+  ]
+}

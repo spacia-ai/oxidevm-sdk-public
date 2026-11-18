@@ -14,6 +14,7 @@
     "config/allowed-licenses.json",
     "config/allowed-tool-licenses.json",
     "config/license-policy-source.json",
+    "config/node-options-source.json",
     "config/public-repository.json",
     "docs/agent-skills.md",
     "docs/api.md",

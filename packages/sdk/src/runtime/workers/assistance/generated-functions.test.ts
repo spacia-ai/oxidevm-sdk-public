@@ -64,3 +64,39 @@ it("compiles a body given to the AsyncFunction constructor, and still refuses th
     expect(() => { GeneratorFunction(); }).toThrow(/not supported/u);
   } finally { restore(); }
 });
+
+it("serves import() from generated code for specifiers that resolve the same from any module, and refuses the rest typed", async () => {
+  // The rewrite of import() carries a source map, which the executable sources then parse.
+  const importing = { ...compiler, transform: (source: string) => ({ code: source, map: JSON.stringify({ version: 3, sources: ["generated.js"], names: [], mappings: "" }) }),
+    hasDynamicImport: (source: string) => source.includes("import(") } satisfies AssistanceCompiler;
+  const realm: Record<string, unknown> = {};
+  Object.defineProperty(realm, "Function", { value: Function, configurable: true, writable: true });
+  Object.defineProperty(realm, "eval", { value: globalThis.eval, configurable: true, writable: true });
+  const requests: string[] = [];
+  const restore = installGeneratedFunctions(importing, realm, undefined, { eval: "refuse", importModule: specifier => { requests.push(specifier); return Promise.resolve({ specifier }); } });
+  try {
+    const constructor = realm["Function"];
+    if (typeof constructor !== "function") throw new TypeError("realm lost Function");
+    // Prettier's plugin loader: `new Function("s", "return import(s)")`.
+    const load: unknown = Reflect.construct(constructor, ["s", "return import(s)"]);
+    if (typeof load !== "function") throw new TypeError("not a function");
+    await expect(Reflect.apply(load, undefined, ["/workspace/node_modules/prettier/plugins/babel.mjs"])).resolves.toEqual({ specifier: "/workspace/node_modules/prettier/plugins/babel.mjs" });
+    await expect(Reflect.apply(load, undefined, ["file:///workspace/a.mjs"])).resolves.toEqual({ specifier: "file:///workspace/a.mjs" });
+    await expect(Reflect.apply(load, undefined, ["node:fs"])).resolves.toEqual({ specifier: "node:fs" });
+    await expect(Reflect.apply(load, undefined, ["./relative.mjs"])).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE", detail: { lateFailure: "unavailable-builtin", specifier: "./relative.mjs" } });
+    expect(requests).toEqual(["/workspace/node_modules/prettier/plugins/babel.mjs", "file:///workspace/a.mjs", "node:fs"]);
+  } finally { restore(); }
+});
+
+it("still refuses import() in generated code when the process gives no module loader", () => {
+  const importing = { ...compiler, hasDynamicImport: () => true } satisfies AssistanceCompiler;
+  const realm: Record<string, unknown> = {};
+  Object.defineProperty(realm, "Function", { value: Function, configurable: true, writable: true });
+  Object.defineProperty(realm, "eval", { value: globalThis.eval, configurable: true, writable: true });
+  const restore = installGeneratedFunctions(importing, realm);
+  try {
+    const constructor = realm["Function"];
+    if (typeof constructor !== "function") throw new TypeError("realm lost Function");
+    expect((): unknown => Reflect.construct(constructor, ["s", "return import(s)"])).toThrow(/Dynamic imports in generated functions are not supported/u);
+  } finally { restore(); }
+});

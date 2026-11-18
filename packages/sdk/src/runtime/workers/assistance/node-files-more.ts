@@ -21,13 +21,10 @@ function bytesOf(value: unknown): Uint8Array {
   throw new TypeError("file content must be bytes");
 }
 
-const ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-/** `fs.cp`, `fs/promises.mkdtemp` and `fs.opendir` over the
- * runtime's real file operations. The returned `promises` holds the runtime's own operations and these
- * additions: it is the one object both `fs.promises` and `fs/promises` are, as in Node. `cp` walks directories through readdir and
- * copies file bytes; `mkdtemp` retries a six-character suffix until the
- * directory is new. */
+/** `fs.cp` and `fs.opendir` over the runtime's real file operations. The returned `promises` holds the runtime's
+ * own operations (`mkdtemp` among them, `node-file-mkdtemp.ts`) and these additions: it is the one object both
+ * `fs.promises` and `fs/promises` are, as in Node. `cp` walks directories through readdir and copies file bytes. */
 export function createNodeFilesMore<P extends FilePromises>(promises: P) {
   async function opendir(path: unknown, options?: unknown) {
     const input = typeof options === "string" ? { encoding: options } : options;
@@ -66,18 +63,7 @@ export function createNodeFilesMore<P extends FilePromises>(promises: P) {
     }
     await promises.writeFile(to, bytesOf(await promises.readFile(from)));
   }
-  async function mkdtemp(prefix: unknown): Promise<string> {
-    if (typeof prefix !== "string") throw Object.assign(new TypeError("The \"prefix\" argument must be of type string"), { code: "ERR_INVALID_ARG_TYPE" });
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      const random = new Uint8Array(6);
-      globalThis.crypto.getRandomValues(random);
-      const path = prefix + [...random].map(byte => ALPHABET[byte % ALPHABET.length]).join("");
-      try { await promises.mkdir(path); return path; }
-      catch (error) { if (!(typeof error === "object" && error !== null && Reflect.get(error, "code") === "EEXIST")) throw error; }
-    }
-    throw Object.assign(new Error("mkdtemp: too many attempts"), { code: "EEXIST" });
-  }
-  return { promises: { ...promises, cp, mkdtemp, opendir }, cp: (source: unknown, destination: unknown, options: unknown, callback?: unknown): void => {
+  return { promises: { ...promises, cp, opendir }, cp: (source: unknown, destination: unknown, options: unknown, callback?: unknown): void => {
     if (typeof options === "function") { callback = options; options = undefined; }
     cp(source, destination, options).then(() => { if (typeof callback === "function") Reflect.apply(callback, undefined, [null]); },
       (error: unknown) => { if (typeof callback === "function") Reflect.apply(callback, undefined, [error]); });

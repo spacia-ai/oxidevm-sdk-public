@@ -1,10 +1,15 @@
 import type { AssistanceOperation } from "../../protocol/assistance.js";
 import type { AssistanceResult } from "../../protocol/assistance-reply.js";
 import { Dirent, fileAccessConstants, createFileOperations, type FileOperation } from "./node-file-operations.js";
+import { mkdtemp } from "./node-file-mkdtemp.js";
+import type { Inspect } from "./node-arg-type.js";
+import { unavailableNodeApi } from "./node-capability.js";
 
 export { createAsyncFiles } from "./node-files-async.js";
 
-export function createSyncFiles(call: (operation: AssistanceOperation) => AssistanceResult, cwd: () => string, copyOpenMode?: 10) {
+/** `inspect` words argument errors as Node's util.inspect does; it is the caller's, so that a worker without Node's
+ * util (esbuild's Go host) does not bundle it, and there mkdtemp is a typed refusal. */
+export function createSyncFiles(call: (operation: AssistanceOperation) => AssistanceResult, cwd: () => string, copyOpenMode?: 10, inspect?: Inspect) {
   const operations = createFileOperations(cwd, false, copyOpenMode);
   function run<Result>(program: FileOperation<Result>): Result {
     let step = program.next();
@@ -38,6 +43,7 @@ export function createSyncFiles(call: (operation: AssistanceOperation) => Assist
     rmSync: (...args: Parameters<typeof operations.rm>) => run(operations.rm(...args)),
     rmdirSync: (...args: Parameters<typeof operations.rmdir>) => run(operations.rmdir(...args)),
     mkdirSync: (...args: Parameters<typeof operations.mkdir>) => run(operations.mkdir(...args)).path,
+    mkdtempSync: (prefix: unknown, options?: unknown) => inspect === undefined ? unavailableNodeApi("fs.mkdtempSync") : run(mkdtemp(prefix, options, inspect)),
     chmodSync: (...args: Parameters<typeof operations.chmod>) => run(operations.chmod(...args)),
     fchmodSync: (...args: Parameters<typeof operations.fchmod>) => run(operations.fchmod(...args)),
     utimesSync: (...args: Parameters<typeof operations.utimes>) => run(operations.utimes(...args)),

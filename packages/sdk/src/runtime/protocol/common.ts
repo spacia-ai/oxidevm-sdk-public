@@ -133,7 +133,7 @@
  * probe lifecycle, and the execution origin's served operation set in initialize. */
 export const PROTOCOL_VERSION = 184;
 /** Combined architecture, background compilation and code-profile trace layout. */
-export const SYSTEM_TRACE_SCHEMA_VERSION = 56;
+export const SYSTEM_TRACE_SCHEMA_VERSION = 57;
 
 export type ExecutionTimingMode =
   | { readonly kind: "disabled" }

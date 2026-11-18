@@ -124,7 +124,9 @@ export function transformSource(
     ...common,
     isModule: format === "module",
     ...((lowered?.map ?? inputSourceMap) === undefined ? {} : { inputSourceMap: lowered?.map ?? inputSourceMap }),
-    jsc: { parser: { syntax: "ecmascript" } },
+    // A CommonJS file is a function body to Node, so a top-level `return` is legal (webpack-cli's bin uses one),
+    // as Babel's parse of the same script already allows.
+    jsc: { parser: { syntax: "ecmascript", ...(format === "commonjs" ? { allowReturnOutsideFunction: true } : {}) } },
     env: { targets: { chrome: "141" }, include: ["transform-async-to-generator", "transform-async-generator-functions"] },
   }));
 }

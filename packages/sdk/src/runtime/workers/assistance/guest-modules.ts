@@ -1,5 +1,6 @@
 import { VMError } from "../../errors.ts";
-import type { LocalModuleFiles, ModuleDependencyIdentity, ModulePathInfo } from "./module-files.ts";
+import type { LocalModuleFiles, ModuleDependencyIdentity, ModulePathInfo, ModuleSource } from "./module-files.ts";
+import { hasModuleSyntax } from "./module-detection.ts";
 import { createNodePath } from "./node-path.ts";
 import { fileURLToPath } from "./node-url.ts";
 import { resolvePackageTarget } from "./package-target.ts";
@@ -55,12 +56,12 @@ export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDep
     if (path.includes("\0") || /[\r\n]/u.test(path)) throw new TypeError("Invalid module path");
     const installed = path.split("/").includes("node_modules");
     if (roots !== undefined && !installed && !path.startsWith("/workspace/") && !frozen(paths.normalize(path))) throw unadmitted(path, "module is outside the admitted code roots");
-    if (dependencies === undefined && installed) throw unsupported(path, "installed-package execution is unavailable");
+    if (dependencies === undefined && installed) throw unsupported(path, "installed-package execution is unavailable", "installed packages");
     if (roots !== undefined && installed) {
       const normalized = paths.normalize(path), cacheDirectory = liveCache(normalized);
       if (!frozen(normalized) && (cacheDirectory === undefined || path.endsWith(".node") || normalized === cacheDirectory)) throw unadmitted(path, "installed module is outside the admitted dependency generation");
     }
-    if (path.endsWith(".node") && loadNative === undefined) throw unsupported(path, "native addons are unavailable");
+    if (path.endsWith(".node") && loadNative === undefined) throw unsupported(path, "native addons are unavailable", "native add-ons");
   }
   const absolute = (specifier: string, parent: string) => paths.resolve(paths.dirname(parent), specifier);
   function source(path: string): string {
@@ -94,7 +95,7 @@ export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDep
     } catch (error) { if (missing(error)) return undefined; throw error; }
   }
   function packagePath(path: string): void {
-    if (liveCache(paths.normalize(path)) !== undefined && stat(path)?.isDirectory() === true) throw unsupported(path, "project caches cannot serve as installed package roots");
+    if (liveCache(paths.normalize(path)) !== undefined && stat(path)?.isDirectory() === true) throw unsupported(path, "project caches cannot serve as installed package roots", "a project cache as a package root");
   }
   function canonical(path: string): string {
     return pathInfo === undefined ? validateCanonical(path, files.realpathSync(path)) : inspect(path).path;
@@ -169,18 +170,18 @@ export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDep
     return kind === "require" || subpath === "." ? commonjs(path) : exact(path, kind);
   }
   function resolve(specifier: string, parent: string, kind: "require" | "import", depth = 0): string {
-    if (depth > 64) throw unsupported(specifier, "package import map recursion exceeds its bound");
+    if (depth > 64) throw unsupported(specifier, "package import map recursion exceeds its bound", "package imports nested deeper than 64");
     if (kind === "import" && specifier.startsWith("file:")) {
       const url = new URL(specifier);
       if (/%2f|%5c/iu.test(url.pathname)) throw Object.assign(new Error("Encoded path separator in file URL"), { code: "ERR_INVALID_MODULE_SPECIFIER" });
-      if (url.search !== "" || url.hash !== "") throw unsupported(specifier, "ESM URL query and fragment identities are unavailable");
+      if (url.search !== "" || url.hash !== "") throw unsupported(specifier, "ESM URL query and fragment identities are unavailable", "an import URL with a query or fragment");
       return resolve(fileURLToPath(url), parent, kind, depth + 1);
     }
     if (isNodeBuiltin(specifier)) return specifier.startsWith("node:") ? specifier : `node:${specifier}`;
     // CommonJS also takes "." and ".." as relative: the requiring file's directory and its parent.
     const relative = specifier.startsWith("/") || specifier.startsWith("./") || specifier.startsWith("../") || (kind === "require" && (specifier === "." || specifier === ".."));
     if (!relative) {
-      if (dependencies === undefined) throw unsupported(specifier, "installed-package resolution is unavailable");
+      if (dependencies === undefined) throw unsupported(specifier, "installed-package resolution is unavailable", "installed packages");
       const own = scope(parent);
       if (specifier.startsWith("#")) {
         if (specifier === "#" || specifier.startsWith("#/")) throw Object.assign(new Error(`Invalid module specifier ${specifier}`), { code: "ERR_INVALID_MODULE_SPECIFIER" });
@@ -245,11 +246,21 @@ export function createGuestModules(files: GuestModuleFiles, selected?: ModuleDep
       if (path.endsWith(".json")) return { source: text, format: "json" };
       if (path.endsWith(".mjs")) return { source: text, format: "module" };
       if (path.endsWith(".cjs")) return { source: text, format: "commonjs" };
+      // Without a "type", Node 24 detects module syntax in a .js or extensionless file.
+      const detected = (typelessPackage?: string): ModuleSource => {
+        const extension = paths.extname(path);
+        if ((extension !== ".js" && extension !== "") || !hasModuleSyntax(text, path)) return { source: text, format: "commonjs" };
+        return { source: text, format: "module", ...(typelessPackage === undefined ? {} : { typelessPackage }) };
+      };
       for (let directory = paths.dirname(path); ; directory = paths.dirname(directory)) {
-        if (paths.basename(directory) === "node_modules") return { source: text, format: "commonjs" };
-        const info = metadata(`${directory === "/" ? "" : directory}/package.json`);
-        if (info !== undefined) return { source: text, format: info["type"] === "module" ? "module" : "commonjs" };
-        if (directory === "/") return { source: text, format: "commonjs" };
+        if (paths.basename(directory) === "node_modules") return detected();
+        const packageJSON = `${directory === "/" ? "" : directory}/package.json`, info = metadata(packageJSON);
+        if (info !== undefined) {
+          if (info["type"] === "module") return { source: text, format: "module" };
+          if (info["type"] === "commonjs") return { source: text, format: "commonjs" };
+          return detected(path.split("/").includes("node_modules") ? undefined : packageJSON);
+        }
+        if (directory === "/") return detected();
       }
     },
   };
@@ -281,6 +292,8 @@ function invalidMetadata(path: string): Error {
 function unadmitted(path: string, reason: string): VMError {
   return new VMError("FEATURE_NOT_AVAILABLE", reason, { path, backend: "assisted-node", lateFailure: "unadmitted-module", subject: path });
 }
-function unsupported(path: string, reason: string): VMError {
-  return new VMError("FEATURE_NOT_AVAILABLE", reason, { path, backend: "assisted-node" });
+/** A fast-path limitation, typed so that the process is remembered and its next run uses full Linux, also
+ * when the program catches the error and fails in its own words (ESLint does, for a query in an import URL). */
+function unsupported(path: string, reason: string, subject: string): VMError {
+  return new VMError("FEATURE_NOT_AVAILABLE", reason, { path, backend: "assisted-node", lateFailure: "unavailable-builtin", subject });
 }

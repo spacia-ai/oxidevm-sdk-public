@@ -30,16 +30,13 @@ function fakeTree() {
 }
 
 describe("fs additions", () => {
-  it("cp copies a tree recursively and mkdtemp creates a uniquely suffixed directory", async () => {
+  it("cp copies a tree recursively", async () => {
     const tree = fakeTree();
     const more = createNodeFilesMore(tree.promises);
     await more.promises.cp("/src", "/dest", { recursive: true });
     expect(new TextDecoder().decode(tree.files.get("/dest/a.txt"))).toBe("alpha");
     expect(new TextDecoder().decode(tree.files.get("/dest/sub/b.txt"))).toBe("beta");
     await expect(more.promises.cp("/src", "/dest2")).rejects.toMatchObject({ code: "ERR_FS_EISDIR" });
-    const made = await more.promises.mkdtemp("/tmp/next-");
-    expect(made).toMatch(/^\/tmp\/next-[A-Za-z0-9]{6}$/u);
-    expect(tree.dirs.has(made)).toBe(true);
   });
 
   it("iterates actual directory entries and closes the iterator after early return", async () => {
@@ -59,6 +56,6 @@ describe("fs additions", () => {
     const tree = fakeTree(), more = createNodeFilesMore(tree.promises);
     // Node's `fs.promises` and `fs/promises` are one object; Next.js calls `fs.promises.opendir`.
     expect(Reflect.get(more.promises, "readdir")).toBe(Reflect.get(tree.promises, "readdir"));
-    expect(Object.keys(more.promises)).toEqual([...Object.keys(tree.promises), "cp", "mkdtemp", "opendir"]);
+    expect(Object.keys(more.promises)).toEqual([...Object.keys(tree.promises), "cp", "opendir"]);
   });
 });

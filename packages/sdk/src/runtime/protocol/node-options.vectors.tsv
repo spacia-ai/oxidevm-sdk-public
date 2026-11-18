@@ -1,0 +1,52 @@
+# The Node execution options the fast path implements (ADR 0026, 1.11). The engine admits a launch only
+# with these (crates/oxidevm-userspace/src/runtime/exec/native_addon/node_options.rs) and the SDK applies them
+# (packages/sdk/src/runtime/protocol/node-options.ts). Both replay every row; the SDK keeps a copy pinned by SHA-256.
+#
+# Fields are tab-separated. Values are bytes, percent-encoded outside printable ASCII and for % and ~; ~ alone is
+# the empty string. A list is values separated by single spaces.
+#   token   <NODE_OPTIONS value>  <tokens, or !refused>
+#   option  <runtime: node, bun, or node-options for NODE_OPTIONS>  <index of the first argument that is not an option, or !refused>  <arguments>
+token	%20%20--no-warnings%20%20-r%20dotenv/config%20	--no-warnings -r dotenv/config
+token	--require%20"./a%20b.js"	--require ./a%20b.js
+token	a""b%20""%20c	ab c
+token	"a\"b\\c"	a"b\c
+token	a\b	a\b
+token	--no-warnings%09--no-deprecation	--no-warnings%09--no-deprecation
+token	~	
+token	"unterminated	!refused
+token	"escape\	!refused
+token	--enable-source-maps	--enable-source-maps
+token	--conditions%20"x%20y"%20--no-deprecation	--conditions x%20y --no-deprecation
+option	node	17	-r dotenv/config --require=./setup.cjs --require x -C development --conditions=worker --conditions edge --no-warnings --warnings --no-deprecation --deprecation --enable-source-maps --no-enable-source-maps --enable-source-maps server.js --no-warnings
+option	node	2	--no-warnings --no-deprecation main.js
+option	node	0	main.js -r x
+option	node	0	
+option	node	1	--enable-source-maps main.js
+option	node	!refused	-C=x main.js
+option	node	!refused	--import tsx main.js
+option	node	1	--env-file=.env main.js
+option	node	2	--env-file .env main.js
+option	node	1	--env-file-if-exists=local.env main.js
+option	node	!refused	--env-file= main.js
+option	node-options	!refused	--env-file=.env
+option	node-options	!refused	--env-file .env
+option	node-options	3	--no-warnings -r x
+option	node	!refused	--max-old-space-size=4096 main.js
+option	node	!refused	--inspect main.js
+option	node	!refused	-e 1
+option	node	!refused	-- main.js
+option	node	!refused	-r
+option	node	!refused	-r -x main.js
+option	node	!refused	--require= main.js
+option	node	!refused	-r=x main.js
+option	node	!refused	-r ~ main.js
+option	node	!refused	--warnings=false main.js
+option	node	!refused	--no-require x main.js
+option	node	!refused	--no_warnings main.js
+option	node	!refused	--enable_source_maps main.js
+option	node	!refused	--loader x main.js
+option	node	!refused	--experimental-loader=x main.js
+option	bun	2	--enable-source-maps --no-enable-source-maps main.js
+option	bun	!refused	--no-warnings main.js
+option	bun	!refused	-r x main.js
+option	bun	0	main.js

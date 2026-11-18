@@ -12,6 +12,7 @@ import type { UserspaceCheckpoints } from "./userspace-checkpoint.js";
 import { AttentionFairness } from "../host-attention.js";
 import { emptyUserspaceSliceProfile, type UserspaceSliceProfile } from "../protocol/userspace-slices.js";
 import { UserspaceStorageFailures } from "./userspace-storage-failures.js";
+import { ACTION_STEPS_MIN } from "./userspace-run-slices.js";
 
 export interface RuntimeState {
   startup: "scaffold" | "ready";
@@ -30,6 +31,10 @@ export interface RuntimeState {
   pendingResult: UserspaceRunResult | undefined;
   /** The output generation an interactive run slice last ended for (`userspace-run-slices.ts`). */
   outputYieldGeneration: bigint;
+  /** The instruction budget of the next action (`actionSteps` in `userspace-run-slices.ts`). */
+  actionSteps: number;
+  /** Instructions the last action retired when it used up its budget; zero when it ended earlier. */
+  actionRetired: number;
   workerRunTurns: number;
   workerYields: number;
   workerMessages: number;
@@ -60,6 +65,7 @@ export function newRuntimeState(
 ): RuntimeState {
   return {
     ...binding, startup, rootTreeSha256, workspaceBaseSha256, pendingResult: undefined, outputYieldGeneration: -1n,
+    actionSteps: ACTION_STEPS_MIN, actionRetired: 0,
     workerRunTurns: 0, workerYields: 0, workerMessages: 0, hostRequests: 0, hostRequestBytes: 0n,
     pendingWorkPolls: 0, hostRequestServicePolls: 0, outputServicePolls: 0, exitServicePolls: 0, timerServicePolls: 0,
     slices: emptyUserspaceSliceProfile(), storageFailures: new UserspaceStorageFailures(), fairness: new AttentionFairness(), lastException: undefined,

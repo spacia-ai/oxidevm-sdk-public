@@ -22,7 +22,7 @@
 
 const TypeError = globalThis.TypeError;
 const read = Reflect.get, negativeZero = Object.is, stringify = JSON.stringify;
-type Inspect = (value: unknown, options: { readonly depth: -1 }) => string;
+export type Inspect = (value: unknown, options: { readonly depth: -1 }) => string;
 
 function text(value: unknown): string {
   if (typeof value === "symbol") throw new TypeError("Cannot convert a Symbol value to a string");

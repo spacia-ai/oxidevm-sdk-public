@@ -1,5 +1,5 @@
 import { VMError } from "../../errors.js";
-import type { NodeProcess } from "./node-process.js";
+import { endNodeProcess, type NodeProcess } from "./node-process.js";
 
 export type ExceptionOrigin = "uncaughtException" | "unhandledRejection" | "rejectionHandled";
 
@@ -13,7 +13,7 @@ export function deliverProcessException(process: NodeProcess, error: unknown, or
   }
   function finish(failure: unknown, code: 1 | 7): never {
     if (unhandled === undefined) print(failure); else unhandled(failure);
-    return process.exit(code);
+    return endNodeProcess(process, "uncaught", code);
   }
   if (origin === "unhandledRejection") {
     try { if (process.emit("unhandledRejection", error, promise)) return true; }

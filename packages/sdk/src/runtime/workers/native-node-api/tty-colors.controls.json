@@ -1,0 +1,896 @@
+{
+  "schemaVersion": 1,
+  "recorderSHA256": "146fa82632ba63884d8bb29b32e98fea7f60ce3aaf6e31377202904c377bcd49",
+  "node": {
+    "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+    "version": "v24.18.1"
+  },
+  "shape": {
+    "getColorDepth": [
+      "getColorDepth",
+      0
+    ],
+    "hasColors": [
+      "hasColors",
+      2
+    ],
+    "enumerable": true
+  },
+  "rows": [
+    {
+      "env": {},
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "FORCE_COLOR": ""
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "FORCE_COLOR": "0"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "FORCE_COLOR": "1"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "FORCE_COLOR": "true"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "FORCE_COLOR": "2"
+      },
+      "depth": 8,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "FORCE_COLOR": "3"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "FORCE_COLOR": "4"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "FORCE_COLOR": "false"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "NO_COLOR": ""
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "NO_COLOR": "1"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "NODE_DISABLE_COLORS": "1"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "TERM": "dumb"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "TERM": "dumb",
+        "FORCE_COLOR": "1"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "NO_COLOR": "1",
+        "FORCE_COLOR": "1"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TMUX": "1"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "CI": "true"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "CI": "1",
+        "GITHUB_ACTIONS": "true"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "CI": "1",
+        "GITLAB_CI": "1"
+      },
+      "depth": 8,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "CI": "1",
+        "TRAVIS": "1"
+      },
+      "depth": 8,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "CI": "1",
+        "CIRCLECI": "1"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "CI": "1",
+        "BUILDKITE": "1"
+      },
+      "depth": 8,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "CI": "1",
+        "APPVEYOR": "1"
+      },
+      "depth": 8,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "CI": "1",
+        "DRONE": "1"
+      },
+      "depth": 8,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "CI": "1",
+        "GITEA_ACTIONS": "1"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "CI": "1",
+        "CI_NAME": "codeship"
+      },
+      "depth": 8,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "CI": "1",
+        "TEAMCITY_VERSION": "2020.1"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "TEAMCITY_VERSION": "9.1.0"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TEAMCITY_VERSION": "9.0.0"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "TEAMCITY_VERSION": "10.0"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TEAMCITY_VERSION": "8.1"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "TERM_PROGRAM": "iTerm.app"
+      },
+      "depth": 8,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM_PROGRAM": "iTerm.app",
+        "TERM_PROGRAM_VERSION": "2.9"
+      },
+      "depth": 8,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM_PROGRAM": "iTerm.app",
+        "TERM_PROGRAM_VERSION": "3.4"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM_PROGRAM": "HyperTerm"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM_PROGRAM": "MacTerm"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM_PROGRAM": "Apple_Terminal"
+      },
+      "depth": 8,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM_PROGRAM": "vscode"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "COLORTERM": "truecolor"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "COLORTERM": "24bit"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "COLORTERM": "yes"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "xterm-truecolor"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "xterm-256color"
+      },
+      "depth": 8,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "xterm"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "XTERM"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "screen"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "screen-256color"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "linux"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "ansi"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "vt100"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "vt220"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "rxvt"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "rxvt-unicode-24bit"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "con80x25"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "cons25"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "eterm"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "konsole"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "mosh"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "putty"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "st"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "terminator"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "xterm-kitty"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "alacritty"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "TERM": "foot-direct"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "unknown"
+      },
+      "depth": 1,
+      "has2": true,
+      "has16": false,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": false
+    },
+    {
+      "env": {
+        "TERM": "xterm",
+        "COLORTERM": "truecolor"
+      },
+      "depth": 24,
+      "has2": true,
+      "has16": true,
+      "has256": true,
+      "has16777216": true,
+      "has16777217": false,
+      "hasDefault": true
+    },
+    {
+      "env": {
+        "TERM": "unknown",
+        "COLORTERM": "1"
+      },
+      "depth": 4,
+      "has2": true,
+      "has16": true,
+      "has256": false,
+      "has16777216": false,
+      "has16777217": false,
+      "hasDefault": true
+    }
+  ],
+  "errors": [
+    {
+      "label": "string",
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_INVALID_ARG_TYPE",
+        "message": "The \"count\" argument must be of type number. Received type string ('16')"
+      }
+    },
+    {
+      "label": "one",
+      "error": {
+        "name": "RangeError",
+        "code": "ERR_OUT_OF_RANGE",
+        "message": "The value of \"count\" is out of range. It must be >= 2 && <= 9007199254740991. Received 1"
+      }
+    },
+    {
+      "label": "fraction",
+      "error": {
+        "name": "RangeError",
+        "code": "ERR_OUT_OF_RANGE",
+        "message": "The value of \"count\" is out of range. It must be an integer. Received 2.5"
+      }
+    },
+    {
+      "label": "negative",
+      "error": {
+        "name": "RangeError",
+        "code": "ERR_OUT_OF_RANGE",
+        "message": "The value of \"count\" is out of range. It must be >= 2 && <= 9007199254740991. Received -1"
+      }
+    },
+    {
+      "label": "nan",
+      "error": {
+        "name": "RangeError",
+        "code": "ERR_OUT_OF_RANGE",
+        "message": "The value of \"count\" is out of range. It must be an integer. Received NaN"
+      }
+    },
+    {
+      "label": "null",
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_INVALID_ARG_TYPE",
+        "message": "The \"count\" argument must be of type number. Received null"
+      }
+    }
+  ],
+  "warnings": [
+    [
+      "Warning",
+      "The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set."
+    ]
+  ],
+  "processDefault": 1
+}

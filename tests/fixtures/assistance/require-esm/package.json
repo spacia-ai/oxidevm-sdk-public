@@ -1,0 +1,8 @@
+{
+  "name": "require-esm-fixture",
+  "private": true,
+  "exports": {
+    "./sync": { "module-sync": "./sync/sync.mjs", "require": "./sync/require.cjs", "default": "./sync/default.cjs" },
+    "./plain": { "require": "./sync/require.cjs", "import": "./sync/sync.mjs" }
+  }
+}

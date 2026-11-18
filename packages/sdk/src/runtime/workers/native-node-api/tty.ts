@@ -1,6 +1,8 @@
 import { VMError } from "../../errors.js";
 import { LinuxError, operation, protocol, Writer } from "../../js-process/codec.js";
 import type { LinuxClient } from "../../js-process/transport.js";
+import { nodeUtil } from "../assistance/node-util.js";
+import { createColorSupport } from "./tty-colors.js";
 
 /** Descriptor classification comes from Rust's existing terminal ioctl owner. */
 export function createNativeTty(client: Pick<LinuxClient, "sync">) {
@@ -15,5 +17,12 @@ export function createNativeTty(client: Pick<LinuxClient, "sync">) {
   const unavailable = (name: string) => function unsupportedTty(): never {
     throw new VMError("FEATURE_NOT_AVAILABLE", `tty.${name} is not qualified`);
   };
-  return { isatty, ReadStream: unavailable("ReadStream"), WriteStream: unavailable("WriteStream") };
+  // Constructing a terminal stream stays unavailable, but programs read color support from the prototype
+  // without one: `tsx` calls `tty.WriteStream.prototype.hasColors()` when it loads.
+  const WriteStream = unavailable("WriteStream");
+  const colors = createColorSupport((value, options) => nodeUtil.inspect(value, options));
+  for (const [name, method] of Object.entries(colors)) {
+    Object.defineProperty(WriteStream.prototype, name, { value: method, enumerable: true, writable: true, configurable: true });
+  }
+  return { isatty, ReadStream: unavailable("ReadStream"), WriteStream };
 }

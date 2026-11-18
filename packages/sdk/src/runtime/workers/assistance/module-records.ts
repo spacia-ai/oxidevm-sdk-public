@@ -17,6 +17,15 @@ export class ModuleCell {
   }
 }
 
+/** Where a module is in its one evaluation, shared by `import()` (SystemJS orders it) and `require()` (the
+ * synchronous evaluator orders it), so a module runs once whichever asks first. */
+export type ModuleEvaluation =
+  | { readonly status: "new" }
+  | { readonly status: "evaluating" }
+  | { readonly status: "pending"; readonly promise: Promise<unknown> }
+  | { readonly status: "evaluated" }
+  | { readonly status: "failed"; readonly error: unknown };
+
 export interface ModuleRecord {
   readonly path: string;
   readonly format: ModuleFormat;
@@ -29,6 +38,11 @@ export interface ModuleRecord {
   readonly imports: Map<string, { readonly value: unknown }>;
   namespace: Record<string, unknown> | undefined;
   linked: boolean;
+  evaluation: ModuleEvaluation;
+  /** The file whose `require()` first evaluated this module synchronously; Node names it in a cycle error. */
+  requiredBy: string | undefined;
+  /** What `require()` returns, once computed: Node returns the same object every time. */
+  commonJSView: unknown;
 }
 
 const ambiguous = Symbol("ambiguous export");
@@ -36,7 +50,8 @@ const ambiguous = Symbol("ambiguous export");
 export function createModuleRecord(path: string, definition: ModuleBindings, format: ModuleFormat, jsonValue?: unknown): ModuleRecord {
   return { path, format, jsonValue, definition, dependencies: new Map(), locals: new Map(definition.exports.map(
     binding => [binding.local, new ModuleCell(binding.local)],
-  )), exports: new Map(), imports: new Map(), namespace: undefined, linked: false };
+  )), exports: new Map(), imports: new Map(), namespace: undefined, linked: false,
+    evaluation: { status: "new" }, requiredBy: undefined, commonJSView: undefined };
 }
 
 /** Explains why `module` lacks `name` for `importer`, when the program is not at fault. */
@@ -171,4 +186,21 @@ export function bindModuleLocals(module: ModuleRecord, value: unknown): void {
     if (typeof getter !== "function") throw new TypeError(`Missing getter for ${name}`);
     cell.bind(() => Reflect.apply(getter, undefined, []));
   }
+}
+
+/** What `require()` of an evaluated ES module returns in Node 24: the value of an export named
+ * "module.exports" when there is one; else, when the module has a default export and no `__esModule` export,
+ * a namespace of the same exports plus `__esModule: true`; else the module's own namespace. */
+export function commonJSView(module: ModuleRecord): unknown {
+  if (module.commonJSView !== undefined) return module.commonJSView;
+  const explicit = module.exports.get("module.exports");
+  let view: unknown;
+  if (explicit !== undefined) view = explicit.read();
+  else if (module.exports.has("default") && !module.exports.has("__esModule")) {
+    const marker = new ModuleCell("__esModule");
+    marker.bind(() => true);
+    view = namespace(new Map([...module.exports, ["__esModule", marker]]));
+  } else view = module.namespace;
+  module.commonJSView = view;
+  return view;
 }

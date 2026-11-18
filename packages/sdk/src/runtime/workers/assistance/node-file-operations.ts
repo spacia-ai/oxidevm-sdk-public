@@ -1,4 +1,6 @@
 import { Buffer } from "buffer";
+import { statsOf, type Stats } from "./node-stats.ts";
+import { systemErrorMessage } from "./node-system-errors.ts";
 import { VMError } from "../../errors.js";
 import { ASSISTANCE_LIMITS, type AssistanceFileTime, type AssistanceOperation } from "../../protocol/assistance.js";
 import type { AssistanceResult } from "../../protocol/assistance-reply.js";
@@ -336,26 +338,15 @@ function checked<Args extends unknown[], Result>(operation: (...args: Args) => F
   };
 }
 
-type FileStats = ReturnType<typeof fileStats>;
-function fileStats(value: Extract<AssistanceResult, { kind: "stat" }>["stat"]) {
-  const atimeMs = milliseconds(value.atimeNs);
-  const mtimeMs = milliseconds(value.mtimeNs);
-  const ctimeMs = milliseconds(value.ctimeNs);
-  const birthtimeMs = milliseconds(value.details?.birthtimeNs ?? 0n);
-  return {
-    ...(value.details === null ? {} : { rdev: Number(value.details.rdev), birthtimeMs, birthtime: new Date(Math.round(birthtimeMs)) }),
-    dev: Number(value.dev), ino: Number(value.ino), nlink: Number(value.nlink),
-    size: Number(value.size), blocks: Number(value.blocks), blksize: value.blksize,
-    mode: value.mode, uid: value.uid, gid: value.gid,
-    atimeMs, mtimeMs, ctimeMs, atime: new Date(Math.round(atimeMs)), mtime: new Date(Math.round(mtimeMs)), ctime: new Date(Math.round(ctimeMs)),
-    isFile: () => (value.mode & 0o170000) === 0o100000,
-    isDirectory: () => (value.mode & 0o170000) === 0o040000,
-    isSymbolicLink: () => (value.mode & 0o170000) === 0o120000,
-    isBlockDevice: () => (value.mode & 0o170000) === 0o060000,
-    isCharacterDevice: () => (value.mode & 0o170000) === 0o020000,
-    isFIFO: () => (value.mode & 0o170000) === 0o010000,
-    isSocket: () => (value.mode & 0o170000) === 0o140000,
-  };
+type FileStats = Stats;
+function fileStats(value: Extract<AssistanceResult, { kind: "stat" }>["stat"]): Stats {
+  return statsOf({
+    dev: Number(value.dev), mode: value.mode, nlink: Number(value.nlink), uid: value.uid, gid: value.gid,
+    rdev: value.details === null ? undefined : Number(value.details.rdev), blksize: value.blksize, ino: Number(value.ino),
+    size: Number(value.size), blocks: Number(value.blocks),
+    atimeMs: milliseconds(value.atimeNs), mtimeMs: milliseconds(value.mtimeNs), ctimeMs: milliseconds(value.ctimeNs),
+    birthtimeMs: value.details === null ? undefined : milliseconds(value.details.birthtimeNs ?? 0n),
+  });
 }
 
 function milliseconds(nanoseconds: bigint): number {
@@ -461,7 +452,7 @@ function mismatch(): VMError { return new VMError("PROTOCOL_ERROR", "Filesystem 
 export function nodeResult(result: Extract<AssistanceResult, { kind: "error" }>): never;
 export function nodeResult(result: AssistanceResult): Exclude<AssistanceResult, { kind: "error" }>;
 export function nodeResult(result: AssistanceResult): Exclude<AssistanceResult, { kind: "error" }> {
-  if (result.kind === "error") throw Object.assign(new Error(`${result.code}: ${result.syscall}`), {
+  if (result.kind === "error") throw Object.assign(new Error(systemErrorMessage(result.code, result.syscall, result.path, result.destination)), {
     errno: -result.errno, code: result.code, syscall: result.syscall,
     ...(result.path === null ? {} : { path: result.path }),
     ...(result.destination === null ? {} : { dest: result.destination }),

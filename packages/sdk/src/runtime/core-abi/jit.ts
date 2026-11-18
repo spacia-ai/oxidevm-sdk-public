@@ -1,13 +1,13 @@
 import { BinaryCursor, RECORD_HEADER_LENGTH, expectMagic, fault } from "./cursor.ts";
 
-export const JIT_API_VERSION = 94;
+export const JIT_API_VERSION = 96;
 export const JIT_ACTION_RECORD_VERSION = 6;
 export const JIT_ACTION_PAYLOAD_LENGTH = 36;
 export const JIT_OWNER_ACTION_RECORD_VERSION = 7;
 export const JIT_OWNER_ACTION_PAYLOAD_LENGTH = 52;
 export const JIT_ADDRESS_SPACE_OFFSET = 6_315_256;
-export const JIT_CONTEXT_LENGTH = 6_315_496;
-export const JIT_CONTEXT_VERSION = 40;
+export const JIT_CONTEXT_LENGTH = 6_316_048;
+export const JIT_CONTEXT_VERSION = 41;
 export const JIT_EXIT_PERFORMANCE_BOUNDARY = 5;
 export type CoreJitModuleExit = "continue" | "guard" | "budget" | "halted" | "fault" | "performance-overflow-boundary";
 
@@ -77,6 +77,7 @@ export const JIT_INTERPRET_REASONS = [
   [16, "pending-virtual-interrupt"],
   [17, "compile-pending"],
   [18, "code-page-fault"],
+  [19, "no-entry-at-resume"],
 ] as const;
 
 export type CoreJitInterpretReason = typeof JIT_INTERPRET_REASONS[number][1];
