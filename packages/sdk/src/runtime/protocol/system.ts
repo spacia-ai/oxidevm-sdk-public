@@ -639,6 +639,8 @@ export interface SystemInterpreterReasonProfile {
  * identity or cold admission rather than one bucket. Schema 44 adds
  * compile-pending: the site's module is compiling off the guest's thread.
  * Schema 49 adds code-page-fault: reached code needs interpreter fault admission.
+ * Schema 57 adds no-entry-at-resume: the address lies inside a live translation that has no
+ * entry there (a run entered only at its head); such a batch counted as cold admission before.
  * Mirrors `CoreJitInterpretReason` in declaration order. */
 export type SystemInterpretedActionReason = CoreJitInterpretReason;
 
@@ -815,7 +817,8 @@ export interface SystemTraceSnapshot {
     | 53
     | 54
     | 55
-    | 56;
+    | 56
+    | 57;
   readonly executionMode:
     | "unknown"
     | "tiered"

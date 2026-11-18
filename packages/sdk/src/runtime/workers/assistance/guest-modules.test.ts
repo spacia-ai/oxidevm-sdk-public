@@ -61,6 +61,21 @@ describe("Linux-backed local modules", () => {
     sources.set("/workspace/dir/entry.js", "module.exports = 3");
     expect(modules.resolve("./dir", "/workspace/main.cjs", "require")).toBe("/workspace/dir/entry.js");
   });
+
+  // Pinned Node 24.18.1: `require(".")` and `require("..")` resolve like "./" and "../" (Jest's runtime uses "..").
+  it("resolves the bare relative specifiers . and .. as Node does", () => {
+    const { files, modules, sources } = fixture();
+    const original = files.statSync.bind(files);
+    files.statSync = path => path === "/workspace/pkg" || path === "/workspace/pkg/sub"
+      ? { isFile: () => false, isDirectory: () => true } : original(path);
+    sources.set("/workspace/pkg/package.json", '{"main":"main.js"}');
+    sources.set("/workspace/pkg/main.js", 'module.exports = "pkg-main"');
+    sources.set("/workspace/pkg/sub/index.js", 'module.exports = "sub-index"');
+    sources.set("/workspace/pkg/sub/probe.cjs", "");
+    expect(modules.resolve(".", "/workspace/pkg/sub/probe.cjs", "require")).toBe("/workspace/pkg/sub/index.js");
+    expect(modules.resolve("..", "/workspace/pkg/sub/probe.cjs", "require")).toBe("/workspace/pkg/main.js");
+    expect(modules.resolve("../", "/workspace/pkg/sub/probe.cjs", "require")).toBe("/workspace/pkg/main.js");
+  });
 });
 
 it("loads editable project modules while fencing installed modules to the admitted dependency generation", () => {
@@ -162,4 +177,12 @@ it("resolves package exports with the user conditions of --conditions beside Nod
   expect([resolved([], "require"), resolved([], "import")]).toEqual(["/workspace/node_modules/cond/required.js", "/workspace/node_modules/cond/index.js"]);
   expect([resolved(["development"], "require"), resolved(["worker"], "import"), resolved(["worker"], "require")])
     .toEqual(["/workspace/node_modules/cond/dev.js", "/workspace/node_modules/cond/worker.mjs", "/workspace/node_modules/cond/required.js"]);
+});
+
+it("refuses an import URL with a query as a typed limitation, so the process is remembered even when the program catches it", () => {
+  const { modules } = fixture();
+  // ESLint imports its configuration as file:///…/eslint.config.js?mtime=…; Node keys the module by the whole URL.
+  let refusal: unknown;
+  try { modules.resolve("file:///workspace/esm/value.js?mtime=1", "/workspace/main.cjs", "import"); } catch (error) { refusal = error; }
+  expect(refusal).toMatchObject({ code: "FEATURE_NOT_AVAILABLE", detail: { lateFailure: "unavailable-builtin", subject: "an import URL with a query or fragment" } });
 });

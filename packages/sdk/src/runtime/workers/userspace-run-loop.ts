@@ -6,12 +6,13 @@ import { coreFailureError } from "./core-failure.js";
 import { assertUserspaceStatus as assertStatus, callUserspaceU32 as call } from "./userspace-exports.js";
 import { throwIfUserspaceKernelFailed } from "./userspace-io-failure.js";
 import type { UserspaceAttentionChannel, UserspaceSliceEnd } from "../protocol/userspace-slices.js";
-import { INLINE_SERVICE_MILLISECONDS, newOutputEndsSlice, runSliceMilliseconds } from "./userspace-run-slices.js";
+import { ACTION_STEPS_MIN, INLINE_SERVICE_MILLISECONDS, newOutputEndsSlice, nextActionSteps, runSliceMilliseconds } from "./userspace-run-slices.js";
 import { shouldServicePendingWork } from "./userspace-service.js";
 import type { RuntimeState } from "./userspace-worker-state.js";
 
-/** Guest instructions one action may retire before it returns to the run loop. */
-export const RUN_STEPS = 100_000;
+/** Guest instructions the shortest action may retire before it returns to the run loop. A run
+ * slice sizes each later action by the speed of the one before it (`actionSteps`). */
+export const RUN_STEPS = ACTION_STEPS_MIN;
 /** Actions one run slice may take. */
 export const RUN_ACTIONS_PER_SLICE = 4_096;
 
@@ -65,9 +66,14 @@ function runSliceActions(active: RuntimeState, ports: UserspaceSlicePorts, slice
   const quantum = active.fairness.begin(slice.started);
   let inlineServiceAt = 0;
   for (let action = 1; ; action += 1) {
-    active.pendingResult = runJitTurn(active);
+    const actionStarted = slice.now;
+    active.pendingResult = runJitTurn(active, active.actionSteps);
     const trueBoundary = active.pendingResult.kind !== "step-limit";
     slice.now = ports.now();
+    // Only an action that used up its budget says how fast the guest runs.
+    active.actionSteps = nextActionSteps(active.actionSteps, active.actionRetired > 0
+      ? { instructions: active.actionRetired, milliseconds: slice.now - actionStarted }
+      : undefined);
     const elapsed = slice.now - slice.started;
     // The order and side effects of the first four checks are those of the slice before host attention.
     const end: UserspaceSliceEnd | undefined = action === RUN_ACTIONS_PER_SLICE ? "action-budget"
@@ -116,16 +122,19 @@ function serviceInlineHostRequests(active: RuntimeState, ports: UserspaceSlicePo
   ports.serviceHostRequests(active);
 }
 
-/** One guest action: prepare the next runnable task, run it through the JIT runtime, and complete
- * the syscall or exception that ended it. */
-export function runJitTurn(active: RuntimeState): UserspaceRunResult {
+/** One guest action of at most `steps` instructions: prepare the next runnable task, run it through
+ * the JIT runtime, and complete the syscall or exception that ended it. Records in
+ * `active.actionRetired` what the action retired when it used up its budget. */
+export function runJitTurn(active: RuntimeState, steps: number = RUN_STEPS): UserspaceRunResult {
   const loaded = active.instance;
+  active.actionRetired = 0;
   const prepared = call(loaded, "oxidevm_userspace_prepare");
   if (prepared !== 0) throwIfUserspaceKernelFailed(active);
   if (prepared === 3 || prepared === 4 || prepared === 5) return readResult(active, prepared);
   assertStatus(prepared, "oxidevm_userspace_prepare");
-  const exit = active.jitRuntime.runLinuxBlock(active.core, 0, RUN_STEPS, () => undefined)
-    ?? active.jitRuntime.runLinuxGuardFallback(active.core, RUN_STEPS);
+  const exit = active.jitRuntime.runLinuxBlock(active.core, 0, steps, () => undefined)
+    ?? active.jitRuntime.runLinuxGuardFallback(active.core, steps);
+  if (exit.kind === "step-limit") active.actionRetired = Number(exit.steps);
   return completeJitExit(active, exit);
 }
 

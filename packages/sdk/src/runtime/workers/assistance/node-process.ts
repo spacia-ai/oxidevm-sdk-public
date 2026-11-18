@@ -94,7 +94,7 @@ export function installSignalListeners(process: NodeProcess, watch: (signal: num
 export function validateNodeEnvironment(env: Readonly<Record<string, string>>, entry: string, execArgv: readonly string[] = [],
   runtime: "node" | "bun" = "node"): NodeExecutionOptions {
   const tokens = nodeOptionsTokens(env["NODE_OPTIONS"] ?? "");
-  const environment = tokens === undefined ? undefined : readNodeExecutionOptions(tokens, undefined, runtime);
+  const environment = tokens === undefined ? undefined : readNodeExecutionOptions(tokens, undefined, runtime, "node-options");
   if (environment === undefined || (runtime === "bun" && environment.end !== tokens?.length)) {
     throw new VMError("FEATURE_NOT_AVAILABLE", "NODE_OPTIONS contains an unsupported option", { api: "NODE_OPTIONS", importer: entry, backend: "assisted-node" });
   }
@@ -105,7 +105,22 @@ export function validateNodeEnvironment(env: Readonly<Record<string, string>>, e
 
 /** The process owns exit listeners and status; only its trusted worker owner
  * can terminate execution. An application-catchable exception is not exit. */
+/** How the process ends by itself, without `process.reallyExit`, which Node calls only from `process.exit()`:
+ * - `"drained"`, its event loop is empty: Node emits 'exit' even when `process.exit()` already did;
+ * - `"uncaught"`, an error no listener handled: 'exit' only if no exit has emitted it yet.
+ * Not reachable from the program. */
+let endProcess: (process: NodeProcess, how: "drained" | "uncaught", code?: number) => never;
+export function endNodeProcess(process: NodeProcess, how: "drained" | "uncaught", code?: number): never { return endProcess(process, how, code); }
+
 export class NodeProcess extends EventEmitter {
+  static {
+    endProcess = (process, how, code) => {
+      if (code !== undefined) process.exitCode = code;
+      if (how === "drained") process.#exiting = false;
+      process.#emitExit();
+      return process.#terminate((process.#code ?? 0) & 255);
+    };
+  }
   #code: number | undefined;
   #exiting = false;
   readonly #now: () => number;
@@ -134,6 +149,17 @@ export class NodeProcess extends EventEmitter {
     const status = Object.getOwnPropertyDescriptor(NodeProcess.prototype, "exitCode");
     if (status === undefined) throw new TypeError("Missing process exit-code descriptor");
     Object.defineProperty(this, "exitCode", { ...status, enumerable: true });
+    // Node 24.18.1: an own, enumerable binding that ends the process at once with its argument as a 32-bit integer,
+    // without the 'exit' event. signal-exit replaces it to see every process.exit().
+    const terminateNow = this.#terminate;
+    Object.defineProperty(this, "reallyExit", { value: function reallyExit(...args: unknown[]): never {
+      return terminateNow((Number(args[0]) | 0) & 255);
+    }, enumerable: true, writable: true, configurable: true });
+  }
+  #emitExit(): void {
+    if (this.#exiting) return;
+    this.#exiting = true;
+    this.emit("exit", this.#code ?? 0);
   }
   get exitCode(): number | undefined { return this.#code; }
   set exitCode(value: unknown) {
@@ -169,12 +195,13 @@ export class NodeProcess extends EventEmitter {
     }
     return [seconds, nanoseconds];
   }
-  readonly exit = (...args: unknown[]): never => {
+  /** Node's `process.exit`: the 'exit' event once, then whatever `process.reallyExit` is now. A replacement that
+   * returns lets the program go on, as in Node. */
+  readonly exit = (...args: unknown[]): void => {
     if (args.length !== 0) this.exitCode = args[0];
-    if (!this.#exiting) {
-      this.#exiting = true;
-      this.emit("exit", this.#code ?? 0);
-    }
-    return this.#terminate((this.#code ?? 0) & 255);
+    this.#emitExit();
+    const really: unknown = Reflect.get(this, "reallyExit");
+    if (typeof really !== "function") throw new TypeError("process.reallyExit is not a function");
+    Reflect.apply(really, this, [this.#code ?? 0]);
   };
 }

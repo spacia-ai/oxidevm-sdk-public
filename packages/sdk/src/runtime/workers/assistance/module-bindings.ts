@@ -31,6 +31,9 @@ export interface ModuleBindings {
   readonly code: string;
   readonly map: string;
   readonly implementation: { readonly code: string; readonly map: string };
+  /** The module itself awaits at top level, so `require()` of a graph containing it is refused (Node's
+   * ERR_REQUIRE_ASYNC_MODULE) before any module of that graph runs. */
+  readonly topLevelAwait: boolean;
 }
 
 /** Suspend before the first statement so V8 retains native lexical initialization.
@@ -176,7 +179,7 @@ export function lowerModuleBindings(source: string, filename: string): ModuleBin
     t.blockStatement([t.returnStatement(t.callExpression(generator, []))]));
   tree.program.body = [...dependencyImports, t.exportNamedDeclaration(factory)];
   tree.program.interpreter = null;
-  lowerTopLevelAwait(tree, runtimeName);
+  const topLevelAwait = lowerTopLevelAwait(tree, runtimeName);
   // SystemJS owns graph ordering, while the generator owns native lexical
   // semantics. Keep application syntax out of SWC's SystemJS pass: its
   // destructuring lowering changes observable iterator/default ordering.
@@ -188,7 +191,7 @@ export function lowerModuleBindings(source: string, filename: string): ModuleBin
     t.blockStatement([t.returnStatement(t.callExpression(implementationName, [t.identifier(runtimeName)]))]),
   ))];
   const printed = printModule(tree, source, filename);
-  return { imports, exports, forwards, stars, dependencies: Array.from(dependencies), runtimeName, factoryName, implementation, ...printed };
+  return { imports, exports, forwards, stars, dependencies: Array.from(dependencies), runtimeName, factoryName, implementation, topLevelAwait, ...printed };
 }
 
 function defaultExpression(expression: t.Expression): t.MemberExpression {
@@ -214,12 +217,15 @@ function literalLexicalRead(path: NodePath<t.CallExpression>): boolean {
   return binding !== undefined && binding.kind !== "module";
 }
 
-function lowerTopLevelAwait(tree: t.File, runtimeName: string): void {
+/** Rewrites top-level `await` and `for await`; true when the module had any. */
+function lowerTopLevelAwait(tree: t.File, runtimeName: string): boolean {
+  let found = false;
   traverseModule(tree, {
     AwaitExpression(path) {
       const owner = path.getFunctionParent();
       if (owner?.isFunctionExpression() === true && owner.node.generator && !owner.node.async) {
         path.replaceWith(t.yieldExpression(runtimeCall(runtimeName, "awaitValue", [path.node.argument])));
+        found = true;
       }
     },
     ForOfStatement(path) {
@@ -227,9 +233,11 @@ function lowerTopLevelAwait(tree: t.File, runtimeName: string): void {
       const owner = path.getFunctionParent();
       if (owner?.isFunctionExpression() === true && owner.node.generator && !owner.node.async) {
         lowerAwaitLoop(path, runtimeName);
+        found = true;
       }
     },
   });
+  return found;
 }
 
 function lowerAwaitLoop(path: NodePath<t.ForOfStatement>, runtimeName: string): void {

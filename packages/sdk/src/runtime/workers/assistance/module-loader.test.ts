@@ -126,3 +126,32 @@ it("fails an ESM import of a real built-in export the fast path lacks before any
   await expect(loader.import("/workspace/unknown.js")).rejects.toBeInstanceOf(SyntaxError);
   expect((await loader.import("/workspace/present.js"))["value"]).toBe("function");
 });
+
+it("runs a CommonJS file that returns at top level, as Node's function wrapper allows, also on the compiler path", async () => {
+  const require = createRequire(import.meta.url), root = dirname(require.resolve("@swc/wasm-web"));
+  const compiler = initializeCompiler(compilerNamespace, await WebAssembly.compile(await readFile(join(root, "wasm_bg.wasm"))));
+  const system = await readFile(require.resolve("systemjs/dist/s.js"), "utf8");
+  // The async function sends the file through SWC; webpack-cli's bin has both.
+  const source = "async function later() { return 2; }\nif (later) { module.exports = 1; return; }\nmodule.exports = 3;\n";
+  const loader = createLocalModuleLoader(compiler, system, { resolve: request => request, read: () => ({ source, format: "commonjs" }) });
+  expect(loader.require("/workspace/bin/cli.js")).toBe(1);
+});
+
+it("prints Node's typeless package warning once per package.json when a detected module is imported", async () => {
+  const require = createRequire(import.meta.url), root = dirname(require.resolve("@swc/wasm-web"));
+  const compiler = initializeCompiler(compilerNamespace, await WebAssembly.compile(await readFile(join(root, "wasm_bg.wasm"))));
+  const system = await readFile(require.resolve("systemjs/dist/s.js"), "utf8");
+  const warnings: unknown[][] = [], original: unknown = Reflect.get(globalThis, "process");
+  Reflect.set(globalThis, "process", { env: {}, emitWarning: (...args: unknown[]) => { warnings.push(args); } });
+  onTestFinished(() => { Reflect.set(globalThis, "process", original); });
+  const loader = createLocalModuleLoader(compiler, system, {
+    resolve: request => request,
+    read: () => ({ source: "export const value = 1;", format: "module", typelessPackage: "/workspace/package.json" }),
+  });
+  await loader.import("/workspace/a.js");
+  await loader.import("/workspace/b.js");
+  expect(warnings).toEqual([[
+    "Module type of file:///workspace/a.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /workspace/package.json.",
+    { code: "MODULE_TYPELESS_PACKAGE_JSON" },
+  ]]);
+});

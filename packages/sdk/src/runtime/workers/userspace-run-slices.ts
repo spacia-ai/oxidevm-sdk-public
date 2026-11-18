@@ -61,3 +61,51 @@ export function newOutputEndsSlice(runtime: Runtime, interactive: boolean): bool
 /** Between actions of a running slice the worker serves host requests the runtime raised (JS process
  * completions, I/O requests and preview replies) at this cadence, without ending the slice. */
 export const INLINE_SERVICE_MILLISECONDS = 0.25;
+
+/** Guest instructions the shortest action may retire before it returns to the run loop. */
+export const ACTION_STEPS_MIN = 100_000;
+/** Guest instructions the longest action may retire. */
+export const ACTION_STEPS_MAX = 4_000_000;
+
+/** What one action that used up its instruction budget retired, and how long it took. */
+export interface InstructionRate {
+  readonly instructions: number;
+  readonly milliseconds: number;
+}
+
+/**
+ * The instruction budget of the next action: as many instructions as last about
+ * `INLINE_SERVICE_MILLISECONDS` at the rate of the action before it.
+ *
+ * An action returns to the run loop only when its budget is used up or the guest reaches a boundary,
+ * and the loop's checks (the slice's deadline, a compiled module, output, host attention, inline
+ * service) run between actions. A fixed budget makes fast guest code return every few microseconds
+ * and pay for those checks each time; a budget sized by time keeps their cadence at any speed.
+ *
+ * The budget at most doubles from one action to the next and shrinks at once, so a guest that turns
+ * slow overruns the interval by one action at most. With no timed action yet, or a measurement that
+ * makes no sense, it is the shortest action.
+ */
+export function actionSteps(rate: InstructionRate | undefined): number {
+  if (rate === undefined) return ACTION_STEPS_MIN;
+  const { instructions, milliseconds } = rate;
+  if (!Number.isFinite(instructions) || instructions <= 0 || !Number.isFinite(milliseconds) || milliseconds < 0) {
+    return ACTION_STEPS_MIN;
+  }
+  const doubled = instructions * 2;
+  // A clock that saw no time pass says only that the action was short.
+  const sized = milliseconds === 0
+    ? doubled
+    : Math.min(doubled, Math.round(instructions / milliseconds * INLINE_SERVICE_MILLISECONDS));
+  return Math.min(ACTION_STEPS_MAX, Math.max(ACTION_STEPS_MIN, sized));
+}
+
+/**
+ * The budget after an action that ran with `current`. An action that used up its budget gives its
+ * `rate` and sizes the next one. An action that a system call, a fault or a boundary ended says
+ * nothing about speed, so the budget halves: one grown on fast code does not wait, at full
+ * length, for slow code that follows many such actions later.
+ */
+export function nextActionSteps(current: number, rate: InstructionRate | undefined): number {
+  return rate === undefined ? Math.max(ACTION_STEPS_MIN, Math.floor(current / 2)) : actionSteps(rate);
+}

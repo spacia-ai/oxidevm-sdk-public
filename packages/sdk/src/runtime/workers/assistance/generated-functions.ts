@@ -2,6 +2,8 @@ import { ExecutableSources } from "./executable-sources.ts";
 import { record, string } from "../../decode.ts";
 import { type AssistanceCompiler, transformSource } from "./compiler.ts";
 import { lowerScriptImports } from "./script-imports.js";
+import { isNodeBuiltin } from "./commonjs.ts";
+import { VMError } from "../../errors.ts";
 
 /** What the realm's `eval` does under this profile: the local-script profile
  * refuses it, so every generated source crosses the compiler boundary; the
@@ -9,7 +11,14 @@ import { lowerScriptImports } from "./script-imports.js";
  * output evaluates each module's source through a direct eval inside the
  * module factory's scope, which no transformed replacement can reach. Sources
  * evaluated that way are not registered for stack traces or source maps. */
-export interface GeneratedFunctionPolicy { readonly eval: "refuse" | "native" }
+export interface GeneratedFunctionPolicy {
+  readonly eval: "refuse" | "native";
+  /** The process's module loader. Node resolves an `import()` in generated code against the module that created the
+   * function, which this adapter cannot see, so it serves only specifiers that resolve the same from anywhere: an
+   * absolute path, a `file:` URL or a built-in (Prettier imports its plugins this way). Anything else is a typed
+   * refusal the process remembers. Without a loader, generated code may not import. */
+  readonly importModule?: (specifier: string, options?: unknown) => Promise<unknown>;
+}
 
 /** Runtime code generation shares the compiler boundary with loaded modules.
  * Native Function first parses its separate parameter/body inputs without
@@ -24,21 +33,29 @@ export function installGeneratedFunctions(compiler: AssistanceCompiler, realmVal
   const intrinsicToString: unknown = Reflect.get(prototype, "toString");
   if (typeof intrinsicToString !== "function") throw new TypeError("Function prototype has no toString");
   let sequence = 0;
+  const generatedImport = (specifier: unknown, options?: unknown): Promise<unknown> => {
+    if (typeof specifier === "symbol") return Promise.reject(new TypeError("Cannot convert a Symbol value to a string"));
+    const request = String(specifier), load = policy.importModule;
+    if (load !== undefined && (request.startsWith("/") || request.startsWith("file:") || isNodeBuiltin(request))) return load(request, options);
+    return Promise.reject(new VMError("FEATURE_NOT_AVAILABLE", "import() of a relative or package specifier from generated code is unavailable",
+      { backend: "assisted-node", lateFailure: "unavailable-builtin", subject: "import() of a relative or package specifier from generated code", specifier: request }));
+  };
   const compile = (args: readonly unknown[], parser: unknown = NativeFunction): object => {
     if (typeof parser !== "function") throw new TypeError("Invalid function constructor");
     const original: unknown = Reflect.apply(parser, undefined, args);
     if (typeof original !== "function") throw new TypeError("Function constructor returned a non-function");
     const source = string(Reflect.apply(intrinsicToString, original, []), "generated function source");
-    if (compiler.hasDynamicImport(source)) throw new TypeError("Dynamic imports in generated functions are not supported");
+    const imports = compiler.hasDynamicImport(source);
+    if (imports && policy.importModule === undefined) throw new TypeError("Dynamic imports in generated functions are not supported");
     const filename = `/generated/function-${++sequence}.js`;
     sources.registerApplication(filename, source, true);
     const script = lowerScriptImports(source, filename);
     const transformed = transformSource(compiler, script.code, "commonjs", filename, script.map);
     const evaluator: unknown = Reflect.apply(NativeFunction, undefined, [
-      `${sources.emit(transformed, filename, "generated-function")}\nreturn anonymous;`,
+      ...(imports ? [script.importName] : []), `${sources.emit(transformed, filename, "generated-function")}\nreturn anonymous;`,
     ]);
     if (typeof evaluator !== "function") throw new TypeError("Invalid generated function evaluator");
-    const result: unknown = Reflect.apply(evaluator, undefined, []);
+    const result: unknown = Reflect.apply(evaluator, undefined, imports ? [generatedImport] : []);
     if (typeof result !== "function") throw new TypeError("Generated function is not callable");
     return result;
   };

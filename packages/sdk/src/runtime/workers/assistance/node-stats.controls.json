@@ -1,0 +1,349 @@
+{
+  "schemaVersion": 1,
+  "recorderSHA256": "2827005c0695ce96e35ac4159f4e9282b251a10596d162b8b73dca819af777c8",
+  "node": {
+    "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+    "version": "v24.18.1"
+  },
+  "shape": {
+    "own": [
+      {
+        "name": "dev",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "mode",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "nlink",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "uid",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "gid",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "rdev",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "blksize",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "ino",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "size",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "blocks",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "atimeMs",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "mtimeMs",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "ctimeMs",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "birthtimeMs",
+        "kind": "number",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      }
+    ],
+    "prototype": [
+      {
+        "name": "constructor",
+        "kind": "function",
+        "setter": false,
+        "enumerable": false,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "atime",
+        "kind": "accessor",
+        "setter": true,
+        "enumerable": true,
+        "writable": null,
+        "configurable": true
+      },
+      {
+        "name": "mtime",
+        "kind": "accessor",
+        "setter": true,
+        "enumerable": true,
+        "writable": null,
+        "configurable": true
+      },
+      {
+        "name": "ctime",
+        "kind": "accessor",
+        "setter": true,
+        "enumerable": true,
+        "writable": null,
+        "configurable": true
+      },
+      {
+        "name": "birthtime",
+        "kind": "accessor",
+        "setter": true,
+        "enumerable": true,
+        "writable": null,
+        "configurable": true
+      },
+      {
+        "name": "_checkModeProperty",
+        "kind": "function",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      }
+    ],
+    "base": [
+      {
+        "name": "constructor",
+        "kind": "function",
+        "setter": false,
+        "enumerable": false,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "isDirectory",
+        "kind": "function",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "isFile",
+        "kind": "function",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "isBlockDevice",
+        "kind": "function",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "isCharacterDevice",
+        "kind": "function",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "isSymbolicLink",
+        "kind": "function",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "isFIFO",
+        "kind": "function",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      },
+      {
+        "name": "isSocket",
+        "kind": "function",
+        "setter": false,
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      }
+    ],
+    "length": 14
+  },
+  "keys": [
+    [
+      "dev",
+      "mode",
+      "nlink",
+      "uid",
+      "gid",
+      "rdev",
+      "blksize",
+      "ino",
+      "size",
+      "blocks",
+      "atimeMs",
+      "mtimeMs",
+      "ctimeMs",
+      "birthtimeMs"
+    ],
+    [
+      "dev",
+      "mode",
+      "nlink",
+      "uid",
+      "gid",
+      "rdev",
+      "blksize",
+      "ino",
+      "size",
+      "blocks",
+      "atimeMs",
+      "mtimeMs",
+      "ctimeMs",
+      "birthtimeMs",
+      "atime",
+      "mtime",
+      "ctime",
+      "birthtime"
+    ]
+  ],
+  "dates": {
+    "atime": "2023-11-14T22:13:20.001Z",
+    "mtime": "2023-11-14T22:13:20.001Z",
+    "ctime": "2023-11-14T22:13:20.000Z",
+    "birthtime": "1970-01-01T00:00:00.000Z"
+  },
+  "cached": true,
+  "kept": "2023-11-14T22:13:20.001Z",
+  "assigned": {
+    "value": "x",
+    "keys": [
+      "dev",
+      "mode",
+      "nlink",
+      "uid",
+      "gid",
+      "rdev",
+      "blksize",
+      "ino",
+      "size",
+      "blocks",
+      "atimeMs",
+      "mtimeMs",
+      "ctimeMs",
+      "birthtimeMs",
+      "mtime"
+    ]
+  },
+  "types": {
+    "file": [
+      "isFile"
+    ],
+    "directory": [
+      "isDirectory"
+    ],
+    "symlink": [
+      "isSymbolicLink"
+    ],
+    "block": [
+      "isBlockDevice"
+    ],
+    "character": [
+      "isCharacterDevice"
+    ],
+    "fifo": [
+      "isFIFO"
+    ],
+    "socket": [
+      "isSocket"
+    ],
+    "none": []
+  },
+  "overridden": "checked",
+  "json": {
+    "dev": 2049,
+    "mode": 33188,
+    "nlink": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "rdev": 0,
+    "blksize": 4096,
+    "ino": 77,
+    "size": 12,
+    "blocks": 8,
+    "atimeMs": 1.25,
+    "mtimeMs": 1700000000000.9,
+    "ctimeMs": 1700000000000.25,
+    "birthtimeMs": 0
+  },
+  "instance": true
+}

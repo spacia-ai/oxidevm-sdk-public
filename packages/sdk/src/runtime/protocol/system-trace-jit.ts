@@ -274,6 +274,7 @@ export function decodeSystemJitModuleForInstall(
   let recordedProfileGeneration: bigint | null = null;
   let runtimeIdentity: JitRuntimeIdentity | null = null;
   let aotTrainingSource: JitAotTrainingSource | null = null;
+  let hasBranchHints = false;
   let traceBodyStart: number | null = null;
   let lastSection = 0;
   let prefixBoundary = artifactModuleLength === MODULE_HEADER.length;
@@ -320,6 +321,11 @@ export function decodeSystemJitModuleForInstall(
         aotTrainingSource === null
       ) {
         aotTrainingSource = decodeJitAotTrainingSource(payload.rest());
+      } else if (name === BRANCH_HINT_SECTION && !hasBranchHints) {
+        // The engine reads the hints; the host checks that they are hints and where they stand.
+        if (lastSection >= 10) throw new TypeError("JIT Wasm branch hints follow the code section");
+        hasBranchHints = true;
+        validateBranchHints(new Reader(payload.rest()));
       } else {
         throw new TypeError("unexpected JIT Wasm custom section");
       }
@@ -512,6 +518,32 @@ export function decodeSystemJitModuleForInstall(
       },
     },
   };
+}
+
+/** The custom section of the WebAssembly branch-hinting proposal. A raw Tier-1 module of the
+ * engine names its slow arms there, before its code section. */
+const BRANCH_HINT_SECTION = "metadata.code.branch_hint";
+
+/**
+ * Checks a branch-hint payload: functions by ascending index, each with at least one hint, hints by
+ * ascending offset in the function body, each one byte that is 0 (unlikely) or 1 (likely).
+ */
+function validateBranchHints(payload: Reader): void {
+  let lastFunction = -1;
+  for (let functions = payload.u32(); functions > 0; functions -= 1) {
+    const index = payload.u32();
+    if (index <= lastFunction) throw new TypeError("JIT Wasm branch hints name functions out of order");
+    lastFunction = index;
+    let hints = payload.u32();
+    if (hints === 0) throw new TypeError("JIT Wasm branch hints name a function without a hint");
+    for (let lastOffset = -1; hints > 0; hints -= 1) {
+      const offset = payload.u32();
+      if (offset <= lastOffset) throw new TypeError("JIT Wasm branch hints are out of order");
+      lastOffset = offset;
+      if (payload.u32() !== 1 || payload.byte() > 1) throw new TypeError("invalid JIT Wasm branch hint");
+    }
+  }
+  payload.finish("JIT Wasm branch hints");
 }
 
 /** The caller owns the certified prefix and its current profile-map lineage. */

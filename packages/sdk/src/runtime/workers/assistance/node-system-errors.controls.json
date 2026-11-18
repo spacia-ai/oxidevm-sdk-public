@@ -1,0 +1,465 @@
+{
+  "schemaVersion": 1,
+  "recorderSHA256": "e9eb6f801d4d277576bf0b77b6c5a0f1fdff4911a922c9c7d8d2361324228738",
+  "node": {
+    "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+    "version": "v24.18.1"
+  },
+  "errors": [
+    {
+      "errno": -1,
+      "code": "EPERM",
+      "message": "operation not permitted"
+    },
+    {
+      "errno": -2,
+      "code": "ENOENT",
+      "message": "no such file or directory"
+    },
+    {
+      "errno": -3,
+      "code": "ESRCH",
+      "message": "no such process"
+    },
+    {
+      "errno": -4,
+      "code": "EINTR",
+      "message": "interrupted system call"
+    },
+    {
+      "errno": -5,
+      "code": "EIO",
+      "message": "i/o error"
+    },
+    {
+      "errno": -6,
+      "code": "ENXIO",
+      "message": "no such device or address"
+    },
+    {
+      "errno": -7,
+      "code": "E2BIG",
+      "message": "argument list too long"
+    },
+    {
+      "errno": -8,
+      "code": "ENOEXEC",
+      "message": "exec format error"
+    },
+    {
+      "errno": -9,
+      "code": "EBADF",
+      "message": "bad file descriptor"
+    },
+    {
+      "errno": -11,
+      "code": "EAGAIN",
+      "message": "resource temporarily unavailable"
+    },
+    {
+      "errno": -12,
+      "code": "ENOMEM",
+      "message": "not enough memory"
+    },
+    {
+      "errno": -13,
+      "code": "EACCES",
+      "message": "permission denied"
+    },
+    {
+      "errno": -14,
+      "code": "EFAULT",
+      "message": "bad address in system call argument"
+    },
+    {
+      "errno": -16,
+      "code": "EBUSY",
+      "message": "resource busy or locked"
+    },
+    {
+      "errno": -17,
+      "code": "EEXIST",
+      "message": "file already exists"
+    },
+    {
+      "errno": -18,
+      "code": "EXDEV",
+      "message": "cross-device link not permitted"
+    },
+    {
+      "errno": -19,
+      "code": "ENODEV",
+      "message": "no such device"
+    },
+    {
+      "errno": -20,
+      "code": "ENOTDIR",
+      "message": "not a directory"
+    },
+    {
+      "errno": -21,
+      "code": "EISDIR",
+      "message": "illegal operation on a directory"
+    },
+    {
+      "errno": -22,
+      "code": "EINVAL",
+      "message": "invalid argument"
+    },
+    {
+      "errno": -23,
+      "code": "ENFILE",
+      "message": "file table overflow"
+    },
+    {
+      "errno": -24,
+      "code": "EMFILE",
+      "message": "too many open files"
+    },
+    {
+      "errno": -25,
+      "code": "ENOTTY",
+      "message": "inappropriate ioctl for device"
+    },
+    {
+      "errno": -26,
+      "code": "ETXTBSY",
+      "message": "text file is busy"
+    },
+    {
+      "errno": -27,
+      "code": "EFBIG",
+      "message": "file too large"
+    },
+    {
+      "errno": -28,
+      "code": "ENOSPC",
+      "message": "no space left on device"
+    },
+    {
+      "errno": -29,
+      "code": "ESPIPE",
+      "message": "invalid seek"
+    },
+    {
+      "errno": -30,
+      "code": "EROFS",
+      "message": "read-only file system"
+    },
+    {
+      "errno": -31,
+      "code": "EMLINK",
+      "message": "too many links"
+    },
+    {
+      "errno": -32,
+      "code": "EPIPE",
+      "message": "broken pipe"
+    },
+    {
+      "errno": -34,
+      "code": "ERANGE",
+      "message": "result too large"
+    },
+    {
+      "errno": -36,
+      "code": "ENAMETOOLONG",
+      "message": "name too long"
+    },
+    {
+      "errno": -38,
+      "code": "ENOSYS",
+      "message": "function not implemented"
+    },
+    {
+      "errno": -39,
+      "code": "ENOTEMPTY",
+      "message": "directory not empty"
+    },
+    {
+      "errno": -40,
+      "code": "ELOOP",
+      "message": "too many symbolic links encountered"
+    },
+    {
+      "errno": -49,
+      "code": "EUNATCH",
+      "message": "protocol driver not attached"
+    },
+    {
+      "errno": -61,
+      "code": "ENODATA",
+      "message": "no data available"
+    },
+    {
+      "errno": -64,
+      "code": "ENONET",
+      "message": "machine is not on the network"
+    },
+    {
+      "errno": -71,
+      "code": "EPROTO",
+      "message": "protocol error"
+    },
+    {
+      "errno": -75,
+      "code": "EOVERFLOW",
+      "message": "value too large for defined data type"
+    },
+    {
+      "errno": -84,
+      "code": "EILSEQ",
+      "message": "illegal byte sequence"
+    },
+    {
+      "errno": -88,
+      "code": "ENOTSOCK",
+      "message": "socket operation on non-socket"
+    },
+    {
+      "errno": -89,
+      "code": "EDESTADDRREQ",
+      "message": "destination address required"
+    },
+    {
+      "errno": -90,
+      "code": "EMSGSIZE",
+      "message": "message too long"
+    },
+    {
+      "errno": -91,
+      "code": "EPROTOTYPE",
+      "message": "protocol wrong type for socket"
+    },
+    {
+      "errno": -92,
+      "code": "ENOPROTOOPT",
+      "message": "protocol not available"
+    },
+    {
+      "errno": -93,
+      "code": "EPROTONOSUPPORT",
+      "message": "protocol not supported"
+    },
+    {
+      "errno": -94,
+      "code": "ESOCKTNOSUPPORT",
+      "message": "socket type not supported"
+    },
+    {
+      "errno": -95,
+      "code": "ENOTSUP",
+      "message": "operation not supported on socket"
+    },
+    {
+      "errno": -97,
+      "code": "EAFNOSUPPORT",
+      "message": "address family not supported"
+    },
+    {
+      "errno": -98,
+      "code": "EADDRINUSE",
+      "message": "address already in use"
+    },
+    {
+      "errno": -99,
+      "code": "EADDRNOTAVAIL",
+      "message": "address not available"
+    },
+    {
+      "errno": -100,
+      "code": "ENETDOWN",
+      "message": "network is down"
+    },
+    {
+      "errno": -101,
+      "code": "ENETUNREACH",
+      "message": "network is unreachable"
+    },
+    {
+      "errno": -103,
+      "code": "ECONNABORTED",
+      "message": "software caused connection abort"
+    },
+    {
+      "errno": -104,
+      "code": "ECONNRESET",
+      "message": "connection reset by peer"
+    },
+    {
+      "errno": -105,
+      "code": "ENOBUFS",
+      "message": "no buffer space available"
+    },
+    {
+      "errno": -106,
+      "code": "EISCONN",
+      "message": "socket is already connected"
+    },
+    {
+      "errno": -107,
+      "code": "ENOTCONN",
+      "message": "socket is not connected"
+    },
+    {
+      "errno": -108,
+      "code": "ESHUTDOWN",
+      "message": "cannot send after transport endpoint shutdown"
+    },
+    {
+      "errno": -110,
+      "code": "ETIMEDOUT",
+      "message": "connection timed out"
+    },
+    {
+      "errno": -111,
+      "code": "ECONNREFUSED",
+      "message": "connection refused"
+    },
+    {
+      "errno": -112,
+      "code": "EHOSTDOWN",
+      "message": "host is down"
+    },
+    {
+      "errno": -113,
+      "code": "EHOSTUNREACH",
+      "message": "host is unreachable"
+    },
+    {
+      "errno": -114,
+      "code": "EALREADY",
+      "message": "connection already in progress"
+    },
+    {
+      "errno": -121,
+      "code": "EREMOTEIO",
+      "message": "remote I/O error"
+    },
+    {
+      "errno": -125,
+      "code": "ECANCELED",
+      "message": "operation canceled"
+    },
+    {
+      "errno": -3000,
+      "code": "EAI_ADDRFAMILY",
+      "message": "address family not supported"
+    },
+    {
+      "errno": -3001,
+      "code": "EAI_AGAIN",
+      "message": "temporary failure"
+    },
+    {
+      "errno": -3002,
+      "code": "EAI_BADFLAGS",
+      "message": "bad ai_flags value"
+    },
+    {
+      "errno": -3003,
+      "code": "EAI_CANCELED",
+      "message": "request canceled"
+    },
+    {
+      "errno": -3004,
+      "code": "EAI_FAIL",
+      "message": "permanent failure"
+    },
+    {
+      "errno": -3005,
+      "code": "EAI_FAMILY",
+      "message": "ai_family not supported"
+    },
+    {
+      "errno": -3006,
+      "code": "EAI_MEMORY",
+      "message": "out of memory"
+    },
+    {
+      "errno": -3007,
+      "code": "EAI_NODATA",
+      "message": "no address"
+    },
+    {
+      "errno": -3008,
+      "code": "EAI_NONAME",
+      "message": "unknown node or service"
+    },
+    {
+      "errno": -3009,
+      "code": "EAI_OVERFLOW",
+      "message": "argument buffer overflow"
+    },
+    {
+      "errno": -3010,
+      "code": "EAI_SERVICE",
+      "message": "service not available for socket type"
+    },
+    {
+      "errno": -3011,
+      "code": "EAI_SOCKTYPE",
+      "message": "socket type not supported"
+    },
+    {
+      "errno": -3013,
+      "code": "EAI_BADHINTS",
+      "message": "invalid value for hints"
+    },
+    {
+      "errno": -3014,
+      "code": "EAI_PROTOCOL",
+      "message": "resolved protocol is unknown"
+    },
+    {
+      "errno": -4028,
+      "code": "EFTYPE",
+      "message": "inappropriate file type or format"
+    },
+    {
+      "errno": -4080,
+      "code": "ECHARSET",
+      "message": "invalid Unicode character"
+    },
+    {
+      "errno": -4094,
+      "code": "UNKNOWN",
+      "message": "unknown error"
+    },
+    {
+      "errno": -4095,
+      "code": "EOF",
+      "message": "end of file"
+    }
+  ],
+  "messages": [
+    {
+      "code": "ENOENT",
+      "syscall": "open",
+      "path": "/nonexistent",
+      "dest": null,
+      "message": "ENOENT: no such file or directory, open '/nonexistent'"
+    },
+    {
+      "code": "ENOENT",
+      "syscall": "rename",
+      "path": "/nonexistent",
+      "dest": "/nonexistent-2",
+      "message": "ENOENT: no such file or directory, rename '/nonexistent' -> '/nonexistent-2'"
+    },
+    {
+      "code": "ENOENT",
+      "syscall": "scandir",
+      "path": "/nonexistent",
+      "dest": null,
+      "message": "ENOENT: no such file or directory, scandir '/nonexistent'"
+    },
+    {
+      "code": "EEXIST",
+      "syscall": "mkdir",
+      "path": "/",
+      "dest": null,
+      "message": "EEXIST: file already exists, mkdir '/'"
+    }
+  ]
+}

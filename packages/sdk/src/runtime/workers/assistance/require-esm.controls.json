@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 1,
+  "fixtureSHA256": {
+    "cycle-a.mjs": "70762e197101db979a0082f9b7859e963f417ee6d1cfac37a5e35f7a5a7653b5",
+    "cycle-b.cjs": "198aae6999cdd814c2cb9cb878855f9b74d527951867b54421070f5a18c881fd",
+    "cycle-c.mjs": "790a2066b10c26a305a5ce6eb7e516a7f77322ab6ce94b2832ac2fde310a1a01",
+    "cycle-d.cjs": "3fcf4138ce909b5a7fcd2b59a6d229d64178c6016136bb3e938385d41d6644e9",
+    "cycle-outer.cjs": "ce98e0fc107b3ca08a3898313f0012d472be93cdd9d5a6b4855aae5cfa572c98",
+    "default-only.mjs": "10cb64548d271f8a4ea1da07f2413c368ade328793641540b0c43ee58f31bd0f",
+    "esm-requires-esm.mjs": "27aad55ec304c7e3be43c1193c9aea1fc827eb48fe9827dcd7a535da976fddda",
+    "helper.cjs": "0d8f62a4bd99b220e6e598c52ee60f6617f3e41fe1bb261093ef3b575ba4d368",
+    "imports-cjs.mjs": "268a1dd0ce41fc9c6397e124391c79154d81da0d745f9ab071ce8afadd61b227",
+    "module-exports.mjs": "4e02a11adf79c796e5bd9e72657bf2af0f8ee242b70aa65a408ab9033df64b88",
+    "named.mjs": "2473954b6a74afa680b47331ecb038bc7312b9bfd8cd957819c0321cd0fd7317",
+    "no-default.mjs": "814cbadefa694bf04076660152b33cd7af556a6a224aed43d9be403b7385f140",
+    "once-import-first.mjs": "f39d25195398ea822b98220b4c93fa54b9a7fbb388cee3dac86a65cefedc2d3a",
+    "once-require-first.mjs": "e95c82b0ba0b182de473e11edda70548587f7fb89f24c5ed9690268bd3bbbbea",
+    "own-esmodule.mjs": "f9a48e869d5d89a5e172bc067961b0c4fabb442df21c4d541cb50ec36b33237d",
+    "package.json": "9b517c900d3d14c94e3e692eb3bd03e943f5c8cc254b04bdd150cb6c4c96700f",
+    "recorder.cjs": "da4e3ecdc9e1d863b44b7cb63cc04e2ec59e246a88c80c1d431c79ed70976fa2",
+    "sync/default.cjs": "9319fbe98e2b31c5affd719db332fbb11862d85918b6e2da57ffa8da8147c87a",
+    "sync/require.cjs": "d87b2c2cb743610ba032a67d26aa6750533b9ee54fda5319c0b269ea8c87c13e",
+    "sync/sync.mjs": "3b40c2fb9cfcf683bd200a6308551998e3bfbf4283cd2d7300f77499a7438432",
+    "throws.mjs": "9d1d25a5a8bac3ac5898139028b6d8dadf3838ca076c4fd69e0910177d6ed2a5",
+    "tla-child.mjs": "33e61c08b8674cd6ff31fb451be8e90b6563614924c91b43ff28834ffe28f6cf",
+    "tla-direct.mjs": "58c93d1ffd57a193c7e397818d1d4770f93a14f301d062c0c81d66193f830272",
+    "tla-outer.cjs": "39356ba660656b2dca57b89905e289f5cbbc9d38c5327136b7ef4eb5b92ac635",
+    "tla-parent.mjs": "f7ba72705bad6a70931176370e75f6847e84a2a584045ca750c30d70e6ad7675",
+    "type-module/index.js": "b88bf5c872a3d5afbdd3f1a0fd10069a12580b68656d7ecffdaee7c2852de190",
+    "type-module/package.json": "5a065fe7d8eab2a582f428e11c2ea63aaf70607a54f69cfd5c711b5c53d91b32"
+  },
+  "node": {
+    "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+    "version": "v24.18.1"
+  },
+  "rows": [
+    {
+      "label": "named",
+      "value": {
+        "type": "object",
+        "keys": [
+          "__esModule",
+          "a",
+          "default",
+          "f",
+          "Symbol(Symbol.toStringTag)"
+        ],
+        "entries": {
+          "__esModule": true,
+          "a": 1,
+          "default": "d",
+          "f": {
+            "type": "function",
+            "name": "f"
+          }
+        },
+        "tag": "[object Module]",
+        "prototype": "null",
+        "extensible": false,
+        "frozen": false
+      },
+      "ran": [
+        "named"
+      ]
+    },
+    {
+      "label": "named-again-same-object",
+      "same": true,
+      "ran": []
+    },
+    {
+      "label": "module-exports-name",
+      "value": {
+        "type": "object",
+        "keys": [
+          "x"
+        ],
+        "entries": {
+          "x": 1
+        },
+        "tag": "[object Object]",
+        "prototype": "Object.prototype",
+        "extensible": true,
+        "frozen": false
+      },
+      "ran": [
+        "module-exports"
+      ]
+    },
+    {
+      "label": "default-only",
+      "value": {
+        "type": "object",
+        "keys": [
+          "__esModule",
+          "default",
+          "Symbol(Symbol.toStringTag)"
+        ],
+        "entries": {
+          "__esModule": true,
+          "default": {
+            "type": "function",
+            "name": "answer"
+          }
+        },
+        "tag": "[object Module]",
+        "prototype": "null",
+        "extensible": false,
+        "frozen": false
+      },
+      "ran": []
+    },
+    {
+      "label": "no-default",
+      "value": {
+        "type": "object",
+        "keys": [
+          "only",
+          "Symbol(Symbol.toStringTag)"
+        ],
+        "entries": {
+          "only": true
+        },
+        "tag": "[object Module]",
+        "prototype": "null",
+        "extensible": false,
+        "frozen": false
+      },
+      "ran": []
+    },
+    {
+      "label": "own-esmodule",
+      "value": {
+        "type": "object",
+        "keys": [
+          "__esModule",
+          "default",
+          "Symbol(Symbol.toStringTag)"
+        ],
+        "entries": {
+          "__esModule": false,
+          "default": "own"
+        },
+        "tag": "[object Module]",
+        "prototype": "null",
+        "extensible": false,
+        "frozen": false
+      },
+      "ran": []
+    },
+    {
+      "label": "type-module-js",
+      "value": {
+        "type": "object",
+        "keys": [
+          "kind",
+          "Symbol(Symbol.toStringTag)"
+        ],
+        "entries": {
+          "kind": "type-module"
+        },
+        "tag": "[object Module]",
+        "prototype": "null",
+        "extensible": false,
+        "frozen": false
+      },
+      "ran": []
+    },
+    {
+      "label": "imports-cjs",
+      "value": {
+        "type": "object",
+        "keys": [
+          "combined",
+          "Symbol(Symbol.toStringTag)"
+        ],
+        "entries": {
+          "combined": "base-named"
+        },
+        "tag": "[object Module]",
+        "prototype": "null",
+        "extensible": false,
+        "frozen": false
+      },
+      "ran": []
+    },
+    {
+      "label": "tla-direct",
+      "error": {
+        "class": "Error",
+        "code": "ERR_REQUIRE_ASYNC_MODULE",
+        "message": "require() cannot be used on an ESM graph with top-level await. Use import() instead. To see where the top-level await comes from, use --experimental-print-required-tla.\n  From <root>/[eval] \n  Requiring <root>/tla-direct.mjs "
+      },
+      "ran": []
+    },
+    {
+      "label": "tla-in-graph",
+      "error": {
+        "class": "Error",
+        "code": "ERR_REQUIRE_ASYNC_MODULE",
+        "message": "require() cannot be used on an ESM graph with top-level await. Use import() instead. To see where the top-level await comes from, use --experimental-print-required-tla.\n  From <root>/[eval] \n  Requiring <root>/tla-parent.mjs "
+      },
+      "ran": []
+    },
+    {
+      "label": "tla-in-graph-again",
+      "error": {
+        "class": "Error",
+        "code": "ERR_REQUIRE_ASYNC_MODULE",
+        "message": "require() cannot be used on an ESM graph with top-level await. Use import() instead. To see where the top-level await comes from, use --experimental-print-required-tla.\n  From <root>/[eval] \n  Requiring <root>/tla-parent.mjs "
+      },
+      "ran": []
+    },
+    {
+      "label": "cycle",
+      "error": {
+        "class": "Error",
+        "code": "ERR_REQUIRE_CYCLE_MODULE",
+        "message": "Cannot require() ES Module <root>/cycle-a.mjs in a cycle. (from <root>/[eval])"
+      },
+      "ran": []
+    },
+    {
+      "label": "cycle-from-cjs-parent",
+      "error": {
+        "class": "Error",
+        "code": "ERR_REQUIRE_CYCLE_MODULE",
+        "message": "Cannot require() ES Module <root>/cycle-c.mjs in a cycle. (from <root>/cycle-outer.cjs)"
+      },
+      "ran": []
+    },
+    {
+      "label": "tla-from-cjs-parent",
+      "error": {
+        "class": "Error",
+        "code": "ERR_REQUIRE_ASYNC_MODULE",
+        "message": "require() cannot be used on an ESM graph with top-level await. Use import() instead. To see where the top-level await comes from, use --experimental-print-required-tla.\n  From <root>/tla-outer.cjs \n  Requiring <root>/tla-direct.mjs "
+      },
+      "ran": []
+    },
+    {
+      "label": "esm-requires-esm",
+      "value": {
+        "type": "object",
+        "keys": [
+          "inner",
+          "Symbol(Symbol.toStringTag)"
+        ],
+        "entries": {
+          "inner": 1
+        },
+        "tag": "[object Module]",
+        "prototype": "null",
+        "extensible": false,
+        "frozen": false
+      },
+      "ran": []
+    },
+    {
+      "label": "throws",
+      "error": {
+        "class": "Error",
+        "code": null,
+        "message": "boom from throws.mjs"
+      },
+      "ran": [
+        "throws"
+      ]
+    },
+    {
+      "label": "throws-again",
+      "error": {
+        "class": "Error",
+        "code": null,
+        "message": "boom from throws.mjs"
+      },
+      "ran": []
+    },
+    {
+      "label": "module-sync-condition",
+      "value": {
+        "type": "object",
+        "keys": [
+          "picked",
+          "Symbol(Symbol.toStringTag)"
+        ],
+        "entries": {
+          "picked": "module-sync"
+        },
+        "tag": "[object Module]",
+        "prototype": "null",
+        "extensible": false,
+        "frozen": false
+      },
+      "ran": []
+    },
+    {
+      "label": "require-condition",
+      "value": {
+        "type": "object",
+        "keys": [
+          "picked"
+        ],
+        "entries": {
+          "picked": "require"
+        },
+        "tag": "[object Object]",
+        "prototype": "Object.prototype",
+        "extensible": true,
+        "frozen": false
+      },
+      "ran": []
+    },
+    {
+      "label": "cache-entry",
+      "resolved": "<root>/named.mjs",
+      "cached": true,
+      "loaded": true,
+      "exportsIsNamespace": true,
+      "ran": []
+    },
+    {
+      "label": "import-then-require",
+      "same": true,
+      "ran": [
+        "once-import-first"
+      ]
+    },
+    {
+      "label": "require-then-import",
+      "same": true,
+      "ran": [
+        "once-require-first"
+      ]
+    },
+    {
+      "label": "feature",
+      "requireModule": true
+    }
+  ]
+}

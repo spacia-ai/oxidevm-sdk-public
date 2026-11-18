@@ -27,6 +27,7 @@ import { createNodeZlib } from "./node-zlib-stream.ts";
 import { createNodeBrotli } from "./node-brotli.ts";
 import { ProcessScheduler } from "./process-scheduler.js";
 import { createHttpServers } from "./node-http-server.ts";
+import { createHttpValidators } from "./node-http-validators.ts";
 import { createNodeHttp2 } from "./node-http2.js";
 import { createNodeTls } from "./node-tls.ts";
 import { createHttpClients } from "./node-http-client.ts";
@@ -41,7 +42,7 @@ import { createNodeNet } from "./node-net.ts";
 import { Buffer } from "buffer";
 import { createProcessDirectory } from "./node-process-directory.ts";
 import { nodeQuerystring } from "./node-querystring.ts";
-import { createProcessKill, deliverProcessSignal, installProcessIpc, installSignalListeners, NodeProcess, validateNodeEnvironment, type ProcessBuildMetadata } from "./node-process.ts";
+import { createProcessKill, deliverProcessSignal, installProcessIpc, installSignalListeners, endNodeProcess, NodeProcess, validateNodeEnvironment, type ProcessBuildMetadata } from "./node-process.ts";
 import { createForkedChildren } from "./node-fork.ts";
 import { deliverProcessException } from "./node-exceptions.js";
 import { createIpcChannel } from "./node-ipc.ts";
@@ -65,10 +66,12 @@ import { createNodeUrl } from "./node-url.ts";
 import { createNodeDns } from "./node-dns.ts";
 import { createNodeCrypto } from "./node-crypto.ts";
 import { createNodeUtil, nodeUtil } from "./node-util.ts";
+import { Stats } from "./node-stats.ts";
 import { NEXT_COMPILER_BUILTIN, NEXT_COMPILER_DIRECTORY, nextCompilerEnvironment, verifyNextCompilerFacade, type NextCompilerBindings } from "./next-compiler.js";
 import { createInputStream, createOutputStream, createNodeStreamModule, EventEmitter, sendBufferedOutput } from "./node-streams.ts";
 import { createLocalModuleLoader } from "./module-loader.js";
-import { lateFailureReporter, type LateFailure, type TrialFailure } from "../../js-process/late-failure.js";
+import { observeRefusals } from "../../errors.js";
+import { lateFailureOf, lateFailureReporter, type LateFailure, type TrialFailure } from "../../js-process/late-failure.js";
 import { probeAddon } from "./trial-load.js";
 import { installProxyRegistry } from "../../proxy-brand.js";
 import { guardMissingExports } from "./builtin-guard.ts";
@@ -128,8 +131,9 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
   const nativeTimeout = globalThis.setTimeout.bind(globalThis);
   const directory = createProcessDirectory(operation => io.callSync(operation), start.cwd, runtime.metadata.isMainThread ?? true);
   const dependencyWrites = keepingDependencyWrites();
-  const files = createSyncFiles(dependencyWrites.sync(operation => io.callSync(operation)), directory.cwd, io.copyOpenMode);
-  const asynchronous = createAsyncFiles(dependencyWrites.asynchronous(operation => io.call(operation)), directory.cwd, context, () => io.retain(), callback => scheduler.enqueue(callback), io.copyOpenMode);
+  const inspectArgument = (value: unknown, options: { readonly depth: -1 }): string => nodeUtil.inspect(value, options);
+  const files = createSyncFiles(dependencyWrites.sync(operation => io.callSync(operation)), directory.cwd, io.copyOpenMode, inspectArgument);
+  const asynchronous = createAsyncFiles(dependencyWrites.asynchronous(operation => io.call(operation)), directory.cwd, context, () => io.retain(), callback => scheduler.enqueue(callback), { ...(io.copyOpenMode === undefined ? {} : { copyOpenMode: io.copyOpenMode }), inspect: inspectArgument });
   const addons = runtime.loadNative === undefined ? undefined : refusingAddonLoader(runtime.loadNative);
   const admitted = refusingModules(createGuestModules(files, start.dependencies, addons === undefined ? undefined : (...input) => addons.load(...input), runtime.modulePathInfo, executionOptions.conditions)), modules = admitted.modules;
   const input = createInputStream(context);
@@ -193,7 +197,10 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
   clearRefusedNodeApi();
   // The built-ins, created below, name the first missing export a process touched (ADR 0026).
   let touched: () => LateFailure | undefined = () => undefined;
-  const lateFailures = lateFailureReporter(error => { writeConsole("stderr", [error]); }, runtime.lateFailure, () => addons?.refused() ?? admitted.refused() ?? dependencyWrites.refused() ?? refusedNodeApi() ?? touched());
+  // The first refusal the process met, also one the program caught and answered with its own failure.
+  let refusal: LateFailure | undefined;
+  observeRefusals(error => { refusal ??= lateFailureOf(error); });
+  const lateFailures = lateFailureReporter(error => { writeConsole("stderr", [error]); }, runtime.lateFailure, () => addons?.refused() ?? admitted.refused() ?? dependencyWrites.refused() ?? refusedNodeApi() ?? touched() ?? refusal);
   const printException = (error: unknown): void => { lateFailures.uncaught(error); };
   const exception: Parameters<ProcessRuntimeIO["setExceptionHandler"]>[0] = (error, origin, promise) => deliverProcessException(process, error, origin, printException, runtime.unhandledException, promise);
   scheduler.setExceptionHandler(error => exception(error, "uncaughtException"));
@@ -231,7 +238,7 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
     const events = createNodeEvents(EventEmitter, asyncHooks);
     restore.push(events.restore);
     const builtins = {
-      fs: withNativeRealpath({ ...files, ...asynchronous, promises: filesMore.promises, watch: watchers.watch, cp: filesMore.cp, ...createNodeReadStreams((path, flags) => asynchronous.promises.open(path, flags), context), ...createNodeWriteStreams((path, flags, mode) => asynchronous.promises.open(path, flags, mode), context) }), "fs/promises": filesMore.promises,
+      fs: withNativeRealpath({ ...files, ...asynchronous, Stats: util.deprecate(Stats, "fs.Stats constructor is deprecated.", "DEP0180"), promises: filesMore.promises, watch: watchers.watch, cp: filesMore.cp, ...createNodeReadStreams((path, flags) => asynchronous.promises.open(path, flags), context), ...createNodeWriteStreams((path, flags, mode) => asynchronous.promises.open(path, flags, mode), context) }), "fs/promises": filesMore.promises,
       tls, https: { ...createHttpClients({ createConnection: tls.connect }, httpParser, context, scheduler.nextTick, () => io.retain(), "https:"), createServer: () => unavailableNodeApi("https.createServer") },
       http2: createNodeHttp2(children, context, () => io.retain(), scheduler),
       assert: nodeAssert, "assert/strict": nodeAssert.strict, constants: files.constants,
@@ -242,7 +249,7 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
       vm: createNodeVm(realmEvaluator(), runtime.contextScripts === "data" ? (source, context, filename): unknown => evaluateContextData(source, context, filename, loader.sources) : undefined),
       "util/types": runtime.exactPromiseQueries === true ? exactPromiseUtilTypes : nodeUtilTypes, perf_hooks: createNodePerfHooks(globalThis), diagnostics_channel: createNodeDiagnosticsChannel(),
       string_decoder: nodeStringDecoder, worker_threads: threads?.module ?? createNodeWorkerThreads(globalThis), inspector: nodeInspector,
-      os: createNodeOs(files, process.env, io.networkInterfaces?.bind(io)), net, http: { maxHeaderSize: 16_384, ...createHttpServers(net, httpParser, context), ...createHttpClients(net, httpParser, context, scheduler.nextTick, () => io.retain()) },
+      os: createNodeOs(files, process.env, io.networkInterfaces?.bind(io)), net, http: { maxHeaderSize: 16_384, ...createHttpValidators(nodeUtil.format), ...createHttpServers(net, httpParser, context), ...createHttpClients(net, httpParser, context, scheduler.nextTick, () => io.retain()) },
       zlib: { ...createNodeZlib(context, scheduler), ...createNodeBrotli(children, context, () => io.retain(), scheduler) },
       querystring: nodeQuerystring, url: createNodeUrl(directory.cwd), util, crypto: { ...crypto.module, ...cryptoExtras }, v8: nodeV8Memory, sqlite: nodeSqlite,
       ...(runtime.tty === undefined ? {} : { tty: runtime.tty }),
@@ -275,7 +282,8 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
     // An installed task runs the Next profile, whose webpack development
     // output evaluates module sources through direct eval; local scripts keep
     // refusing eval so every generated source crosses the compiler boundary.
-    restore.push(installGeneratedFunctions(compiler, globalThis, loader.sources, { eval: start.dependencies === undefined ? "refuse" : "native" }));
+    restore.push(installGeneratedFunctions(compiler, globalThis, loader.sources, { eval: start.dependencies === undefined ? "refuse" : "native",
+      importModule: (specifier, options) => loader.import(specifier, undefined, options) }));
     io.ready(input.readRequested, input.closed);
     // Older guest dialects retain local-script execution without this image
     // asset. Installed tasks require the version-matched compiler handoff.
@@ -310,7 +318,7 @@ export async function runLocalProcess(start: LocalProcessStart, io: ProcessRunti
         await new Promise<void>(resolve => { nativeTimeout(resolve, 0); });
       }
     } while (hasWork());
-    process.exit();
+    endNodeProcess(process, "drained");
   } finally {
     // Destroying standard streams schedules close notifications. At this point
     // process I/O may already be closed; teardown must not admit new activity.

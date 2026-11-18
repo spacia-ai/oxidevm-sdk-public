@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "recorderSHA256": "14891a8b5c59d4ccfa9efe57068151d5cd2d2e05c985ced9739861dcf65815e7",
+  "node": {
+    "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+    "version": "v24.18.1"
+  },
+  "rows": [
+    {
+      "name": "string",
+      "path": "<root>/a-<name>",
+      "suffixMatches": true,
+      "mode": "700",
+      "directory": true
+    },
+    {
+      "name": "no-dash",
+      "path": "<root>/b<name>",
+      "suffixMatches": true,
+      "mode": "700",
+      "directory": true
+    },
+    {
+      "name": "directory-prefix",
+      "path": "<root>/<name>",
+      "suffixMatches": true,
+      "mode": "700",
+      "directory": true
+    },
+    {
+      "name": "buffer-prefix",
+      "path": "<root>/c-<name>",
+      "suffixMatches": true,
+      "mode": "700",
+      "directory": true
+    },
+    {
+      "name": "url-prefix",
+      "path": "<root>/d-<name>",
+      "suffixMatches": true,
+      "mode": "700",
+      "directory": true
+    },
+    {
+      "name": "encoding-buffer",
+      "buffer": "<root>/e-<name>"
+    },
+    {
+      "name": "encoding-option-buffer",
+      "buffer": "<root>/f-<name>"
+    },
+    {
+      "name": "encoding-utf8",
+      "path": "<root>/g-<name>",
+      "suffixMatches": true,
+      "mode": "700",
+      "directory": true
+    },
+    {
+      "name": "encoding-invalid",
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_INVALID_ARG_VALUE",
+        "errno": null,
+        "syscall": null,
+        "path": null,
+        "message": "The argument 'encoding' is invalid encoding. Received 'nope'"
+      }
+    },
+    {
+      "name": "missing-parent",
+      "error": {
+        "name": "Error",
+        "code": "ENOENT",
+        "errno": -2,
+        "syscall": "mkdtemp",
+        "path": "<root>/none/x-XXXXXX",
+        "message": "ENOENT: no such file or directory, mkdtemp '<root>/none/x-XXXXXX'"
+      }
+    },
+    {
+      "name": "parent-is-file",
+      "error": {
+        "name": "Error",
+        "code": "ENOTDIR",
+        "errno": -20,
+        "syscall": "mkdtemp",
+        "path": "<root>/file/x-XXXXXX",
+        "message": "ENOTDIR: not a directory, mkdtemp '<root>/file/x-XXXXXX'"
+      }
+    },
+    {
+      "name": "number-prefix",
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_INVALID_ARG_TYPE",
+        "errno": null,
+        "syscall": null,
+        "path": null,
+        "message": "The \"prefix\" argument must be of type string or an instance of Buffer or URL. Received type number (1)"
+      }
+    },
+    {
+      "name": "undefined-prefix",
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_INVALID_ARG_TYPE",
+        "errno": null,
+        "syscall": null,
+        "path": null,
+        "message": "The \"prefix\" argument must be of type string or an instance of Buffer or URL. Received undefined"
+      }
+    },
+    {
+      "name": "null-byte",
+      "error": {
+        "name": "TypeError",
+        "code": "ERR_INVALID_ARG_VALUE",
+        "errno": null,
+        "syscall": null,
+        "path": null,
+        "message": "The argument 'prefix' must be a string, Uint8Array, or URL without null bytes. Received '<root>/\\x00x'"
+      }
+    },
+    {
+      "name": "relative",
+      "relativeName": true,
+      "directory": true
+    }
+  ],
+  "callback": {
+    "path": "<root>/cb-<name>",
+    "suffixMatches": true,
+    "mode": "700",
+    "directory": true
+  },
+  "callbackMissing": {
+    "error": {
+      "code": "ENOENT",
+      "errno": -2,
+      "syscall": "mkdtemp",
+      "path": "<root>/none/cb-XXXXXX",
+      "message": "ENOENT: no such file or directory, mkdtemp '<root>/none/cb-XXXXXX'"
+    }
+  },
+  "noCallback": {
+    "error": {
+      "name": "TypeError",
+      "code": "ERR_INVALID_ARG_TYPE",
+      "errno": null,
+      "syscall": null,
+      "path": null,
+      "message": "The \"cb\" argument must be of type function. Received undefined"
+    }
+  },
+  "promise": {
+    "path": "<root>/p-<name>",
+    "suffixMatches": true,
+    "mode": "700",
+    "directory": true
+  },
+  "promiseMissing": {
+    "error": {
+      "code": "ENOENT",
+      "errno": -2,
+      "syscall": "mkdtemp",
+      "path": "<root>/none/p-XXXXXX",
+      "message": "ENOENT: no such file or directory, mkdtemp '<root>/none/p-XXXXXX'"
+    }
+  },
+  "lengths": [
+    2,
+    3,
+    2
+  ]
+}

@@ -44,10 +44,15 @@ export function nodeOptionsTokens(value: string): string[] | undefined {
   return quoted ? undefined : tokens;
 }
 
+/** Valued options Node takes on the command line only: in `NODE_OPTIONS` it refuses them. The engine
+ * reads the files they name before admission and starts the program with their variables, so the
+ * process environment already holds them here. */
+const COMMAND_LINE_VALUED = ["--env-file", "--env-file-if-exists"];
+
 /** The options before the first argument that is not one (the script, or the end), applied over
  * `base`, and that argument's index; undefined when an option is not implemented as written. */
 export function readNodeExecutionOptions(values: readonly string[], base: NodeExecutionOptions = DEFAULT_NODE_EXECUTION_OPTIONS,
-  runtime: "node" | "bun" = "node"): { readonly options: NodeExecutionOptions; readonly end: number } | undefined {
+  runtime: "node" | "bun" = "node", source: "command-line" | "node-options" = "command-line"): { readonly options: NodeExecutionOptions; readonly end: number } | undefined {
   let { sourceMaps, warnings, deprecation } = base;
   const require = [...base.require], conditions = [...base.conditions];
   let index = 0;
@@ -57,6 +62,13 @@ export function readNodeExecutionOptions(values: readonly string[], base: NodeEx
     if (runtime === "bun") return undefined;
     if (argument === "--warnings" || argument === "--no-warnings") { warnings = argument === "--warnings"; continue; }
     if (argument === "--deprecation" || argument === "--no-deprecation") { deprecation = argument === "--deprecation"; continue; }
+    const envFile = source === "command-line" ? COMMAND_LINE_VALUED.find(name => argument === name || argument.startsWith(`${name}=`)) : undefined;
+    if (envFile !== undefined) {
+      const value = argument === envFile ? values[index++] : argument.slice(envFile.length + 1);
+      // As for the other valued options: an empty value or one starting with a dash is Node's to report.
+      if (value === undefined || value === "" || value.startsWith("-")) return undefined;
+      continue;
+    }
     let name = argument, value: string | undefined;
     if (argument === "--require" || argument === "-r" || argument === "--conditions" || argument === "-C") {
       value = values[index++];

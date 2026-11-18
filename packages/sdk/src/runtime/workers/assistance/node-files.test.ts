@@ -125,7 +125,7 @@ describe("Linux-backed synchronous filesystem adapter", () => {
     expect(stat.ctimeMs).toBe(1790106993328.9148);
     // Managed Node preserves the seconds/nanoseconds conversion's exact float.
     expect(stat.birthtimeMs).toBe(birthtimeNs === null ? 0 : birthtimeNs < 0n ? -123.45678899999996 : 1790106993328.9148);
-    expect(stat.birthtime?.getTime()).toBe(birthtimeNs === null ? 0 : birthtimeNs < 0n ? -123 : 1790106993329);
+    expect(stat.birthtime.getTime()).toBe(birthtimeNs === null ? 0 : birthtimeNs < 0n ? -123 : 1790106993329);
     expect(stat.isCharacterDevice()).toBe(true);
   });
 });

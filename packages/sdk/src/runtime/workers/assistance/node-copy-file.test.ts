@@ -35,7 +35,7 @@ function linux(operation: AssistanceOperation): AssistanceResult {
 
 it("copies bounded partial writes, modes and aliases through all fs forms without truncating its source", async () => {
   const root = native.mkdtempSync(join(tmpdir(), "oxidevm-copy-")), source = join(root, "source"), target = join(root, "target");
-  const sync = createSyncFiles(linux, () => root, 10), callbacks = createAsyncFiles(operation => Promise.resolve(linux(operation)), () => root, createAsyncContext(), () => () => {}, undefined, 10);
+  const sync = createSyncFiles(linux, () => root, 10), callbacks = createAsyncFiles(operation => Promise.resolve(linux(operation)), () => root, createAsyncContext(), () => () => {}, undefined, { copyOpenMode: 10 });
   try {
     const bytes = Buffer.alloc(150000, 42);
     native.writeFileSync(source, bytes); native.chmodSync(source, 0o751);

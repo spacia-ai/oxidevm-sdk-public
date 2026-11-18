@@ -37,7 +37,12 @@ export function createCommonJSLoader(
   resolve: (request: unknown, parent?: string) => string,
   admit: (filename: string) => void,
   compile: (source: string, filename: string, module: CommonJSRecord, require: (request: unknown) => unknown) => unknown,
-  context: { readonly cwd: () => string; readonly sources: ExecutableSources },
+  context: {
+    readonly cwd: () => string;
+    readonly sources: ExecutableSources;
+    /** Node 24's synchronous `require()` of an ES module; without it the load is refused as a late failure. */
+    readonly loadModule?: (filename: string, requirer: string | undefined) => unknown;
+  },
 ) {
   const paths = createNodePath(context.cwd);
   function dictionary(): Record<string, unknown> {
@@ -49,6 +54,8 @@ export function createCommonJSLoader(
   // This index only finds already admitted entries in Module._cache. It never
   // caches exports, failed lookups or mutable filesystem metadata.
   const loadedRequests = new Map<string, string>();
+  /** CommonJS records of ES modules whose require() is running. */
+  const loadingModules = new WeakSet<object>();
   class Module implements CommonJSRecord {
     static _cache = dictionary();
     static _extensions = dictionary();
@@ -171,6 +178,11 @@ export function createCommonJSLoader(
 
   function cachedExports(cached: unknown, parent: Module | null | undefined): unknown {
     if (cached instanceof Module && parent !== undefined && parent !== null && !parent.children.includes(cached)) parent.children.push(cached);
+    // An ES module whose require() has not finished is in a cycle: Node refuses it, where a CommonJS cycle
+    // returns the partial exports. The ES module loader throws ERR_REQUIRE_CYCLE_MODULE for it.
+    if (cached instanceof Module && !cached.loaded && loadingModules.has(cached) && cached.filename !== undefined && context.loadModule !== undefined) {
+      return context.loadModule(cached.filename, parent?.filename);
+    }
     return record(cached, "require.cache entry")["exports"];
   }
 
@@ -203,8 +215,14 @@ export function createCommonJSLoader(
   }
   Module._extensions[".js"] = (module: Module, filename: string) => {
     const input = files.read(filename, "require");
-    // Node 24 loads an ES module through require; a program that dies of this refusal is remembered and next runs in Linux.
-    if (input.format === "module") throw new VMError("FEATURE_NOT_AVAILABLE", "synchronous ESM loading is not available", { backend: "assisted-node", path: filename, lateFailure: "unavailable-builtin", subject: "require(esm)" });
+    if (input.format === "module") {
+      // Node 24 loads an ES module through require. Without the ES module loader, a program that dies of this
+      // refusal is remembered and next runs in Linux.
+      if (context.loadModule === undefined) throw new VMError("FEATURE_NOT_AVAILABLE", "synchronous ESM loading is not available", { backend: "assisted-node", path: filename, lateFailure: "unavailable-builtin", subject: "require(esm)" });
+      loadingModules.add(module);
+      try { module.exports = context.loadModule(filename, module.parent?.filename); } finally { loadingModules.delete(module); }
+      return;
+    }
     module._compile(input.source, filename);
   };
   Module._extensions[".json"] = (module: Module, filename: string) => {

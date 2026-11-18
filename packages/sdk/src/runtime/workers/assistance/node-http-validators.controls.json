@@ -1,0 +1,1076 @@
+{
+  "schemaVersion": 1,
+  "recorderSHA256": "c200974da45e5c977e38c3a4a081496b594abc1b087e258f273838f42dca9df6",
+  "node": {
+    "binarySHA256": "af89883ff1f2dbe825aa7fd55004276e752da3c84391f2709692759bbb61a7ab",
+    "version": "v24.18.1"
+  },
+  "functions": {
+    "validateHeaderName": {
+      "name": "validateHeaderName",
+      "length": 0,
+      "prototype": "object",
+      "ownKeys": [
+        "length",
+        "name",
+        "prototype",
+        "withoutStackTrace"
+      ],
+      "withoutStackTrace": {
+        "type": "function",
+        "name": "",
+        "length": 2,
+        "prototype": "undefined",
+        "ownKeys": [
+          "length",
+          "name"
+        ],
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      }
+    },
+    "validateHeaderValue": {
+      "name": "validateHeaderValue",
+      "length": 0,
+      "prototype": "object",
+      "ownKeys": [
+        "length",
+        "name",
+        "prototype",
+        "withoutStackTrace"
+      ],
+      "withoutStackTrace": {
+        "type": "function",
+        "name": "",
+        "length": 2,
+        "prototype": "undefined",
+        "ownKeys": [
+          "length",
+          "name"
+        ],
+        "enumerable": true,
+        "writable": true,
+        "configurable": true
+      }
+    }
+  },
+  "rows": [
+    {
+      "fn": "name",
+      "label": "token",
+      "input": "x-corpus",
+      "result": "undefined"
+    },
+    {
+      "fn": "name",
+      "label": "upper",
+      "input": "Content-Type",
+      "result": "undefined"
+    },
+    {
+      "fn": "name",
+      "label": "symbols",
+      "input": "!#$%&'*+-.^_`|~",
+      "result": "undefined"
+    },
+    {
+      "fn": "name",
+      "label": "digits",
+      "input": "0123456789",
+      "result": "undefined"
+    },
+    {
+      "fn": "name",
+      "label": "empty",
+      "input": "",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "space",
+      "input": "x corpus",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x corpus\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x corpus\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "leading-space",
+      "input": " x",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\" x\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\" x\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "colon",
+      "input": "x:y",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x:y\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x:y\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "tab",
+      "input": "x\ty",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x\ty\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x\ty\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "newline",
+      "input": "x\ny",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x\ny\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x\ny\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "nul",
+      "input": "x\u0000",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x\u0000\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x\u0000\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "quote",
+      "input": "x\"y",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x\"y\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x\"y\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "comma",
+      "input": "x,y",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x,y\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x,y\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "slash",
+      "input": "x/y",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x/y\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x/y\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "at",
+      "input": "x@y",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x@y\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x@y\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "brackets",
+      "input": "x[y]",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x[y]\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x[y]\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "latin1",
+      "input": "café",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"café\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"café\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "wide",
+      "input": "Ā",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"Ā\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"Ā\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "emoji",
+      "input": "😀",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"😀\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"😀\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "del",
+      "input": "x",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "long",
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "result": "undefined"
+    },
+    {
+      "fn": "name",
+      "label": "long-bad",
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "undefined",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"undefined\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"undefined\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "null",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"null\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"null\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "number",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"1\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"1\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "zero",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"0\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"0\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "nan",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"NaN\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"NaN\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "bigint",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"1n\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"1n\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "boolean",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"true\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"true\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "symbol",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"Symbol(x)\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"Symbol(x)\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "object",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"{}\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"{}\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "array",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"[ 'a', 'b' ]\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"[ 'a', 'b' ]\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "string-object",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"[String: 'x-corpus']\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"[String: 'x-corpus']\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "function",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"function named() { /* a named function */ }\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"function named() { /* a named function */ }\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "custom-label",
+      "input": "x y",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Custom must be a valid HTTP token [\"x y\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Custom must be a valid HTTP token [\"x y\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "no-argument",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"undefined\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"undefined\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "plain",
+      "input": "text/html",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "empty",
+      "input": "",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "spaces",
+      "input": "  a  b  ",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "tab",
+      "input": "a\tb",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "cr",
+      "input": "a\rb",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"x-corpus\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"x-corpus\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "lf",
+      "input": "a\nb",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"x-corpus\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"x-corpus\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "crlf",
+      "input": "a\r\nb",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"x-corpus\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"x-corpus\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "nul",
+      "input": "a\u0000b",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"x-corpus\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"x-corpus\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "unit-separator",
+      "input": "a\u001fb",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"x-corpus\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"x-corpus\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "del",
+      "input": "ab",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"x-corpus\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"x-corpus\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "latin1",
+      "input": "café",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "ff",
+      "input": "ÿ",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "wide",
+      "input": "Ā",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"x-corpus\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"x-corpus\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "emoji",
+      "input": "😀",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"x-corpus\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"x-corpus\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "long",
+      "input": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "undefined",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_HTTP_INVALID_HEADER_VALUE",
+        "message": "Invalid value \"undefined\" for header \"x-corpus\"",
+        "string": "TypeError [ERR_HTTP_INVALID_HEADER_VALUE]: Invalid value \"undefined\" for header \"x-corpus\"",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "null",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "number",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "zero",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "nan",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "negative",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "bigint",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "boolean",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "symbol",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": null,
+        "message": "Cannot convert a Symbol value to a string",
+        "string": "TypeError: Cannot convert a Symbol value to a string",
+        "ownKeys": [
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "object",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "array",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "array-bad",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"x-corpus\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"x-corpus\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "array-nested",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "array-empty",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "string-object",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "function",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "date",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "bad-name-good-value",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "symbol-name-undefined",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_HTTP_INVALID_HEADER_VALUE",
+        "message": "Invalid value \"undefined\" for header \"Symbol(n)\"",
+        "string": "TypeError [ERR_HTTP_INVALID_HEADER_VALUE]: Invalid value \"undefined\" for header \"Symbol(n)\"",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "object-name-bad-value",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"[object Object]\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"[object Object]\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "no-argument",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_HTTP_INVALID_HEADER_VALUE",
+        "message": "Invalid value \"undefined\" for header \"undefined\"",
+        "string": "TypeError [ERR_HTTP_INVALID_HEADER_VALUE]: Invalid value \"undefined\" for header \"undefined\"",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "symbol-name-bad-value",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": null,
+        "message": "Cannot convert a Symbol value to a string",
+        "string": "TypeError: Cannot convert a Symbol value to a string",
+        "ownKeys": [
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "object-name-undefined",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_HTTP_INVALID_HEADER_VALUE",
+        "message": "Invalid value \"undefined\" for header \"{}\"",
+        "string": "TypeError [ERR_HTTP_INVALID_HEADER_VALUE]: Invalid value \"undefined\" for header \"{}\"",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "array-name-undefined",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_HTTP_INVALID_HEADER_VALUE",
+        "message": "Invalid value \"undefined\" for header \"[ 'a', 'b' ]\"",
+        "string": "TypeError [ERR_HTTP_INVALID_HEADER_VALUE]: Invalid value \"undefined\" for header \"[ 'a', 'b' ]\"",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "number-name-bad-value",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"0\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"0\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "negative-zero",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"-0\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"-0\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "null-prototype",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"[Object: null prototype] {}\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"[Object: null prototype] {}\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "nested-object",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"{ a: [Object], d: [Array] }\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"{ a: [Object], d: [Array] }\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "object-label",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "{} must be a valid HTTP token [\"x y\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: {} must be a valid HTTP token [\"x y\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "without-stack-trace",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_HTTP_TOKEN",
+        "message": "Header name must be a valid HTTP token [\"x y\"]",
+        "string": "TypeError [ERR_INVALID_HTTP_TOKEN]: Header name must be a valid HTTP token [\"x y\"]",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    },
+    {
+      "fn": "name",
+      "label": "without-stack-trace-ok",
+      "result": "undefined"
+    },
+    {
+      "fn": "value",
+      "label": "without-stack-trace",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_INVALID_CHAR",
+        "message": "Invalid character in header content [\"x\"]",
+        "string": "TypeError [ERR_INVALID_CHAR]: Invalid character in header content [\"x\"]",
+        "ownKeys": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    {
+      "fn": "value",
+      "label": "without-stack-trace-undefined",
+      "error": {
+        "class": "TypeError",
+        "name": "TypeError",
+        "code": "ERR_HTTP_INVALID_HEADER_VALUE",
+        "message": "Invalid value \"undefined\" for header \"x\"",
+        "string": "TypeError [ERR_HTTP_INVALID_HEADER_VALUE]: Invalid value \"undefined\" for header \"x\"",
+        "ownKeys": [
+          "message",
+          "code"
+        ]
+      }
+    }
+  ]
+}
